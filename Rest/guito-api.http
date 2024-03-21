@@ -1,0 +1,21 @@
+
+
+POST {{Api_HostAddress}}/Expense/
+Accept: */*
+Content-Type: application/json
+x-google-idtoken:{{Google_IdToken}}
+
+{
+  "date": "2024-03-19T12:15:42.953Z",
+  "amount": 10,
+  "description": "Dote",
+  "category": "Eating out"
+}
+###
+
+GET {{Api_HostAddress}}/Category/
+Accept: */*
+Content-Type: application/json
+x-google-idtoken:{{Google_IdToken}}
+
+###
