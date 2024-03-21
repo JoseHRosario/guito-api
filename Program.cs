@@ -23,7 +23,8 @@ namespace GuitoApi
                     builder.AllowAnyOrigin()
                            .AllowAnyMethod()
                            .AllowAnyHeader();
-                }));
+                })
+            );
 
             builder.Services.AddScoped<IExpenseService, ExpenseGoogleApisSheetsService>();
             builder.Services.AddScoped<ICategoryService, CategoryGoogleApisSheetsService>();
@@ -36,8 +37,9 @@ namespace GuitoApi
             {
                 app.UseSwagger();
                 app.UseSwaggerUI();
-                app.UseCors("AllowAll");
             }
+
+            app.UseCors("AllowAll");
 
             app.UseHttpsRedirection();
 
