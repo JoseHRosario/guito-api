@@ -10,14 +10,17 @@ namespace GuitoApi.Services
     {
         private readonly AppConfigurationOptions _options;
         private readonly IGooglesheetsService _googlesheetsService;
+        private readonly ILogger<CategoryGoogleApisSheetsService> _logger;
 
         public CategoryGoogleApisSheetsService(
             IOptions<AppConfigurationOptions> options,
-            IGooglesheetsService googlesheetsService
+            IGooglesheetsService googlesheetsService,
+            ILogger<CategoryGoogleApisSheetsService> logger
             )
         {
             _options = options.Value;
             _googlesheetsService = googlesheetsService;
+            _logger = logger;
         }
 
         public async Task<List<Category>> List()

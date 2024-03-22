@@ -8,13 +8,10 @@ namespace GuitoApi.Controllers
     [Route("[controller]")]
     public class CategoryController : ControllerBase
     {
-       
-        private readonly ILogger<CategoryController> _logger;
         private readonly ICategoryService _categoryService;
 
-        public CategoryController(ILogger<CategoryController> logger, ICategoryService categoryService)
+        public CategoryController(ICategoryService categoryService)
         {
-            _logger = logger;
             _categoryService = categoryService;
         }
 

@@ -1,7 +1,4 @@
-
-using GuitoApi.Configuration;
-using GuitoApi.Middleware;
-using GuitoApi.Services;
+using Serilog;
 
 namespace GuitoApi
 {
@@ -9,45 +6,14 @@ namespace GuitoApi
     {
         public static void Main(string[] args)
         {
-            var builder = WebApplication.CreateBuilder(args);
-
-            // Add services to the container.
-            builder.Services.Configure<AppConfigurationOptions>(
-                builder.Configuration.GetSection(AppConfigurationOptions.AppConfiguration));
-            builder.Services.AddControllers();
-            // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
-            builder.Services.AddEndpointsApiExplorer();
-            builder.Services.AddSwaggerGen();
-            builder.Services.AddCors(o => o.AddPolicy("AllowAll", builder =>
+            Host.CreateDefaultBuilder(args)
+                .ConfigureWebHostDefaults(webBuilder =>
                 {
-                    builder.AllowAnyOrigin()
-                           .AllowAnyMethod()
-                           .AllowAnyHeader();
+                    webBuilder.UseIISIntegration().UseStartup<Startup>();
                 })
-            );
-
-            builder.Services.AddScoped<IExpenseService, ExpenseGoogleApisSheetsService>();
-            builder.Services.AddScoped<ICategoryService, CategoryGoogleApisSheetsService>();
-            builder.Services.AddScoped<IGooglesheetsService, GooglesheetsService>();
-
-            var app = builder.Build();
-
-            // Configure the HTTP request pipeline.
-            if (app.Environment.IsDevelopment())
-            {
-                app.UseSwagger();
-                app.UseSwaggerUI();
-            }
-
-            app.UseCors("AllowAll");
-
-            app.UseHttpsRedirection();
-
-            app.UseMiddleware<GoogleIdTokenMiddleware>();
-
-            app.MapControllers();
-
-            app.Run();
+                .UseSerilog()
+                .Build()
+                .Run();
         }
     }
 }

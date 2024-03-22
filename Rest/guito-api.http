@@ -17,5 +17,11 @@ GET {{Api_HostAddress}}/Category/
 Accept: */*
 Content-Type: application/json
 x-google-idtoken:{{Google_IdToken}}
+###
+
+GET {{Api_HostAddress}}/healthz/
+Accept: */*
+Content-Type: application/json
+x-google-idtoken:{{Google_IdToken}}
 
 ###
