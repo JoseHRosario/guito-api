@@ -4,6 +4,6 @@ namespace GuitoApi.Services
 {
     public interface IGooglesheetsService
     {
-        public SheetsService Get();
+        public Task<SheetsService> Get();
     }
 }

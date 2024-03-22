@@ -23,7 +23,7 @@ namespace GuitoApi.Services
 
         public async Task Create(Expense value)
         {
-            SheetsService service = _googlesheetsService.Get();
+            SheetsService service = await _googlesheetsService.Get();
 
             // Insert Expense data
             ValueRange valueRange = new ValueRange();

@@ -26,7 +26,7 @@ namespace GuitoApi.Services
         public async Task<List<Category>> List()
         {
             var categories = new List<Category>();
-            SheetsService service = _googlesheetsService.Get();
+            SheetsService service = await _googlesheetsService.Get();
 
             // Read values from the specified range
             SpreadsheetsResource.ValuesResource.GetRequest request =

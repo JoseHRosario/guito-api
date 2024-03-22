@@ -33,7 +33,7 @@ namespace GuitoApi.Middleware
         {
             try
             {
-                if (_options.ValidateIdToken)
+                if (_options.Authentication.ValidateIdToken)
                 {
                     var identityToken = string.Empty;
                     try
@@ -80,8 +80,8 @@ namespace GuitoApi.Middleware
 
         private bool IsValidToken(GoogleJsonWebSignature.Payload payload)
         {
-            return _options.AllowedLogins.Contains(payload.Email) &&
-                    _options.OAuthAudience == payload.Audience.ToString();
+            return _options.Authentication.AllowedLogins.Contains(payload.Email) &&
+                    _options.Authentication.OAuthAudience == payload.Audience.ToString();
         }
         private Task WriteErrorToResponse(HttpContext context, HttpStatusCode statusCode, string errorMessage)
         {
