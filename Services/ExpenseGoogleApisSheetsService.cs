@@ -11,20 +11,22 @@ namespace GuitoApi.Services
     {
         private readonly AppConfigurationOptions _options;
         private readonly IGooglesheetsService _googlesheetsService;
+        private readonly IUserIdentityResolver _userIdentityResolver;
 
         public ExpenseGoogleApisSheetsService(
             IOptions<AppConfigurationOptions> options,
-            IGooglesheetsService googlesheetsService
-            )
+            IGooglesheetsService googlesheetsService,
+            IUserIdentityResolver userIdentityResolver)
         {
             _options = options.Value;
             _googlesheetsService = googlesheetsService;
+            _userIdentityResolver = userIdentityResolver;
         }
 
         public async Task Create(Expense value)
         {
             SheetsService service = await _googlesheetsService.Get();
-
+            value.CreatorEmail = _userIdentityResolver.GetEmail();
             // Insert Expense data
             ValueRange valueRange = new ValueRange();
             valueRange.Values = new List<IList<object>> { new List<object>
@@ -34,7 +36,8 @@ namespace GuitoApi.Services
                 "", // Month
                 value.Amount,
                 value.Description,
-                value.Category
+                value.Category,
+                value.CreatorEmail
             } };
 
             SpreadsheetsResource.ValuesResource.AppendRequest appendRequest =

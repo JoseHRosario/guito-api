@@ -35,11 +35,13 @@ namespace GuitoApi
             })
             );
             services.AddHealthChecks();
+            services.AddHttpContextAccessor();
 
             services.AddScoped<IExpenseService, ExpenseGoogleApisSheetsService>();
             services.AddScoped<ICategoryService, CategoryGoogleApisSheetsService>();
             services.AddScoped<IGooglesheetsService, GooglesheetsService>();
-
+            services.AddScoped<IUserIdentityResolver, UserIdentityResolver>();
+            
         }
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env, ILoggerFactory loggerFactory)

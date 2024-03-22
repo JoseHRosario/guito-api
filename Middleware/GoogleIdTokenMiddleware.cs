@@ -2,6 +2,7 @@
 using Microsoft.Extensions.Options;
 using System.Net;
 using GuitoApi.Configuration;
+using System.Security.Claims;
 
 namespace GuitoApi.Middleware
 {
@@ -55,6 +56,10 @@ namespace GuitoApi.Middleware
                             return;
                         }
 
+                        var identity = new ClaimsIdentity("Google");
+                        identity.AddClaim(new Claim(ClaimTypes.Name, payload.Name));
+                        identity.AddClaim(new Claim(ClaimTypes.Email, payload.Email));
+                        httpContext.User = new ClaimsPrincipal(identity); 
                     }
                     catch (InvalidJwtException e)
                     {
@@ -80,6 +85,7 @@ namespace GuitoApi.Middleware
 
         private bool IsValidToken(GoogleJsonWebSignature.Payload payload)
         {
+            _logger.LogInformation("Validating token for email: {email}", payload.Email);
             return _options.Authentication.AllowedLogins.Contains(payload.Email) &&
                     _options.Authentication.OAuthAudience == payload.Audience.ToString();
         }
