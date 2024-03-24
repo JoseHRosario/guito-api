@@ -1,5 +1,5 @@
 
-
+### Create Expense
 POST {{Api_HostAddress}}/Expense/
 Accept: */*
 Content-Type: application/json
@@ -11,14 +11,22 @@ x-google-idtoken:{{Google_IdToken}}
   "description": "Dote",
   "category": "Eating out"
 }
-###
 
+### List Latest Expenses
+GET {{Api_HostAddress}}/Expense/latest/5
+Accept: */*
+Content-Type: application/json
+x-google-idtoken:{{Google_IdToken}}
+
+
+### List Categories
 GET {{Api_HostAddress}}/Category/
 Accept: */*
 Content-Type: application/json
 x-google-idtoken:{{Google_IdToken}}
-###
 
+
+### Health Check
 GET {{Api_HostAddress}}/healthz/
 Accept: */*
 Content-Type: application/json

@@ -1,6 +1,8 @@
 using GuitoApi.Configuration;
 using GuitoApi.Middleware;
 using GuitoApi.Services;
+using GuitoApi.Services.Category;
+using GuitoApi.Services.Expense;
 using Microsoft.Extensions.Configuration;
 using Serilog;
 
@@ -37,8 +39,9 @@ namespace GuitoApi
             services.AddHealthChecks();
             services.AddHttpContextAccessor();
 
-            services.AddScoped<IExpenseService, ExpenseGoogleApisSheetsService>();
-            services.AddScoped<ICategoryService, CategoryGoogleApisSheetsService>();
+            services.AddScoped<ICreateExpenseService, CreateExpenseGoogleApisSheetsService>();
+            services.AddScoped<IListLatestExpensesService, ListLatestExpensesGoogleApisSheetsService>();
+            services.AddScoped<IListCategoryService, ListCategoryGoogleApisSheetsService>();
             services.AddScoped<IGooglesheetsService, GooglesheetsService>();
             services.AddScoped<IUserIdentityResolver, UserIdentityResolver>();
             

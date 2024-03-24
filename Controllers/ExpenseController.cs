@@ -1,5 +1,6 @@
-using GuitoApi.Model;
-using GuitoApi.Services;
+using GuitoApi.DataTransferObjects.Input;
+using GuitoApi.DataTransferObjects.Output;
+using GuitoApi.Services.Expense;
 using Microsoft.AspNetCore.Mvc;
 
 namespace GuitoApi.Controllers
@@ -8,20 +9,25 @@ namespace GuitoApi.Controllers
     [Route("[controller]")]
     public class ExpenseController : ControllerBase
     {
-       
-        private readonly ILogger<ExpenseController> _logger;
-        private readonly IExpenseService _expenseService;
+        private readonly ICreateExpenseService _createExpenseService;
+        private readonly IListLatestExpensesService _listLatestExpensesService;
 
-        public ExpenseController(ILogger<ExpenseController> logger, IExpenseService expenseService)
+        public ExpenseController(ICreateExpenseService createExpenseService, IListLatestExpensesService listLatestExpensesService)
         {
-            _logger = logger;
-            _expenseService = expenseService;
+            _createExpenseService = createExpenseService;
+            _listLatestExpensesService = listLatestExpensesService;
         }
 
         [HttpPost]
-        public async Task Append([FromBody] Expense value)
+        public async Task Create([FromBody] ExpenseCreate value)
         {
-            await _expenseService.Create(value);
+            await _createExpenseService.Create(value);
+        }
+
+        [HttpGet("latest/{count}")]
+        public async Task<ExpenseListLatest> ListLatest(int count)
+        {
+            return await _listLatestExpensesService.ListLatest(count);
         }
     }
 }

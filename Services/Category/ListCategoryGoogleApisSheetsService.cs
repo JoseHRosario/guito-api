@@ -1,21 +1,21 @@
 ﻿using Google.Apis.Sheets.v4;
 using Google.Apis.Sheets.v4.Data;
 using GuitoApi.Configuration;
-using GuitoApi.Model;
+using GuitoApi.DataTransferObjects.Output;
 using Microsoft.Extensions.Options;
 
-namespace GuitoApi.Services
+namespace GuitoApi.Services.Category
 {
-    public class CategoryGoogleApisSheetsService : ICategoryService
+    public class ListCategoryGoogleApisSheetsService : IListCategoryService
     {
         private readonly AppConfigurationOptions _options;
         private readonly IGooglesheetsService _googlesheetsService;
-        private readonly ILogger<CategoryGoogleApisSheetsService> _logger;
+        private readonly ILogger<ListCategoryGoogleApisSheetsService> _logger;
 
-        public CategoryGoogleApisSheetsService(
+        public ListCategoryGoogleApisSheetsService(
             IOptions<AppConfigurationOptions> options,
             IGooglesheetsService googlesheetsService,
-            ILogger<CategoryGoogleApisSheetsService> logger
+            ILogger<ListCategoryGoogleApisSheetsService> logger
             )
         {
             _options = options.Value;
@@ -23,9 +23,9 @@ namespace GuitoApi.Services
             _logger = logger;
         }
 
-        public async Task<List<Category>> List()
+        public async Task<CategoryList> List()
         {
-            var categories = new List<Category>();
+            var output = new CategoryList();
             SheetsService service = await _googlesheetsService.Get();
 
             // Read values from the specified range
@@ -44,11 +44,12 @@ namespace GuitoApi.Services
                         continue;
 
 #pragma warning disable CS8601 // Possible null reference assignment.
-                    categories.Add(new Category { Name = row[0].ToString() });
+                    output.Categories.Add(new CategoryListDetail { Name = row[0].ToString() });
 #pragma warning restore CS8601 // Possible null reference assignment.
                 }
+                output.Categories = output.Categories.OrderBy(c => c.Name).ToList();
             }
-            return categories.OrderBy(c => c.Name).ToList();
+            return output;
         }
     }
 }

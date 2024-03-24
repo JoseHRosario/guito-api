@@ -1,5 +1,5 @@
-using GuitoApi.Model;
-using GuitoApi.Services;
+using GuitoApi.DataTransferObjects.Output;
+using GuitoApi.Services.Category;
 using Microsoft.AspNetCore.Mvc;
 
 namespace GuitoApi.Controllers
@@ -8,15 +8,15 @@ namespace GuitoApi.Controllers
     [Route("[controller]")]
     public class CategoryController : ControllerBase
     {
-        private readonly ICategoryService _categoryService;
+        private readonly IListCategoryService _categoryService;
 
-        public CategoryController(ICategoryService categoryService)
+        public CategoryController(IListCategoryService categoryService)
         {
             _categoryService = categoryService;
         }
 
         [HttpGet]
-        public async Task<List<Category>> List()
+        public async Task<CategoryList> List()
         {
             return await _categoryService.List();
         }

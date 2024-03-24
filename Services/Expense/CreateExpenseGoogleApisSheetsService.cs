@@ -1,19 +1,19 @@
 ﻿using Google.Apis.Sheets.v4;
 using Google.Apis.Sheets.v4.Data;
 using GuitoApi.Configuration;
-using GuitoApi.Model;
+using GuitoApi.DataTransferObjects.Input;
 using Microsoft.Extensions.Options;
 using System.Text.RegularExpressions;
 
-namespace GuitoApi.Services
+namespace GuitoApi.Services.Expense
 {
-    public class ExpenseGoogleApisSheetsService : IExpenseService
+    public class CreateExpenseGoogleApisSheetsService : ICreateExpenseService
     {
         private readonly AppConfigurationOptions _options;
         private readonly IGooglesheetsService _googlesheetsService;
         private readonly IUserIdentityResolver _userIdentityResolver;
 
-        public ExpenseGoogleApisSheetsService(
+        public CreateExpenseGoogleApisSheetsService(
             IOptions<AppConfigurationOptions> options,
             IGooglesheetsService googlesheetsService,
             IUserIdentityResolver userIdentityResolver)
@@ -23,10 +23,9 @@ namespace GuitoApi.Services
             _userIdentityResolver = userIdentityResolver;
         }
 
-        public async Task Create(Expense value)
+        public async Task Create(ExpenseCreate value)
         {
             SheetsService service = await _googlesheetsService.Get();
-            value.CreatorEmail = _userIdentityResolver.GetEmail();
             // Insert Expense data
             ValueRange valueRange = new ValueRange();
             valueRange.Values = new List<IList<object>> { new List<object>
@@ -37,7 +36,7 @@ namespace GuitoApi.Services
                 value.Amount,
                 value.Description,
                 value.Category,
-                value.CreatorEmail
+                _userIdentityResolver.GetEmail()
             } };
 
             SpreadsheetsResource.ValuesResource.AppendRequest appendRequest =
@@ -55,6 +54,7 @@ namespace GuitoApi.Services
 
             if (match.Success)
             {
+                
                 valueRange.Values = new List<IList<object>> { new List<object>
                 {
                     $"=YEAR(B{match.Value})", // Year
