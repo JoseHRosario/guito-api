@@ -24,7 +24,7 @@ namespace GuitoApi.Services.Expense
         {
             var output = new ExpenseListLatest();
             SheetsService service = await _googlesheetsService.Get();
-            
+
             var rowIndexFromRange = GetRowIndexFromRange();
             var lastRowIndex = await GetLatestRowIndex(service);
             lastRowIndex = lastRowIndex < rowIndexFromRange ? rowIndexFromRange : lastRowIndex;
@@ -40,9 +40,9 @@ namespace GuitoApi.Services.Expense
         private async Task<ExpenseListLatest> ListLatestExpenses(SheetsService service, int count, int? lastRowIndex, int rowIndexFromRange)
         {
             var output = new ExpenseListLatest();
-            
+
             var firstRowIndex = lastRowIndex - count + 1;
-            firstRowIndex= firstRowIndex < rowIndexFromRange ? rowIndexFromRange : firstRowIndex;
+            firstRowIndex = firstRowIndex < rowIndexFromRange ? rowIndexFromRange : firstRowIndex;
             var range = string.Format(_options.Googlesheets.ExpensesLatestRange, firstRowIndex, lastRowIndex);
             // Read values from the specified range
             SpreadsheetsResource.ValuesResource.GetRequest request =
@@ -62,11 +62,11 @@ namespace GuitoApi.Services.Expense
                     output.Expenses.Add(new ExpenseListLatestDetail
                     {
                         StoredOrder = i + 1,
-                        Date = values[i][0].ToString(),
-                        Amount = values[i][3].ToString(),
-                        Description = values[i][4].ToString(),
-                        Category = values[i][5].ToString(),
-                        CreatorEmail = values[i][6].ToString()
+                        Date = values[i]?[0]?.ToString(),
+                        Amount = values[i]?[3]?.ToString(),
+                        Description = values[i]?[4]?.ToString(),
+                        Category = values[i]?[5]?.ToString(),
+                        CreatorEmail = values[i].Count > 6 ? values[i]?[6]?.ToString() : string.Empty
                     });
                 }
             }
@@ -95,11 +95,11 @@ namespace GuitoApi.Services.Expense
             // Update Expense Year and Month
             // "ExpensesAux!B53:G53" = "53" - > Return the appended row index
             var match = Regex.Match(appendResponse.Updates.UpdatedRange, @"\d+$");
-            return match.Success ? int.Parse(match.Value) - 1  : null;
+            return match.Success ? int.Parse(match.Value) - 1 : null;
         }
 
         private int GetRowIndexFromRange()
-        {             
+        {
             // "ExpensesAux!B5" = "5" - > Return the row index
             var match = Regex.Match(_options.Googlesheets.ExpensesRange, @"\d+$");
             return match.Success ? int.Parse(match.Value) : 0;
