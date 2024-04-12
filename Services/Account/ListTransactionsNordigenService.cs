@@ -84,7 +84,7 @@ namespace GuitoApi.Services.Account
             }
             else
             {
-                _logger.LogError("Failed to get transactions from Nordigen");
+                _logger.LogError("Nordigen API Error. Status Code: {0}, Reason Phrase - {1} ", response.StatusCode, response.ReasonPhrase);
                 throw new Exception("Failed to get transactions from Nordigen");
             }
             return output;
