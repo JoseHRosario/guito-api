@@ -1,4 +1,20 @@
 
+### Match Expenses
+GET {{Api_HostAddress}}/Expense/match/
+Accept: */*
+Content-Type: application/json
+x-google-idtoken:{{Google_IdToken}}
+
+
+### List Account Transactions
+@DateFrom = 2024-04-01
+@DateTo = 2024-04-12
+GET {{Api_HostAddress}}/Account/transactions/?dateFrom={{DateFrom}}&dateTo={{DateTo}}
+Accept: */*
+Content-Type: application/json
+x-google-idtoken:{{Google_IdToken}}
+
+
 ### Create Expense
 POST {{Api_HostAddress}}/Expense/
 Accept: */*

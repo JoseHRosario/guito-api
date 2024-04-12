@@ -3,6 +3,7 @@ using Google.Apis.Sheets.v4.Data;
 using GuitoApi.Configuration;
 using GuitoApi.DataTransferObjects.Output;
 using Microsoft.Extensions.Options;
+using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace GuitoApi.Services.Expense
@@ -62,8 +63,8 @@ namespace GuitoApi.Services.Expense
                     output.Expenses.Add(new ExpenseListLatestDetail
                     {
                         StoredOrder = i + 1,
-                        Date = values[i]?[0]?.ToString(),
-                        Amount = values[i]?[3]?.ToString(),
+                        Date = ParseDate(values[i]?[0]),
+                        Amount = ParseDecimal(values[i]?[3]),
                         Description = values[i]?[4]?.ToString(),
                         Category = values[i]?[5]?.ToString(),
                         CreatorEmail = values[i].Count > 6 ? values[i]?[6]?.ToString() : string.Empty
@@ -71,6 +72,32 @@ namespace GuitoApi.Services.Expense
                 }
             }
             return output;
+        }
+
+        private DateTime? ParseDate(object? value)
+        {
+            if (value == null)
+                return null;
+
+            if (DateTime.TryParse(value.ToString(), CultureInfo.InvariantCulture, out DateTime result))
+            {
+                return result;
+            }
+            return null;
+        }
+
+        private decimal? ParseDecimal(object? value)
+        {
+            if (value == null)
+                return null;
+
+            var valueString = value.ToString().Replace("€", "");
+
+            if (Decimal.TryParse(valueString, out decimal result))
+            {
+                return result;
+            }
+            return null;
         }
 
         /// <summary>

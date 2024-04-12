@@ -1,0 +1,28 @@
+@Token  = eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzExNzM2NzM0LCJqdGkiOiJhZGIzYjc0ZDcwODA0Y2QyYTJlMDUyNTRlODIzYTA1OSIsInV1aWQiOiI5NjBkZjU4NC1mZDA5LTQ5NTEtOWI3Zi0wYjFiMWMyYjAzZWMiLCJhbGxvd2VkX2NpZHJzIjpbIjAuMC4wLjAvMCIsIjo6LzAiXX0.WJFigySkNUMb0y-Z8EG5xYPwhwEmD7AodCReRLuxV0c
+### Get Token
+POST {{Nordigen_HostAddress}}/token/new/
+Accept: application/json                   
+Content-Type: application/json
+
+{
+  "secret_id": "{{Nordigen_SecretId}}",
+  "secret_key" : "{{Nordigen_SecretKey}}"
+}
+
+
+### Get Agreements
+GET {{Nordigen_HostAddress}}/agreements/enduser/
+Accept: application/json                   
+Authorization: Bearer {{Token}}
+
+### Get Accounts
+GET {{Nordigen_HostAddress}}/requisitions/{{Nordigen_RequisitionId}}/
+Accept: application/json                   
+Authorization: Bearer {{Token}}
+
+
+### Get Transactions
+GET {{Nordigen_HostAddress}}/accounts/{{Nordigen_AccountId}}/transactions/
+Accept: application/json                   
+Authorization: Bearer {{Token}}
+

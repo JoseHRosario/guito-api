@@ -1,6 +1,7 @@
 using GuitoApi.Configuration;
 using GuitoApi.Middleware;
 using GuitoApi.Services;
+using GuitoApi.Services.Account;
 using GuitoApi.Services.Category;
 using GuitoApi.Services.Expense;
 using Microsoft.Extensions.Configuration;
@@ -24,7 +25,6 @@ namespace GuitoApi
                 .CreateLogger();
 
             // Add services to the container.
-            services.Configure<AppConfigurationOptions>(Configuration.GetSection(AppConfigurationOptions.AppConfiguration));
             services.AddControllers();
             // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
             services.AddEndpointsApiExplorer();
@@ -38,10 +38,14 @@ namespace GuitoApi
             );
             services.AddHealthChecks();
             services.AddHttpContextAccessor();
-
+            
+            services.Configure<AppConfigurationOptions>(Configuration.GetSection(AppConfigurationOptions.AppConfiguration));
             services.AddScoped<ICreateExpenseService, CreateExpenseGoogleApisSheetsService>();
+            services.AddScoped<IMatchExpensesService, MatchExpensesService>();
             services.AddScoped<IListLatestExpensesService, ListLatestExpensesGoogleApisSheetsService>();
             services.AddScoped<IListCategoryService, ListCategoryGoogleApisSheetsService>();
+            services.AddScoped<IListTransactionsService ,ListTransactionsNordigenService>();
+            //services.AddScoped<IListTransactionsService, ListTransactionsDummyService>();
             services.AddScoped<IGooglesheetsService, GooglesheetsService>();
             services.AddScoped<IUserIdentityResolver, UserIdentityResolver>();
             
@@ -71,9 +75,6 @@ namespace GuitoApi
 
                 endpoints.MapControllers();
             });
-
-
         }
-
     }
 }

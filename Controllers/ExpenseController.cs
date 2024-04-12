@@ -11,11 +11,15 @@ namespace GuitoApi.Controllers
     {
         private readonly ICreateExpenseService _createExpenseService;
         private readonly IListLatestExpensesService _listLatestExpensesService;
+        private readonly IMatchExpensesService _matchExpensesService;
 
-        public ExpenseController(ICreateExpenseService createExpenseService, IListLatestExpensesService listLatestExpensesService)
+        public ExpenseController(ICreateExpenseService createExpenseService, 
+            IListLatestExpensesService listLatestExpensesService, 
+            IMatchExpensesService matchExpensesService)
         {
             _createExpenseService = createExpenseService;
             _listLatestExpensesService = listLatestExpensesService;
+            _matchExpensesService = matchExpensesService;
         }
 
         [HttpPost]
@@ -28,6 +32,12 @@ namespace GuitoApi.Controllers
         public async Task<ExpenseListLatest> ListLatest(int count)
         {
             return await _listLatestExpensesService.ListLatest(count);
+        }
+
+        [HttpGet("match")]
+        public async Task<ExpenseMatchList> MatchExpenses()
+        {
+            return await _matchExpensesService.MatchExpenses();
         }
     }
 }

@@ -24,12 +24,6 @@ namespace GuitoApi.Middleware
             _options = options.Value;
         }
 
-        /// <summary>
-        /// Invokes the MiddleWare
-        /// </summary>
-        /// <param name="httpContext"></param>
-        /// <param name="identityContext">It is super important that this is given as parameter to method, not constructor</param>
-        /// <returns></returns>
         public async Task InvokeAsync(HttpContext httpContext)
         {
             try
@@ -57,7 +51,6 @@ namespace GuitoApi.Middleware
                         }
 
                         var identity = new ClaimsIdentity("Google");
-                        identity.AddClaim(new Claim(ClaimTypes.Name, payload.Name));
                         identity.AddClaim(new Claim(ClaimTypes.Email, payload.Email));
                         httpContext.User = new ClaimsPrincipal(identity); 
                     }
