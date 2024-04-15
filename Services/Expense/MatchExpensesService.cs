@@ -1,4 +1,5 @@
 ﻿using GuitoApi.DataTransferObjects.Output;
+using GuitoApi.Exceptions;
 using GuitoApi.Services.Account;
 using static System.Runtime.InteropServices.JavaScript.JSType;
 
@@ -20,7 +21,7 @@ namespace GuitoApi.Services.Expense
         public async Task<ExpenseMatchList> MatchExpenses()
         {
             var output = new ExpenseMatchList();
-            var transactionsTask = _listTransactionsService.List(null, null);
+            var transactionsTask = _listTransactionsService.List();
             var expensesTask = _listLatestExpensesService.ListLatest(10);
             await Task.WhenAll(transactionsTask, expensesTask);
             var transactions = transactionsTask.Result.Transactions.OrderByDescending(x => x.Date);

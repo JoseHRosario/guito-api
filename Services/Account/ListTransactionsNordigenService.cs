@@ -2,7 +2,9 @@
 using Google.Apis.Sheets.v4.Data;
 using GuitoApi.Configuration;
 using GuitoApi.DataTransferObjects.Output;
+using GuitoApi.Exceptions;
 using Microsoft.Extensions.Options;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 
@@ -85,7 +87,7 @@ namespace GuitoApi.Services.Account
             else
             {
                 _logger.LogError("Nordigen API Error. Status Code: {0}, Reason Phrase - {1} ", response.StatusCode, response.ReasonPhrase);
-                throw new Exception("Failed to get transactions from Nordigen");
+                throw new ProblemException((int)response.StatusCode, $"Nordigen API Error: {response.ReasonPhrase}");
             }
             return output;
         }

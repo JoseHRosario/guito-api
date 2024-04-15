@@ -90,9 +90,9 @@ namespace GuitoApi.Services.Expense
         {
             if (value == null)
                 return null;
-
+#pragma warning disable CS8602
             var valueString = value.ToString().Replace("€", "");
-
+#pragma warning restore CS8602
             if (Decimal.TryParse(valueString, out decimal result))
             {
                 return result;

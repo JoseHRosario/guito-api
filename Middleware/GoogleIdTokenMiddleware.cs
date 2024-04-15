@@ -26,54 +26,46 @@ namespace GuitoApi.Middleware
 
         public async Task InvokeAsync(HttpContext httpContext)
         {
-            try
+            if (_options.Authentication.ValidateIdToken)
             {
-                if (_options.Authentication.ValidateIdToken)
+                var identityToken = string.Empty;
+                try
                 {
-                    var identityToken = string.Empty;
-                    try
+                    identityToken = httpContext.Request.Headers[IdTokenHeaderKey];
+
+                    if (string.IsNullOrEmpty(identityToken))
                     {
-                        identityToken = httpContext.Request.Headers[IdTokenHeaderKey];
-
-                        if (string.IsNullOrEmpty(identityToken))
-                        {
-                            _logger.LogWarning($"Missing identityToken from http header. Returning:  {HttpStatusCode.Unauthorized}");
-                            await WriteErrorToResponse(httpContext, HttpStatusCode.Unauthorized, "Missing IdentityToken");
-                            return;
-                        }
-
-                        GoogleJsonWebSignature.Payload payload = await GoogleJsonWebSignature.ValidateAsync(identityToken);
-                        if (!IsValidToken(payload))
-                        {
-                            _logger.LogWarning("IdentityToken failed validation rules: {identityToken} ", identityToken);
-                            await WriteErrorToResponse(httpContext, HttpStatusCode.Unauthorized, "Invalid IdentityToken");
-                            return;
-                        }
-
-                        var identity = new ClaimsIdentity("Google");
-                        identity.AddClaim(new Claim(ClaimTypes.Email, payload.Email));
-                        httpContext.User = new ClaimsPrincipal(identity); 
-                    }
-                    catch (InvalidJwtException e)
-                    {
-                        _logger.LogWarning("IdentityToken failed validation, {Message}: {identityToken} ", e.Message, identityToken);
-                        await WriteErrorToResponse(httpContext, HttpStatusCode.Unauthorized, e.Message);
+                        _logger.LogWarning($"Missing identityToken from http header. Returning:  {HttpStatusCode.Unauthorized}");
+                        await WriteErrorToResponse(httpContext, HttpStatusCode.Unauthorized, "Missing IdentityToken");
                         return;
                     }
-                    catch (Exception)
+
+                    GoogleJsonWebSignature.Payload payload = await GoogleJsonWebSignature.ValidateAsync(identityToken);
+                    if (!IsValidToken(payload))
                     {
-                        _logger.LogWarning("IdentityToken failed validation: {identityToken} ", identityToken);
+                        _logger.LogWarning("IdentityToken failed validation rules: {identityToken} ", identityToken);
                         await WriteErrorToResponse(httpContext, HttpStatusCode.Unauthorized, "Invalid IdentityToken");
                         return;
                     }
+
+                    var identity = new ClaimsIdentity("Google");
+                    identity.AddClaim(new Claim(ClaimTypes.Email, payload.Email));
+                    httpContext.User = new ClaimsPrincipal(identity);
                 }
-                await _next(httpContext);
+                catch (InvalidJwtException e)
+                {
+                    _logger.LogWarning("IdentityToken failed validation, {Message}: {identityToken} ", e.Message, identityToken);
+                    await WriteErrorToResponse(httpContext, HttpStatusCode.Unauthorized, e.Message);
+                    return;
+                }
+                catch (Exception)
+                {
+                    _logger.LogWarning("IdentityToken failed validation: {identityToken} ", identityToken);
+                    await WriteErrorToResponse(httpContext, HttpStatusCode.Unauthorized, "Invalid IdentityToken");
+                    return;
+                }
             }
-            catch (Exception e)
-            {
-                Console.WriteLine(e);
-                throw;
-            }
+            await _next(httpContext);
         }
 
         private bool IsValidToken(GoogleJsonWebSignature.Payload payload)
