@@ -3,6 +3,7 @@ using Google.Apis.Sheets.v4.Data;
 using GuitoApi.Configuration;
 using GuitoApi.DataTransferObjects.Input;
 using Microsoft.Extensions.Options;
+using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace GuitoApi.Services.Expense
@@ -34,7 +35,7 @@ namespace GuitoApi.Services.Expense
                 "", // Year
                 "", // Month
                 value.Amount,
-                value.Description,
+                NormalizeDescription(value.Description),
                 value.Category,
                 _userIdentityResolver.GetEmail()
             } };
@@ -69,6 +70,11 @@ namespace GuitoApi.Services.Expense
                 updateRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
                 UpdateValuesResponse updateResponse = updateRequest.Execute();
             }
+        }
+
+        private string NormalizeDescription(string description)
+        {
+            return CultureInfo.CurrentCulture.TextInfo.ToTitleCase(description.ToLower()).Trim();
         }
     }
 }
