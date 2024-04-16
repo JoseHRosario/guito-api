@@ -43,9 +43,7 @@ namespace GuitoApi
                            .AllowAnyMethod()
                            .AllowAnyHeader();
                 });
-
-            }
-            );
+            });
             services.AddHealthChecks();
             services.AddHttpContextAccessor();
             services.AddExceptionHandler<ExceptionToProblemDetailsHandler>();
@@ -60,7 +58,6 @@ namespace GuitoApi
             //services.AddScoped<IListTransactionsService, ListTransactionsDummyService>();
             services.AddScoped<IGooglesheetsService, GooglesheetsService>();
             services.AddScoped<IUserIdentityResolver, UserIdentityResolver>();
-
         }
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env, ILoggerFactory loggerFactory)
@@ -83,7 +80,6 @@ namespace GuitoApi
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapHealthChecks("/healthz");
-
                 endpoints.MapControllers();
             });
         }
