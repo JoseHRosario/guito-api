@@ -49,6 +49,7 @@ namespace GuitoApi
             services.AddHealthChecks();
             services.AddHttpContextAccessor();
             services.AddExceptionHandler<ExceptionToProblemDetailsHandler>();
+            services.AddResponseCaching();
 
             services.Configure<AppConfigurationOptions>(Configuration.GetSection(AppConfigurationOptions.AppConfiguration));
             services.AddScoped<ICreateExpenseService, CreateExpenseGoogleApisSheetsService>();
@@ -78,6 +79,7 @@ namespace GuitoApi
             app.UseExceptionHandler();
             app.UseMiddleware<GoogleIdTokenMiddleware>();
             app.UseRouting();
+            app.UseResponseCaching();
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapHealthChecks("/healthz");

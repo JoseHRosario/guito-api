@@ -35,6 +35,7 @@ namespace GuitoApi.Controllers
         }
 
         [HttpGet("match")]
+        [ResponseCache(Duration = 120, Location = ResponseCacheLocation.Any)]
         public async Task<ExpenseMatchList> MatchExpenses()
         {
             return await _matchExpensesService.MatchExpenses();
