@@ -1,4 +1,15 @@
 
+### AI Extract Method 
+POST {{Api_HostAddress}}/AI/extract
+Accept: */*
+Content-Type: application/json
+x-google-idtoken:{{Google_IdToken}}
+
+{
+  "Language": "en-US",
+  "Prompt": "Create an expense for today with the amount of €10. It was spent on a cafeteria named Ho Ho."
+}
+
 ### Match Expenses
 GET {{Api_HostAddress}}/Expense/match/
 Accept: */*

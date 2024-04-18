@@ -3,6 +3,7 @@ using GuitoApi.Exceptions;
 using GuitoApi.Middleware;
 using GuitoApi.Services;
 using GuitoApi.Services.Account;
+using GuitoApi.Services.ArtificialIntelligence;
 using GuitoApi.Services.Category;
 using GuitoApi.Services.Expense;
 using Serilog;
@@ -55,8 +56,9 @@ namespace GuitoApi
             services.AddScoped<IListLatestExpensesService, ListLatestExpensesGoogleApisSheetsService>();
             services.AddScoped<IListCategoryService, ListCategoryGoogleApisSheetsService>();
             services.AddScoped<IListTransactionsService, ListTransactionsNordigenService>();
-            //services.AddScoped<IListTransactionsService, ListTransactionsDummyService>();
             services.AddScoped<IGooglesheetsService, GooglesheetsService>();
+            //services.AddScoped<IListTransactionsService, ListTransactionsDummyService>();
+            services.AddScoped<IExtractMethodService, ExtractMethodService>();
             services.AddScoped<IUserIdentityResolver, UserIdentityResolver>();
         }
 
