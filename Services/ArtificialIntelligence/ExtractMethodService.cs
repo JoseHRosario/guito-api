@@ -63,9 +63,9 @@ namespace GuitoApi.Services.ArtificialIntelligence
             var date = DateTime.Now.ToString("dddd dd MMMM yyyy", CultureInfo.CreateSpecificCulture(input.Language));
             var datePrompt = input.Language switch
             {
-                "en-US" => $"Take note that today is {date}",
-                "pt-PT" => $"Toma nota que hoje é {date}",
-                _ => $"Take note that today is {date}"
+                "en-US" => $"The expense date should be calculated based on the current date which is {date}",
+                "pt-PT" => $"A data da despesa deve ser calculada através da data actual que é {date}",
+                _ => $"The expense date should be calculated based on the current date which is {date}"
             };
             return $"{input.Prompt} {datePrompt}";
         }
