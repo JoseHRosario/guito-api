@@ -25,7 +25,7 @@ Lambda packaging happens in CI (Amazon.Lambda.Tools). Do not add local Lambda em
 
 ## Rules
 
-- **Secrets never enter the repo.** Google service-account keys, bank-provider credentials, API keys — they live in AWS Secrets Manager; local dev uses `appsettings.*.json` files that are gitignored.
+- **Secrets never enter the repo.** Google service-account keys, bank-provider credentials, API keys — they live in AWS Secrets Manager; local dev uses `appsettings.*.json` files that are gitignored. The Google service-account key is `src/google-spreadsheets.json` (gitignored; relative paths in config resolve against the project directory, since `dotnet run` runs from there).
 - **Respect the ADRs.** Google Sheets stays the datastore; auth is dual (Google PKCE for humans, `X-Api-Key` for agents); bank sync goes through the provider interface — do not bypass these without a new ADR.
 - **Sheets schema is frozen.** Never change spreadsheet layout, column order, or header names — the UI and existing data depend on them.
 - **Auth paths are separate.** Human (Google ID token) and agent (`X-Api-Key`) authorization are distinct authorizers; never merge or weaken them.
