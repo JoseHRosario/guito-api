@@ -68,9 +68,9 @@ public class FakeSheetsHttpHandler : HttpMessageHandler
                   "range": "ExpensesAux!B90:H99",
                   "majorDimension": "ROWS",
                   "values": [
-                    ["2026-09-20", "", "", "12.50", "Coffee", "Restaurants", "josehdorosario@gmail.com"],
-                    ["2026-09-19", "", "", "45.00", "Groceries", "Groceries", "josehdorosario@gmail.com"],
-                    ["2026-09-18", "", "", "8.90", "Bus card", "Transport", "josehdorosario@gmail.com"]
+                    ["2026-09-20", "", "", "12.50", "Coffee", "Restaurants", "user@example.com"],
+                    ["2026-09-19", "", "", "45.00", "Groceries", "Groceries", "user@example.com"],
+                    ["2026-09-18", "", "", "8.90", "Bus card", "Transport", "user@example.com"]
                   ]
                 }
                 """);

@@ -21,6 +21,8 @@ namespace GuitoApi
 
         public void ConfigureServices(IServiceCollection services)
         {
+            var environment = Configuration.GetValue<string>("ASPNETCORE_ENVIRONMENT") ?? Environments.Production;
+
             Log.Logger = new LoggerConfiguration()
                 .ReadFrom.Configuration(Configuration)
                 .CreateLogger();
@@ -56,7 +58,6 @@ namespace GuitoApi
             services.AddScoped<IListLatestExpensesService, ListLatestExpensesGoogleApisSheetsService>();
             services.AddScoped<IListCategoryService, ListCategoryGoogleApisSheetsService>();
             services.AddScoped<IListTransactionsService, ListTransactionsNordigenService>();
-            var environment = Configuration.GetValue<string>("ASPNETCORE_ENVIRONMENT") ?? Environments.Production;
             services.AddScoped<IGooglesheetsService, GooglesheetsService>();
             if (environment == Environments.Development)
             {
@@ -64,7 +65,6 @@ namespace GuitoApi
                 // without PSD2 credentials. PSD2 wiring returns in phase 1.
                 services.AddScoped<IListTransactionsService, ListTransactionsDummyService>();
             }
-            //services.AddScoped<IListTransactionsService, ListTransactionsDummyService>();
             services.AddScoped<IExtractMethodService, ExtractMethodService>();
             services.AddScoped<IUserIdentityResolver, UserIdentityResolver>();
         }
