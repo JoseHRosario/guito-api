@@ -56,7 +56,14 @@ namespace GuitoApi
             services.AddScoped<IListLatestExpensesService, ListLatestExpensesGoogleApisSheetsService>();
             services.AddScoped<IListCategoryService, ListCategoryGoogleApisSheetsService>();
             services.AddScoped<IListTransactionsService, ListTransactionsNordigenService>();
+            var environment = Configuration.GetValue<string>("ASPNETCORE_ENVIRONMENT") ?? Environments.Production;
             services.AddScoped<IGooglesheetsService, GooglesheetsService>();
+            if (environment == Environments.Development)
+            {
+                // Local dev: canned bank transactions so /expense/match works end-to-end
+                // without PSD2 credentials. PSD2 wiring returns in phase 1.
+                services.AddScoped<IListTransactionsService, ListTransactionsDummyService>();
+            }
             //services.AddScoped<IListTransactionsService, ListTransactionsDummyService>();
             services.AddScoped<IExtractMethodService, ExtractMethodService>();
             services.AddScoped<IUserIdentityResolver, UserIdentityResolver>();
