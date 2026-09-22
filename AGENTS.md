@@ -6,6 +6,12 @@ Guidance for AI coding agents working in this repo. Keep it small and current �
 
 Guito: personal expense-tracking API (.NET 10, AWS Lambda + API Gateway HTTP API) doing CRUD on a Google Spreadsheet. Glossary in [CONTEXT.md](CONTEXT.md); decisions in [docs/adr/](docs/adr/); current work plan in [docs/guito-revival.md](docs/guito-revival.md); active spec in [issue #1](https://github.com/JoseHRosario/guito-api/issues/1).
 
+## Layout
+
+- `src/` — API source (one project, `src/guito-api.csproj`)
+- `tst/` — test projects (`tst/guito-api.Tests`)
+- `docs/` — ADRs, revival plan
+
 ## Commands
 
 ```bash

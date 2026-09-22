@@ -16,7 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\guito-api.csproj" />
+    <ProjectReference Include="..\..\src\guito-api.csproj" />
   </ItemGroup>
 
 </Project>

@@ -8,11 +8,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Remove="guito-api.Tests\**" />
-    <None Remove="guito-api.Tests\**" />
-  </ItemGroup>
-
-  <ItemGroup>
     <None Include="Rest\http-client.env.json.user" />
   </ItemGroup>
 
