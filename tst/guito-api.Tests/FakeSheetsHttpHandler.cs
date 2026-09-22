@@ -12,10 +12,10 @@ public class FakeSheetsHttpHandler : HttpMessageHandler
     public List<string> AppendRanges { get; } = [];
     public List<string> UpdateRanges { get; } = [];
 
-    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var pathAndQuery = Uri.UnescapeDataString(request.RequestUri!.PathAndQuery);
-        var content = request.Content is null ? "" : ReadBody(request.Content, cancellationToken);
+        var content = request.Content is null ? "" : await ReadBody(request.Content, cancellationToken);
 
         if (pathAndQuery.Contains(":append", StringComparison.OrdinalIgnoreCase))
         {
@@ -76,16 +76,16 @@ public class FakeSheetsHttpHandler : HttpMessageHandler
                 """);
     }
 
-    private static string ReadBody(HttpContent httpContent, CancellationToken cancellationToken)
+    private static async Task<string> ReadBody(HttpContent httpContent, CancellationToken cancellationToken)
     {
-        var bytes = httpContent.ReadAsByteArrayAsync(cancellationToken).Result;
+        var bytes = await httpContent.ReadAsByteArrayAsync(cancellationToken);
         // The Google client gzips POST bodies (GZipEnabled defaults to true)
         if (bytes.Length > 2 && bytes[0] == 0x1f && bytes[1] == 0x8b)
         {
-            var stream = new MemoryStream(bytes);
-            using var gzip = new System.IO.Compression.GZipStream(stream, System.IO.Compression.CompressionMode.Decompress);
+            await using var stream = new MemoryStream(bytes);
+            await using var gzip = new System.IO.Compression.GZipStream(stream, System.IO.Compression.CompressionMode.Decompress);
             using var reader = new StreamReader(gzip);
-            return reader.ReadToEndAsync().Result;
+            return await reader.ReadToEndAsync();
         }
         return System.Text.Encoding.UTF8.GetString(bytes);
     }
@@ -102,9 +102,9 @@ public class FakeSheetsHttpHandler : HttpMessageHandler
         return null;
     }
 
-    private static Task<HttpResponseMessage> Json(int statusCode, string body) =>
-        Task.FromResult(new HttpResponseMessage((System.Net.HttpStatusCode)statusCode)
+    private static HttpResponseMessage Json(int statusCode, string body) =>
+        new((System.Net.HttpStatusCode)statusCode)
         {
             Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json")
-        });
+        };
 }

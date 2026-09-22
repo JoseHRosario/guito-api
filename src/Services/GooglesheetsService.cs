@@ -2,12 +2,15 @@
 using Google.Apis.Services;
 using Google.Apis.Sheets.v4;
 using GuitoApi.Configuration;
+using GuitoApi.Exceptions;
 using Microsoft.Extensions.Options;
 
 namespace GuitoApi.Services
 {
     public class GooglesheetsService : IGooglesheetsService
     {
+        public const string CredentialLocationFilesystem = "Filesystem";
+
         private readonly AppConfigurationOptions _options;
 
         public GooglesheetsService(IOptions<AppConfigurationOptions> options)
@@ -19,10 +22,17 @@ namespace GuitoApi.Services
         {
             GoogleCredential credential;
 
-            if (_options.Googlesheets.CredentialLocation == "Filesystem")
+            if (_options.Googlesheets.CredentialLocation == CredentialLocationFilesystem)
             {
                 string credentialsFilePath = _options.Googlesheets.FilePath;
-                using (var stream = new FileStream(credentialsFilePath, FileMode.Open, FileAccess.Read))
+                if (!File.Exists(credentialsFilePath))
+                {
+                    throw new ProblemException(
+                        message: $"Google service-account key not found at '{Path.GetFullPath(credentialsFilePath)}'. " +
+                                 "Place the key file (src/google-spreadsheets.json for local dev) or configure another credential location.");
+                }
+
+                await using (var stream = new FileStream(credentialsFilePath, FileMode.Open, FileAccess.Read))
                 {
                     credential = GoogleCredential.FromStream(stream)
                         .CreateScoped(SheetsService.Scope.Spreadsheets);
@@ -30,7 +40,9 @@ namespace GuitoApi.Services
             }
             else
             {
-                throw new InvalidOperationException("Invalid credential location");
+                throw new ProblemException(
+                    message: $"Unsupported Google credential location '{_options.Googlesheets.CredentialLocation}'. " +
+                             $"Supported values: {CredentialLocationFilesystem}.");
             }
 
             // Create Google Sheets API service.
