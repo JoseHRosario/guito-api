@@ -18,14 +18,17 @@ namespace GuitoApi.Exceptions
                 : 500;
 
             httpContext.Response.StatusCode = statusCode;
+            var isUnexpectedError = statusCode == 500 && exception is not ProblemException;
             return await _problemDetailsService.TryWriteAsync(new ProblemDetailsContext
             {
                 HttpContext = httpContext,
                 ProblemDetails =
                 {
                     Title = "An error has occurred",
-                    Detail = exception.Message,
-                    Type = exception.GetType().Name,
+                    Detail = isUnexpectedError
+                        ? "An unexpected error occurred. See server logs for details."
+                        : exception.Message,
+                    Type = isUnexpectedError ? "InternalError" : exception.GetType().Name,
                 },
                 Exception = exception
             });

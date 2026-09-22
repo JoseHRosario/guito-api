@@ -43,7 +43,7 @@ namespace GuitoApi.Middleware
                     GoogleJsonWebSignature.Payload payload = await GoogleJsonWebSignature.ValidateAsync(identityToken);
                     if (!IsValidToken(payload))
                     {
-                        _logger.LogWarning("IdentityToken failed validation rules: {identityToken} ", identityToken);
+                        _logger.LogWarning("IdentityToken failed validation rules for email: {email}", payload.Email);
                         await WriteErrorToResponse(httpContext, HttpStatusCode.Unauthorized, "Invalid IdentityToken");
                         return;
                     }
@@ -54,13 +54,13 @@ namespace GuitoApi.Middleware
                 }
                 catch (InvalidJwtException e)
                 {
-                    _logger.LogWarning("IdentityToken failed validation, {Message}: {identityToken} ", e.Message, identityToken);
+                    _logger.LogWarning("IdentityToken failed validation, {Message}", e.Message);
                     await WriteErrorToResponse(httpContext, HttpStatusCode.Unauthorized, e.Message);
                     return;
                 }
                 catch (Exception)
                 {
-                    _logger.LogWarning("IdentityToken failed validation: {identityToken} ", identityToken);
+                    _logger.LogWarning("IdentityToken failed validation");
                     await WriteErrorToResponse(httpContext, HttpStatusCode.Unauthorized, "Invalid IdentityToken");
                     return;
                 }

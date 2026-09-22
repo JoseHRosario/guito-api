@@ -58,6 +58,7 @@ namespace GuitoApi
             services.AddScoped<IListLatestExpensesService, ListLatestExpensesGoogleApisSheetsService>();
             services.AddScoped<IListCategoryService, ListCategoryGoogleApisSheetsService>();
             services.AddScoped<IListTransactionsService, ListTransactionsNordigenService>();
+            services.AddHttpClient(nameof(ListTransactionsNordigenService));
             services.AddScoped<IGooglesheetsService, GooglesheetsService>();
             if (environment == Environments.Development)
             {

@@ -1,7 +1,6 @@
 ﻿using GuitoApi.DataTransferObjects.Output;
 using GuitoApi.Exceptions;
 using GuitoApi.Services.Account;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace GuitoApi.Services.Expense
 {
