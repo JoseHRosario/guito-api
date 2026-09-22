@@ -1,6 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using GuitoApi.Configuration;
 using GuitoApi.DataTransferObjects.Input;
 using GuitoApi.DataTransferObjects.Output;
 
@@ -35,13 +38,17 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var sheets = _factory.SheetsHandler;
+        var options = _factory.Services.CreateScope().ServiceProvider
+            .GetRequiredService<IOptions<AppConfigurationOptions>>().Value;
+        var dateColumn = options.Googlesheets.ExpensesDateRange.Split('!')[0]; // e.g. ExpensesAux or Expenses
+
         var appendBody = sheets.AppendBodies.Last();
         Assert.Contains("Coffee Shop", appendBody);
         Assert.Contains("42.5", appendBody);
         Assert.Contains("Restaurants", appendBody);
         Assert.Contains("2026-09-21", appendBody);
         // The year/month formulas are written to the appended row
-        Assert.Contains($"ExpensesAux!C{FakeSheetsHttpHandler.NextRowIndex}", sheets.UpdateRanges.Last());
+        Assert.Contains($"{dateColumn}!C{FakeSheetsHttpHandler.NextRowIndex}", sheets.UpdateRanges.Last());
     }
 
     [Fact]
