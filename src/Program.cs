@@ -9,7 +9,7 @@ namespace GuitoApi
             Host.CreateDefaultBuilder(args)
                 .ConfigureWebHostDefaults(webBuilder =>
                 {
-                    webBuilder.UseIISIntegration().UseStartup<Startup>();
+                    webBuilder.UseStartup<Startup>();
                 })
                 .UseSerilog()
                 .Build()

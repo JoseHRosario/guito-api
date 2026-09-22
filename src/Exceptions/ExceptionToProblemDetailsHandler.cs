@@ -1,9 +1,7 @@
 ﻿using Microsoft.AspNetCore.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 
 namespace GuitoApi.Exceptions
 {
-    [SuppressMessage("Usage", "CS8602:Dereference of a possibly null reference")]
     public class ExceptionToProblemDetailsHandler : IExceptionHandler
     {
         private readonly IProblemDetailsService _problemDetailsService;
@@ -12,28 +10,28 @@ namespace GuitoApi.Exceptions
         {
             _problemDetailsService = problemDetailsService;
         }
-#pragma warning disable CS8602 
+
         public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
         {
-            int statusCode = 500;
-            exception ??= new Exception("An error as occured");
-            if (exception is ProblemException)
-            {
-                statusCode = (exception as ProblemException).HttpStatusCode;
-            }
+            var statusCode = exception is ProblemException problemException
+                ? problemException.HttpStatusCode
+                : 500;
+
             httpContext.Response.StatusCode = statusCode;
+            var isUnexpectedError = statusCode == 500 && exception is not ProblemException;
             return await _problemDetailsService.TryWriteAsync(new ProblemDetailsContext
             {
                 HttpContext = httpContext,
                 ProblemDetails =
                 {
-                    Title = "An error as occured",
-                    Detail = exception?.Message,
-                    Type = exception.GetType().Name,
+                    Title = "An error has occurred",
+                    Detail = isUnexpectedError
+                        ? "An unexpected error occurred. See server logs for details."
+                        : exception.Message,
+                    Type = isUnexpectedError ? "InternalError" : exception.GetType().Name,
                 },
                 Exception = exception
             });
         }
-#pragma warning restore CS8602 
     }
 }

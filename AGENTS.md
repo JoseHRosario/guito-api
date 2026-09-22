@@ -6,11 +6,17 @@ Guidance for AI coding agents working in this repo. Keep it small and current �
 
 Guito: personal expense-tracking API (.NET 10, AWS Lambda + API Gateway HTTP API) doing CRUD on a Google Spreadsheet. Glossary in [CONTEXT.md](CONTEXT.md); decisions in [docs/adr/](docs/adr/); current work plan in [docs/guito-revival.md](docs/guito-revival.md); active spec in [issue #1](https://github.com/JoseHRosario/guito-api/issues/1).
 
+## Layout
+
+- `src/` — API source (one project, `src/guito-api.csproj`)
+- `tst/` — test projects (`tst/guito-api.Tests`)
+- `docs/` — ADRs, revival plan
+
 ## Commands
 
 ```bash
 dotnet build          # build
-dotnet run            # local dev server (Kestrel) — plain dotnet run, no Lambda emulation
+dotnet run --project src  # local dev server (Kestrel) — plain dotnet run, no Lambda emulation
 dotnet test           # tests (external behavior only: HTTP boundary, provider seam)
 dotnet tool restore   # if Lambda tools are needed for packaging checks
 ```
@@ -19,7 +25,7 @@ Lambda packaging happens in CI (Amazon.Lambda.Tools). Do not add local Lambda em
 
 ## Rules
 
-- **Secrets never enter the repo.** Google service-account keys, bank-provider credentials, API keys — they live in AWS Secrets Manager; local dev uses `appsettings.*.json` files that are gitignored.
+- **Secrets never enter the repo.** Google service-account keys, bank-provider credentials, API keys — they live in AWS Secrets Manager; local dev uses `appsettings.*.json` files that are gitignored. The Google service-account key is `src/google-spreadsheets.json` (gitignored; relative paths in config resolve against the project directory, since `dotnet run` runs from there).
 - **Respect the ADRs.** Google Sheets stays the datastore; auth is dual (Google PKCE for humans, `X-Api-Key` for agents); bank sync goes through the provider interface — do not bypass these without a new ADR.
 - **Sheets schema is frozen.** Never change spreadsheet layout, column order, or header names — the UI and existing data depend on them.
 - **Auth paths are separate.** Human (Google ID token) and agent (`X-Api-Key`) authorization are distinct authorizers; never merge or weaken them.
@@ -27,6 +33,40 @@ Lambda packaging happens in CI (Amazon.Lambda.Tools). Do not add local Lambda em
 - **Workflow**: feature branch → PR → reviewed and merged by José. Never push directly to `master`.
 - **Commit attribution**: agent commits are authored as `Meireles <josehrosario@gmail.com>` (or amend with `--author`); José's commits stay under his name.
 - **AWS operations** assume the role `arn:aws:iam::497087877832:role/MinervaAIAgent` — never use the user identity directly.
+
+## Architecture patterns
+
+Request path: **Controller → Service → Data access**. Each layer has one job; follow it when adding endpoints.
+
+### Controller (`src/Controllers/`)
+- Thin: route + DTO in, DTO out, one line calling the service. No business logic, no Sheets calls, no mapping beyond what the DTO does.
+- `[ApiController]`, `[Route("[controller]")]` — URL is the lowercase controller name (`/expense`, `/category`, `/ai`, `/account`).
+- One operation per action; async all the way.
+
+### Service (`src/Services/<Domain>/`)
+- **One interface per operation**: `I<Action>Service` + `<Action>Service` in the same folder (e.g. `Services/Expense/ICreateExpenseService.cs` + `CreateExpenseGoogleApisSheetsService.cs`). Never grow a god-interface; a new operation is a new pair.
+- Services own the business logic and produce/consume `DataTransferObjects/Output` and `Input` DTOs. `Input/` = request bodies, `Output/` = response payloads.
+- Data-access backends are named by technology in the class name (`...GoogleApisSheetsService`, `...NordigenService`, `...DummyService`). The interface is the contract; the implementation is swappable (Nordigen ↔ dummy is how PSD2 stays behind a seam, ADR-0004).
+- Register the pair in `src/Startup.cs` `ConfigureServices`. Environment-specific overrides are explicit `if (environment == ...)` blocks with a comment saying why.
+
+### Data access (`src/Services/GooglesheetsService.cs`)
+- `IGooglesheetsService.Get()` returns an authenticated Google `SheetsService` — the credential/secrets concern is isolated here; everything else just calls it.
+- All ranges/spreadsheet ids come from `Configuration/` options (`AppConfigurationOptions`, populated from `appsettings*.json`); no hardcoded ids or ranges in services.
+
+### Errors
+- Services throw `Exceptions/ProblemException(statusCode, message)` for expected failures (e.g. the 501 extraction stub). `Exceptions/ExceptionToProblemDetailsHandler` converts them to RFC 7807 ProblemDetails — controllers never build error responses by hand.
+
+### Auth
+- `Middleware/GoogleIdTokenMiddleware` validates the `x-google-idtoken` header against `AppConfiguration:Authentication` (allowed logins + audience); it runs before routing. `ValidateIdToken: false` only in committed dev config. The `X-Api-Key` agent path arrives in phase 1 (ADR-0003) as a separate mechanism — don't unify them.
+
+### Testing (`tst/guito-api.Tests/`)
+- **Unit tests only — they run in CI.** No network, no credentials, no real Sheets access; the suite must pass on a machine with zero Google setup (verified by removing the key file). Anything needing the real spreadsheet or a bank provider is out of scope for this project.
+- External behavior only: HTTP boundary via `WebApplicationFactory<Program>` (`CustomWebApplicationFactory`), never internals.
+- The Sheets seam is faked at the HTTP level: `FakeGooglesheetsService` builds a real Google client whose transport is `FakeSheetsHttpHandler` (canned Sheets JSON responses + recorded writes). Tests therefore cover controller → service → real Google-client serialization, without network or credentials.
+- Compositions get replaced via DI in the test factory (`IListTransactionsService` → dummy), mirroring the service-seam pattern.
+
+### Configuration
+- All runtime knobs live in `Configuration/` options classes bound to the `AppConfiguration` section; environment files layer on top (`appsettings.Development.json` overrides locally, `appsettings.Production.json` for Lambda). No `IConfiguration` reads scattered in services.
 
 ## Style
 

@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/guito-api.csproj" />
+  </Folder>
+  <Folder Name="/tst/">
+    <Project Path="tst/guito-api.Tests/guito-api.Tests.csproj" />
+  </Folder>
+</Solution>

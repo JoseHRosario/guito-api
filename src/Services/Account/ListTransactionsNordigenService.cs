@@ -15,16 +15,20 @@ namespace GuitoApi.Services.Account
         private readonly AppConfigurationOptions _options;
         private readonly ILogger<ListTransactionsNordigenService> _logger;
         private readonly IGooglesheetsService _googlesheetsService;
-        private HttpClient? _client;
+        private readonly HttpClient _client;
 
         public ListTransactionsNordigenService(
             IOptions<AppConfigurationOptions> options,
             ILogger<ListTransactionsNordigenService> logger,
-            IGooglesheetsService googlesheetsService)
+            IGooglesheetsService googlesheetsService,
+            IHttpClientFactory httpClientFactory)
         {
             _options = options.Value;
             _logger = logger;
             _googlesheetsService = googlesheetsService;
+            _client = httpClientFactory.CreateClient(nameof(ListTransactionsNordigenService));
+            _client.DefaultRequestHeaders.Add("Accept", "application/json");
+            _client.BaseAddress = new Uri(_options.Nordigen.Endpoint);
         }
 
         public async Task<TransactionList> List(DateTime? dateFrom, DateTime? dateTo)
@@ -45,7 +49,7 @@ namespace GuitoApi.Services.Account
         private async Task<TransactionList> GetTransactions(string token, string accountId, DateTime? dateFrom, DateTime? dateTo)
         {
             var output = new TransactionList();
-            var client = GetHttpClient();
+            var client = _client;
             var path = $"accounts/{accountId}/transactions/?date_from={GetDateFrom(dateFrom)}&date_to={GetDateTo(dateTo)}";
             var request = new HttpRequestMessage(HttpMethod.Get, path);
             request.Headers.Add("Authorization", $"Bearer {token}");
@@ -107,7 +111,7 @@ namespace GuitoApi.Services.Account
         private async Task<string?> GetAccountId(string token)
         {
             string? accountId = null;
-            var client = GetHttpClient();
+            var client = _client;
             var requisitionId = await GetRequisitionId();
             var path = $"requisitions/{requisitionId}/";
             var request = new HttpRequestMessage(HttpMethod.Get, path);
@@ -135,7 +139,7 @@ namespace GuitoApi.Services.Account
             if (string.IsNullOrWhiteSpace(accountId) || !response.IsSuccessStatusCode)
             {
                 _logger.LogError("Failed to get account id from Nordigen");
-                throw new Exception("Failed to get account id from Nordigen");
+                throw new ProblemException((int)HttpStatusCode.BadGateway, "Failed to get account id from Nordigen");
             }
             return accountId;
         }
@@ -162,7 +166,7 @@ namespace GuitoApi.Services.Account
         private async Task<string?> GetAccountIban(string token, string accountId)
         {
             string? iban = null;
-            var client = GetHttpClient();
+            var client = _client;
             var path = $"accounts/{accountId}/";
             var request = new HttpRequestMessage(HttpMethod.Get, path);
             request.Headers.Add("Authorization", $"Bearer {token}");
@@ -178,7 +182,7 @@ namespace GuitoApi.Services.Account
             if (string.IsNullOrWhiteSpace(iban) || !response.IsSuccessStatusCode)
             {
                 _logger.LogError("Failed to get account iban from Nordigen");
-                throw new Exception("Failed to get account iban from Nordigen");
+                throw new ProblemException((int)HttpStatusCode.BadGateway, "Failed to get account iban from Nordigen");
             }
             return iban;
         }
@@ -187,7 +191,7 @@ namespace GuitoApi.Services.Account
         private async Task<string?> GetToken()
         {
             string? token = null;
-            var client = GetHttpClient();
+            var client = _client;
             var request = new HttpRequestMessage(HttpMethod.Post, "token/new/");
             var payload = new
             {
@@ -207,20 +211,10 @@ namespace GuitoApi.Services.Account
             if (string.IsNullOrWhiteSpace(token) || !response.IsSuccessStatusCode)
             {
                 _logger.LogError("Failed to get token from Nordigen");
-                throw new Exception("Failed to get token from Nordigen");
+                throw new ProblemException((int)HttpStatusCode.BadGateway, "Failed to get token from Nordigen");
             }
             return token;
         }
 
-        private HttpClient GetHttpClient()
-        {
-            if (_client != null)
-                return _client;
-
-            _client = new HttpClient();
-            _client.DefaultRequestHeaders.Add("Accept", "application/json");
-            _client.BaseAddress = new Uri(_options.Nordigen.Endpoint);
-            return _client;
-        }
     }
 }
