@@ -30,6 +30,15 @@ Personal expense-tracking API + webapp (built ~2023-2024) to control expenses an
 - **CI**: replace the legacy `master_guito-api.yml` with `deploy-api.yml` (Amazon.Lambda.Tools + OIDC); strip Azure packages (Serilog Azure sink, Azure.Storage) in Phase 1.
 - **AI extraction**: `AIController`/`ExtractMethodService` stubbed (501) in Phase 1 — the Azure OpenAI Assistants beta SDK is deprecated and won't survive the .NET 10 bump; OpenRouter port stays in Phase 3.
 
+## Implementation decisions (round 5)
+
+- **AWS layout**: same account (`497087877832`) and region **eu-west-1** as Minerva; all resources prefixed `guito-`, tagged `Project=Guito`.
+- **UI styling**: Tailwind + **daisyUI** themes mapped from the Figma tokens for the demo milestone; revisit if it fights the tokens.
+- **Sheets schema**: unchanged during the revival; redesign deferred to Phase 3+.
+- **Local dev**: plain `dotnet run` (Kestrel) against Sheets; Lambda packaging only in CI via Amazon.Lambda.Tools.
+- **CLI (Phase 3, outline only)**: consumed by AI agents and must be installable on hosts **without** the repo cloned (e.g. published `dotnet tool` / GitHub release) — final shape explicitly out of scope for now.
+- **Google Cloud**: fresh OAuth client (Web, PKCE, redirects to CloudFront domain + localhost) and a fresh service account with only the Guito spreadsheet shared to it.
+
 ## Phases
 
 0. **Verify the ground**: old GoCardless/Nordigen portal account still usable; Google Sheets service account works; API runs locally against Sheets.
