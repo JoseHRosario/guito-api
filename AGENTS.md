@@ -60,6 +60,7 @@ Request path: **Controller → Service → Data access**. Each layer has one job
 - `Middleware/GoogleIdTokenMiddleware` validates the `x-google-idtoken` header against `AppConfiguration:Authentication` (allowed logins + audience); it runs before routing. `ValidateIdToken: false` only in committed dev config. The `X-Api-Key` agent path arrives in phase 1 (ADR-0003) as a separate mechanism — don't unify them.
 
 ### Testing (`tst/guito-api.Tests/`)
+- **Unit tests only — they run in CI.** No network, no credentials, no real Sheets access; the suite must pass on a machine with zero Google setup (verified by removing the key file). Anything needing the real spreadsheet or a bank provider is out of scope for this project.
 - External behavior only: HTTP boundary via `WebApplicationFactory<Program>` (`CustomWebApplicationFactory`), never internals.
 - The Sheets seam is faked at the HTTP level: `FakeGooglesheetsService` builds a real Google client whose transport is `FakeSheetsHttpHandler` (canned Sheets JSON responses + recorded writes). Tests therefore cover controller → service → real Google-client serialization, without network or credentials.
 - Compositions get replaced via DI in the test factory (`IListTransactionsService` → dummy), mirroring the service-seam pattern.
