@@ -7,14 +7,13 @@
     <RootNamespace>GuitoApi</RootNamespace>
   </PropertyGroup>
 
-  <ItemGroup>
-    <None Include="Rest\http-client.env.json.user" />
-  </ItemGroup>
-
   <!-- Service-account key files are gitignored local-dev secrets; never ship them in the Lambda bundle (issue #3). -->
   <ItemGroup>
     <Content Remove="google-spreadsheets*.json" />
     <None Remove="google-spreadsheets*.json" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Rest\http-client.env.json.user" />
   </ItemGroup>
 
   <ItemGroup>
