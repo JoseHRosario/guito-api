@@ -14,7 +14,8 @@ Guito: personal expense-tracking API (.NET 10, AWS Lambda + API Gateway HTTP API
 
 - `src/guito-api/` — API source (one project, `src/guito-api/guito-api.csproj`)
 - `src/guito-api-authorizer/` — X-Api-Key Lambda authorizer (separate project/function)
-- `tst/` — test projects (`tst/guito-api.Tests`)
+- `tst/guito-api.Tests` — API tests
+- `tst/guito-api-authorizer.Tests` — authorizer tests
 - `docs/` — ADRs, revival plan
 
 ## Commands

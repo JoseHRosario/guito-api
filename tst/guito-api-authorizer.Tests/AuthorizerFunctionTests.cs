@@ -2,11 +2,12 @@ using Amazon.Lambda.APIGatewayEvents;
 using Amazon.Lambda.Core;
 using GuitoApiAuthorizer;
 
-namespace GuitoApi.Tests;
+namespace GuitoApiAuthorizer.Tests;
 
 /// <summary>
-/// Tests for the X-Api-Key Lambda authorizer (issues #3/#4): valid key → Allow,
-/// missing/unknown → Deny, keys-loader failure → Deny (fail closed).
+/// Unit tests for the X-Api-Key Lambda authorizer (issues #3/#4):
+/// valid key → Allow, missing/unknown → Deny, keys-loader failure → Deny (fail closed).
+/// The keys loader is faked via IKeysLoader — no network, no real secret access.
 /// </summary>
 public class AuthorizerFunctionTests
 {
@@ -91,6 +92,17 @@ public class AuthorizerFunctionTests
         var response = await function.FunctionHandler(Request(new Dictionary<string, string>
         {
             ["X-Api-Key"] = "intruder",
+        }), new TestContext());
+        Assert.Equal("Deny", response.PolicyDocument.Statement.Single().Effect);
+    }
+
+    [Fact]
+    public async Task Empty_keys_list_fails_closed()
+    {
+        var function = new Function(new FakeKeysLoader());
+        var response = await function.FunctionHandler(Request(new Dictionary<string, string>
+        {
+            ["X-Api-Key"] = "alpha",
         }), new TestContext());
         Assert.Equal("Deny", response.PolicyDocument.Statement.Single().Effect);
     }

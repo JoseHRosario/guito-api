@@ -6,4 +6,7 @@
   <Folder Name="/tst/">
     <Project Path="tst/guito-api.Tests/guito-api.Tests.csproj" />
   </Folder>
+  <Folder Name="/tst/authorizer-tests/">
+    <Project Path="tst/guito-api-authorizer.Tests/guito-api-authorizer.Tests.csproj" />
+  </Folder>
 </Solution>
