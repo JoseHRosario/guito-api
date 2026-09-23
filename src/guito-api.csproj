@@ -19,6 +19,12 @@
     <EmbeddedResource Remove="guito-api-authorizer/**" />
   </ItemGroup>
 
+  <!-- Service-account key files are gitignored local-dev secrets; never ship them in the Lambda bundle (issue #3). -->
+  <ItemGroup>
+    <Content Remove="google-spreadsheets*.json" />
+    <None Remove="google-spreadsheets*.json" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Amazon.Lambda.AspNetCoreServer" Version="9.0.0" />
     <PackageReference Include="AWSSDK.SecretsManager" Version="3.7.400" />
