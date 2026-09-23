@@ -55,8 +55,7 @@ namespace GuitoApiAuthorizer
             }
 
             if (!keys.Any(k => FixedTimeEquals(k, provided)))
-            {
-                context.Logger.LogWarning("Unknown X-Api-Key: Deny");
+            {                context.Logger.LogWarning("Unknown X-Api-Key: ***");
                 return Deny(methodArn);
             }
 
