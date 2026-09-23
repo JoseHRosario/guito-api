@@ -20,6 +20,10 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
             var sheets = SheetsHandler;
             Replace<IGooglesheetsService>(services, sp => new FakeGooglesheetsService(sheets));
             Replace<IListTransactionsService>(services, _ => new ListTransactionsDummyService());
+            // Canned secrets: the repo has no real ones (gitignored by design).
+            var descriptor = services.Single(d => d.ServiceType == typeof(ISecretsProvider));
+            services.Remove(descriptor);
+            services.AddSingleton<ISecretsProvider>(new FakeSecretsProvider());
         });
     }
 

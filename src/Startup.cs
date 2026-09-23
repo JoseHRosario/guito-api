@@ -53,6 +53,21 @@ namespace GuitoApi
             services.AddResponseCaching();
 
             services.Configure<AppConfigurationOptions>(Configuration.GetSection(AppConfigurationOptions.AppConfiguration));
+
+            // Runtime secrets (issue #3): Secrets Manager in production, gitignored local file in dev.
+            var secretsLocation = Configuration.GetValue<string>("AppConfiguration:Secrets:Location");
+            if (secretsLocation == "Aws")
+            {
+                var secretName = Configuration.GetValue<string>("AppConfiguration:Secrets:SecretName")
+                    ?? throw new InvalidOperationException("AppConfiguration:Secrets:SecretName is required when Secrets:Location is Aws");
+                services.AddSingleton<ISecretsProvider>(new AwsSecretsProvider(secretName));
+            }
+            else
+            {
+                var secretsFilePath = Configuration.GetValue<string>("AppConfiguration:Secrets:FilePath") ?? "secrets.local.json";
+                services.AddSingleton<ISecretsProvider>(new FileSecretsProvider(secretsFilePath));
+            }
+
             services.AddScoped<ICreateExpenseService, CreateExpenseGoogleApisSheetsService>();
             services.AddScoped<IMatchExpensesService, MatchExpensesService>();
             services.AddScoped<IListLatestExpensesService, ListLatestExpensesGoogleApisSheetsService>();
@@ -84,6 +99,8 @@ namespace GuitoApi
                 app.UseCors("AllowOnlyWebApp");
             }
             app.UseExceptionHandler();
+            // Agent key path (ADR-0003) first: X-Api-Key gate; independent of the Google token path.
+            app.UseMiddleware<ApiKeyMiddleware>();
             app.UseMiddleware<GoogleIdTokenMiddleware>();
             app.UseRouting();
             app.UseResponseCaching();
