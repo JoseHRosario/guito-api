@@ -11,19 +11,20 @@ Google (OAuth PKCE)          CLI / AI agents (X-Api-Key)
         │                              │
         ▼                              ▼
    ┌──────────────────────────────────────────┐
-   │  API Gateway HTTP API (authorizers)      │
-   │          │                               │
+   │  API Gateway HTTP API                    │
+   │  guito-key-authorizer (REQUEST, X-Api-Key)│──▶ AWS Secrets Manager
+   │          │ (allowed)                     │
    │          ▼                               │
-   │  Lambda — Guito API (.NET 10, arm64)     │──▶ AWS Secrets Manager
+   │  Lambda — guito-api (.NET 10, arm64)     │──▶ AWS Secrets Manager
    │          │                               │
    └──────────┼───────────────────────────────┘
               ▼
      Google Sheets (datastore)          PSD2 provider (GoCardless / Enable Banking)
 ```
 
-- **Runtime**: .NET 10 on AWS Lambda (managed dotnet10 runtime, arm64, eu-west-1) behind API Gateway HTTP API; logs in CloudWatch.
+- **Runtime**: .NET 10 on AWS Lambda (managed dotnet10 runtime, arm64, eu-west-1) behind API Gateway HTTP API; logs in CloudWatch. Two functions: `guito-api` (the app) and `guito-api-authorizer` (the X-Api-Key gate).
 - **Datastore**: a Google Spreadsheet, accessed with a dedicated service account — no database, no migration.
-- **Auth**: dual scheme — Google ID tokens for the UI (OAuth PKCE), a personal `X-Api-Key` for CLI/AI agents; both validated by separate API Gateway authorizers.
+- **Auth**: dual scheme — Google ID tokens for the UI (OAuth PKCE, planned authorizer per #4) and a personal `X-Api-Key` for CLI/AI agents. The agent path is enforced twice, independently: an API Gateway REQUEST authorizer (`guito-api-authorizer`, IAM-policy Allow/Deny, fail-closed) at the edge, and `ApiKeyMiddleware` inside the API as defense-in-depth.
 - **Bank sync**: PSD2 transaction retrieval behind `IListTransactionsService` — GoCardless Bank Account Data first, Enable Banking free tier as fallback; consents are re-authenticated manually (~90 days).
 - **AI extraction**: endpoint stubbed (501) during the revival; a new implementation over OpenRouter is planned.
 
@@ -40,7 +41,7 @@ Configuration comes from `appsettings.{Environment}.json` plus environment varia
 
 ## Deployment
 
-Deployed by GitHub Actions to Lambda via OIDC role assumption (no long-lived AWS keys in GitHub). Resources are prefixed `guito-` and tagged `Project=Guito`, account 497087877832, region eu-west-1.
+Deployed by GitHub Actions to Lambda via OIDC role assumption (no long-lived AWS keys in GitHub). Two functions deploy independently from their own project folders: `src/guito-api` → `guito-api` (handler `guito-api::GuitoApi.LambdaEntryPoint::FunctionHandlerAsync`) and `src/guito-api-authorizer` → `guito-api-authorizer` (REQUEST authorizer for `guito-key-authorizer`, IAM-policy responses, TTL 0). Resources are prefixed `guito-` and tagged `Project=Guito`, account 497087877832, region eu-west-1. `deploy/deploy.sh` reproduces the full stack locally (secret, IAM, functions, HTTP API, routes, access logs).
 
 ## Contributing
 

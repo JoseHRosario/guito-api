@@ -61,8 +61,18 @@ Request path: **Controller → Service → Data access**. Each layer has one job
 ### Errors
 - Services throw `Exceptions/ProblemException(statusCode, message)` for expected failures (e.g. the 501 extraction stub). `Exceptions/ExceptionToProblemDetailsHandler` converts them to RFC 7807 ProblemDetails — controllers never build error responses by hand.
 
-### Auth
-- `Middleware/GoogleIdTokenMiddleware` validates the `x-google-idtoken` header against `AppConfiguration:Authentication` (allowed logins + audience); it runs before routing. `ValidateIdToken: false` only in committed dev config. The `X-Api-Key` agent path arrives in phase 1 (ADR-0003) as a separate mechanism — don't unify them.
+### Auth (`src/guito-api/Middleware/`)
+- **Two independent paths — never merge or weaken them (ADR-0003):**
+  - **Agent path**: the API Gateway REQUEST authorizer (`guito-key-authorizer` → `src/guito-api-authorizer`) validates `X-Api-Key` at the edge and returns an IAM Allow/Deny policy, fail-closed, TTL 0. `ApiKeyMiddleware` (`src/guito-api/Middleware/`) repeats the check inside the API as defense-in-depth: valid key sets `HttpContext.Items[ApiKeyMiddleware.AgentAuthedKey]`, which makes `GoogleIdTokenMiddleware` skip only the Google-token check (and vice versa — a Google-token request still needs to pass nothing else; the paths stay independent).
+  - **Human path**: `GoogleIdTokenMiddleware` validates the `x-google-idtoken` header against `AppConfiguration:Authentication` (allowed logins + audience). A dedicated Google authorizer function is planned (#4).
+  - `/healthz` is public in both gates; its single definition is `ApiKeyMiddleware.PublicPathKey`.
+- Both paths read the same secret `guito-api/prod`; `SecretsPayload` (`src/guito-api/Configuration/Secrets.cs`) is the contract both sides rely on — changing it requires deploying both functions.
+
+### Authorizer (`src/guito-api-authorizer/`)
+- Separate Lambda project/function, invoked by API Gateway before any route. Deploys independently from `src/guito-api/` (separate GitHub Actions job/zip).
+- Keys come from `SecretsManagerKeysLoader` (same secret, 5-min cache); any load failure → Deny. Key comparison is constant-time (`FixedTimeEquals`).
+- Returns IAM-policy responses (not simple responses) — the authorizer is wired with `EnableSimpleResponses=false`.
+- Keep it small: no Sheets, no business logic, no API dependencies. Shared crypto/key logic between API and authorizer is duplicated on purpose (separate assemblies); note it if you change one.
 
 ### Testing (`tst/guito-api.Tests/`)
 - **Unit tests only — they run in CI.** No network, no credentials, no real Sheets access; the suite must pass on a machine with zero Google setup (verified by removing the key file). Anything needing the real spreadsheet or a bank provider is out of scope for this project.
