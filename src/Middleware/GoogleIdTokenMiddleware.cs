@@ -28,6 +28,15 @@ namespace GuitoApi.Middleware
         {
             if (_options.Authentication.ValidateIdToken)
             {
+                // /healthz stays public (matches ApiKeyMiddleware); a request that
+                // already passed the agent key gate does not need a Google token.
+                if (httpContext.Request.Path.StartsWithSegments("/healthz") ||
+                    httpContext.Items.ContainsKey(ApiKeyMiddleware.AgentAuthedKey))
+                {
+                    await _next(httpContext);
+                    return;
+                }
+
                 var identityToken = string.Empty;
                 try
                 {

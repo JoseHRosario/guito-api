@@ -93,6 +93,39 @@ public class ApiKeyBoundaryTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
+    public async Task Valid_agent_key_bypasses_google_idtoken_gate()
+    {
+        // Paths are independent (ADR-0003): a validated agent key must reach
+        // the endpoint without a Google ID token, even when ValidateIdToken=true.
+        var client = _factory.WithWebHostBuilder(b =>
+            b.ConfigureAppConfiguration((_, cfg) => cfg.AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["AppConfiguration:Authentication:ValidateApiKey"] = true.ToString(),
+                    ["AppConfiguration:Authentication:ValidateIdToken"] = true.ToString(),
+                }))).CreateClient();
+        client.DefaultRequestHeaders.Add("X-Api-Key", StoredValue);
+
+        var response = await client.GetAsync("/expense/latest/1");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Healthz_is_public_even_with_google_gate_on()
+    {
+        var client = _factory.WithWebHostBuilder(b =>
+            b.ConfigureAppConfiguration((_, cfg) => cfg.AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["AppConfiguration:Authentication:ValidateApiKey"] = true.ToString(),
+                    ["AppConfiguration:Authentication:ValidateIdToken"] = true.ToString(),
+                }))).CreateClient();
+
+        var response = await client.GetAsync("/healthz");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Secrets_failure_is_500_not_bypass()
     {
         var client = _factory.WithWebHostBuilder(b =>

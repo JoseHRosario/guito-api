@@ -16,6 +16,9 @@ namespace GuitoApi.Middleware
         public const string ApiKeyHeaderKey = "X-Api-Key";
         private const string PublicPath = "/healthz";
 
+        /// <summary>HttpContext.Items marker set after a validated agent key.</summary>
+        public const string AgentAuthedKey = "AgentAuthed";
+
         private readonly RequestDelegate _next;
         private readonly ILogger<ApiKeyMiddleware> _logger;
         private readonly AppConfigurationOptions _options;
@@ -57,6 +60,10 @@ namespace GuitoApi.Middleware
                     await WriteErrorToResponse(httpContext, HttpStatusCode.Unauthorized, "Invalid API key");
                     return;
                 }
+
+                // Paths are independent (ADR-0003): a validated agent key must not
+                // also have to pass the Google ID token gate downstream.
+                httpContext.Items[AgentAuthedKey] = true;
             }
             await _next(httpContext);
         }
