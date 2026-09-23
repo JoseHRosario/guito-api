@@ -12,7 +12,8 @@ Guito: personal expense-tracking API (.NET 10, AWS Lambda + API Gateway HTTP API
 
 ## Layout
 
-- `src/` — API source (one project, `src/guito-api.csproj`)
+- `src/guito-api/` — API source (one project, `src/guito-api/guito-api.csproj`)
+- `src/guito-api-authorizer/` — X-Api-Key Lambda authorizer (separate project/function)
 - `tst/` — test projects (`tst/guito-api.Tests`)
 - `docs/` — ADRs, revival plan
 
@@ -20,7 +21,7 @@ Guito: personal expense-tracking API (.NET 10, AWS Lambda + API Gateway HTTP API
 
 ```bash
 dotnet build          # build
-dotnet run --project src  # local dev server (Kestrel) — plain dotnet run, no Lambda emulation
+dotnet run --project src/guito-api  # local dev server (Kestrel) — plain dotnet run, no Lambda emulation
 dotnet test           # tests (external behavior only: HTTP boundary, provider seam)
 dotnet tool restore   # if Lambda tools are needed for packaging checks
 ```
@@ -29,7 +30,7 @@ Lambda packaging happens in CI (Amazon.Lambda.Tools). Do not add local Lambda em
 
 ## Rules
 
-- **Secrets never enter the repo.** Google service-account keys, bank-provider credentials, API keys — they live in AWS Secrets Manager; local dev uses `appsettings.*.json` files that are gitignored. The Google service-account key is `src/google-spreadsheets.json` (gitignored; relative paths in config resolve against the project directory, since `dotnet run` runs from there).
+- **Secrets never enter the repo.** Google service-account keys, bank-provider credentials, API keys — they live in AWS Secrets Manager; local dev uses `appsettings.*.json` files that are gitignored. The Google service-account key is `src/guito-api/google-spreadsheets.json` (gitignored; relative paths in config resolve against the project directory, since `dotnet run` runs from there).
 - **Respect the ADRs.** Google Sheets stays the datastore; auth is dual (Google PKCE for humans, `X-Api-Key` for agents); bank sync goes through the provider interface — do not bypass these without a new ADR.
 - **Sheets schema is frozen.** Never change spreadsheet layout, column order, or header names — the UI and existing data depend on them.
 - **Auth paths are separate.** Human (Google ID token) and agent (`X-Api-Key`) authorization are distinct authorizers; never merge or weaken them.
@@ -42,18 +43,18 @@ Lambda packaging happens in CI (Amazon.Lambda.Tools). Do not add local Lambda em
 
 Request path: **Controller → Service → Data access**. Each layer has one job; follow it when adding endpoints.
 
-### Controller (`src/Controllers/`)
+### Controller (`src/guito-api/Controllers/`)
 - Thin: route + DTO in, DTO out, one line calling the service. No business logic, no Sheets calls, no mapping beyond what the DTO does.
 - `[ApiController]`, `[Route("[controller]")]` — URL is the lowercase controller name (`/expense`, `/category`, `/ai`, `/account`).
 - One operation per action; async all the way.
 
-### Service (`src/Services/<Domain>/`)
+### Service (`src/guito-api/Services/<Domain>/`)
 - **One interface per operation**: `I<Action>Service` + `<Action>Service` in the same folder (e.g. `Services/Expense/ICreateExpenseService.cs` + `CreateExpenseGoogleApisSheetsService.cs`). Never grow a god-interface; a new operation is a new pair.
 - Services own the business logic and produce/consume `DataTransferObjects/Output` and `Input` DTOs. `Input/` = request bodies, `Output/` = response payloads.
 - Data-access backends are named by technology in the class name (`...GoogleApisSheetsService`, `...NordigenService`, `...DummyService`). The interface is the contract; the implementation is swappable (Nordigen ↔ dummy is how PSD2 stays behind a seam, ADR-0004).
-- Register the pair in `src/Startup.cs` `ConfigureServices`. Environment-specific overrides are explicit `if (environment == ...)` blocks with a comment saying why.
+- Register the pair in `src/guito-api/Startup.cs` `ConfigureServices`. Environment-specific overrides are explicit `if (environment == ...)` blocks with a comment saying why.
 
-### Data access (`src/Services/GooglesheetsService.cs`)
+### Data access (`src/guito-api/Services/GooglesheetsService.cs`)
 - `IGooglesheetsService.Get()` returns an authenticated Google `SheetsService` — the credential/secrets concern is isolated here; everything else just calls it.
 - All ranges/spreadsheet ids come from `Configuration/` options (`AppConfigurationOptions`, populated from `appsettings*.json`); no hardcoded ids or ranges in services.
 

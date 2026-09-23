@@ -11,14 +11,6 @@
     <None Include="Rest\http-client.env.json.user" />
   </ItemGroup>
 
-  <!-- The authorizer is a separate Lambda project nested here; exclude it from this build. -->
-  <ItemGroup>
-    <Compile Remove="guito-api-authorizer/**" />
-    <None Remove="guito-api-authorizer/**" />
-    <Content Remove="guito-api-authorizer/**" />
-    <EmbeddedResource Remove="guito-api-authorizer/**" />
-  </ItemGroup>
-
   <!-- Service-account key files are gitignored local-dev secrets; never ship them in the Lambda bundle (issue #3). -->
   <ItemGroup>
     <Content Remove="google-spreadsheets*.json" />

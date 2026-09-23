@@ -32,10 +32,9 @@ aws --region "$REGION" iam put-role-policy --role-name "$ROLE" --policy-name gui
 
 # --- 2. Package (x64 by default; pass arm64 to match arm64 functions) --------
 ARCH=${ARCH:-x64}
-dotnet publish src -c Release -f net10.0 -r "linux-$ARCH" --self-contained false -o /tmp/pub-api
+dotnet publish src/guito-api -c Release -f net10.0 -r "linux-$ARCH" --self-contained false -o /tmp/pub-api
 dotnet publish src/guito-api-authorizer -c Release -f net10.0 -r "linux-$ARCH" --self-contained false -o /tmp/pub-auth
 ( cd /tmp/pub-api && zip -qr /tmp/guito-api.zip . )
-( cd src/guito-api-authorizer && dotnet publish . -c Release -f net10.0 -r "linux-$ARCH" --self-contained false -o /tmp/pub-auth )
 ( cd /tmp/pub-auth && rm -f /tmp/guito-authorizer.zip && zip -qr /tmp/guito-authorizer.zip . )
 
 # --- 3. Functions -------------------------------------------------------------
