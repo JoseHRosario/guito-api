@@ -2,6 +2,10 @@
 
 Guidance for AI coding agents working in this repo. Keep it small and current — details live in the linked docs, not here.
 
+## Where the code lives
+
+**Canonical working tree on the host filesystem: `/d/srv/projects/guito-api`** — agents must use this path for all work (build, test, commit, push, pull). Don't clone elsewhere.
+
 ## What this project is
 
 Guito: personal expense-tracking API (.NET 10, AWS Lambda + API Gateway HTTP API) doing CRUD on a Google Spreadsheet. Glossary in [CONTEXT.md](CONTEXT.md); decisions in [docs/adr/](docs/adr/); current work plan in [docs/guito-revival.md](docs/guito-revival.md); active spec in [issue #1](https://github.com/JoseHRosario/guito-api/issues/1).
