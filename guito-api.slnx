@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/guito-api.csproj" />
+    <Project Path="src/guito-api-authorizer/guito-api-authorizer.csproj" />
   </Folder>
   <Folder Name="/tst/">
     <Project Path="tst/guito-api.Tests/guito-api.Tests.csproj" />

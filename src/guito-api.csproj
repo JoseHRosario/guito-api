@@ -11,6 +11,14 @@
     <None Include="Rest\http-client.env.json.user" />
   </ItemGroup>
 
+  <!-- The authorizer is a separate Lambda project nested here; exclude it from this build. -->
+  <ItemGroup>
+    <Compile Remove="guito-api-authorizer/**" />
+    <None Remove="guito-api-authorizer/**" />
+    <Content Remove="guito-api-authorizer/**" />
+    <EmbeddedResource Remove="guito-api-authorizer/**" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Amazon.Lambda.AspNetCoreServer" Version="9.0.0" />
     <PackageReference Include="AWSSDK.SecretsManager" Version="3.7.400" />
