@@ -68,11 +68,6 @@ namespace GuitoApi
                 services.AddSingleton<ISecretsProvider>(new FileSecretsProvider(secretsFilePath));
             }
 
-            // In Secrets mode the spreadsheet id also comes from the secret (issue #3).
-            services.AddSingleton<
-                Microsoft.Extensions.Options.IPostConfigureOptions<AppConfigurationOptions>,
-                Configuration.SecretsBackedOptionsPostConfigure>();
-
             services.AddScoped<ICreateExpenseService, CreateExpenseGoogleApisSheetsService>();
             services.AddScoped<IMatchExpensesService, MatchExpensesService>();
             services.AddScoped<IListLatestExpensesService, ListLatestExpensesGoogleApisSheetsService>();

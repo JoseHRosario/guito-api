@@ -11,9 +11,6 @@ namespace GuitoApi.Configuration
         /// <summary>Full Google service-account key (client_email, private_key, ...).</summary>
         public JsonDocument GoogleServiceAccount { get; set; } = JsonDocument.Parse("{}");
 
-        /// <summary>Production spreadsheet id the service account is shared with.</summary>
-        public string SpreadsheetId { get; set; } = string.Empty;
-
         /// <summary>Long-lived agent keys; a match on X-Api-Key authorizes the request.</summary>
         public List<string> ApiKeys { get; set; } = [];
     }
