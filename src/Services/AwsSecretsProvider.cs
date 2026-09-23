@@ -25,7 +25,8 @@ namespace GuitoApi.Services
             if (_cached is not null && DateTimeOffset.UtcNow - _cachedAt < CacheTtl)
                 return _cached;
 
-            using var client = new AmazonSecretsManagerClient(Amazon.RegionEndpoint.EUWest1);
+            // SDK falls back to the AWS_REGION env var when no region is given (set on the Lambda function).
+            using var client = new AmazonSecretsManagerClient(new AmazonSecretsManagerConfig());
             var response = await client.GetSecretValueAsync(new GetSecretValueRequest
             {
                 SecretId = _secretName,

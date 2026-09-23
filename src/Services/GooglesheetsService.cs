@@ -45,8 +45,9 @@ namespace GuitoApi.Services
             else if (_options.Googlesheets.CredentialLocation == CredentialLocationSecrets)
             {
                 var payload = await _secretsProvider.GetAsync();
-                using var document = payload.GoogleServiceAccount;
-                var json = document.RootElement.GetRawText();
+                // payload owns the JsonDocument (cached in production): read raw text only,
+                // never dispose it here or the next cached call throws ObjectDisposedException.
+                var json = payload.GoogleServiceAccount.RootElement.GetRawText();
                 using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
                 credential = GoogleCredential.FromStream(stream)
                     .CreateScoped(SheetsService.Scope.Spreadsheets);

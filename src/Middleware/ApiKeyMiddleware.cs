@@ -16,6 +16,9 @@ namespace GuitoApi.Middleware
         public const string ApiKeyHeaderKey = "X-Api-Key";
         private const string PublicPath = "/healthz";
 
+        /// <summary>Public path exempt from the auth gates (owned by ApiKeyMiddleware).</summary>
+        public const string PublicPathKey = PublicPath;
+
         /// <summary>HttpContext.Items marker set after a validated agent key.</summary>
         public const string AgentAuthedKey = "AgentAuthed";
 

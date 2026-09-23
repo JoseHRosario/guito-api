@@ -32,7 +32,7 @@ namespace GuitoApiAuthorizer
             if (_cached is not null && DateTimeOffset.UtcNow - _cachedAt < CacheTtl)
                 return _cached;
 
-            using var client = new AmazonSecretsManagerClient(Amazon.RegionEndpoint.EUWest1);
+            using var client = new AmazonSecretsManagerClient(new AmazonSecretsManagerConfig()); // region from AWS_REGION env var
             var response = await client.GetSecretValueAsync(new GetSecretValueRequest
             {
                 SecretId = _secretName,
