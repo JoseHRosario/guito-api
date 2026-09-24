@@ -15,7 +15,7 @@ namespace GuitoApiAuthorizer.AgentKey
         private IReadOnlyList<string>? _cached;
         private DateTimeOffset _cachedAt;
 
-        public async Task<IReadOnlyList<string>> LoadAsync()
+        public async Task<IReadOnlyList<string>> LoadAsync(CancellationToken cancellationToken = default)
         {
             if (_cached is not null && DateTimeOffset.UtcNow - _cachedAt < CacheTtl)
                 return _cached;
@@ -24,7 +24,7 @@ namespace GuitoApiAuthorizer.AgentKey
             var response = await client.GetSecretValueAsync(new GetSecretValueRequest
             {
                 SecretId = secretName,
-            });
+            }, cancellationToken);
 
             using var document = JsonDocument.Parse(response.SecretString);
             var keys = document.RootElement

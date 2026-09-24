@@ -63,7 +63,7 @@ namespace GuitoApi.Middleware
                 if (string.IsNullOrEmpty(apiKey))
                 {
                     _logger.LogWarning("Missing API key. Returning: {Status}", HttpStatusCode.Unauthorized);
-                    await WriteErrorToResponseAsync(httpContext, HttpStatusCode.Unauthorized, "Missing API key");
+                    await AuthErrorResponseWriter.WriteAsync(httpContext, HttpStatusCode.Unauthorized, "Missing API key");
                     return;
                 }
 
@@ -72,8 +72,8 @@ namespace GuitoApi.Middleware
                 var payload = await secretsProvider.GetAsync();
                 if (!IsKnownKey(payload.ApiKeys, apiKey))
                 {
-                    _logger.LogWarning("Invalid API key. Returning: {Status}", HttpStatusCode.Unauthorized);
-                    await WriteErrorToResponseAsync(httpContext, HttpStatusCode.Unauthorized, "Invalid API key");
+                    _logger.LogWarning("Invalid API key. Returning: {Status}", HttpStatusCode.Forbidden);
+                    await AuthErrorResponseWriter.WriteAsync(httpContext, HttpStatusCode.Forbidden, "Invalid API key");
                     return;
                 }
 
@@ -108,12 +108,6 @@ namespace GuitoApi.Middleware
             // length leak is harmless, the branch is on length only.
             return expectedBytes.Length == actualBytes.Length &&
                    CryptographicOperations.FixedTimeEquals(expectedBytes, actualBytes);
-        }
-
-        private Task WriteErrorToResponseAsync(HttpContext context, HttpStatusCode statusCode, string errorMessage)
-        {
-            context.Response.StatusCode = (int)statusCode;
-            return context.Response.WriteAsync(errorMessage);
         }
     }
 }

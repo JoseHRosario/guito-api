@@ -10,7 +10,7 @@ namespace GuitoApiAuthorizer.AgentKey
     /// </summary>
     public class AgentKeyValidator(IKeysLoader keysLoader) : IAgentKeyValidator
     {
-        public async Task<AgentKeyResult> ValidateAsync(string? provided)
+        public async Task<AgentKeyResult> ValidateAsync(string? provided, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrEmpty(provided))
                 return Fail("missing X-Api-Key");
@@ -19,7 +19,7 @@ namespace GuitoApiAuthorizer.AgentKey
             IReadOnlyList<string> keys;
             try
             {
-                keys = await keysLoader.LoadAsync();
+                keys = await keysLoader.LoadAsync(cancellationToken);
             }
             catch (Exception ex)
             {

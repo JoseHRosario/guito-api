@@ -9,18 +9,18 @@ namespace GuitoApiAuthorizer
 {
     /// <summary>
     /// API Gateway HTTP API REQUEST authorizer (ADR-0003, issues #3/#4/#13). API Gateway
-    /// allows one CUSTOM authorizer per route, so this is a thin dispatcher over two
-    /// INDEPENDENT validators; never let one path fall back into the other:
-    ///   - X-Api-Key header present  → agent-key validation (AgentKey/, fixed-time compare).
-    ///   - x-google-idtoken present  → Google ID-token validation (GoogleToken/, RS256/JWKS).
-    ///   - neither header            → Deny. Any validation problem → Deny (fail closed).
-    /// The in-app middlewares (ApiKeyMiddleware, GoogleIdTokenMiddleware) repeat the checks
-    /// as defense-in-depth and stay path-independent.
+    /// allows one CUSTOM authorizer per route, and `Authorization` is the gateway's SOLE
+    /// identity source — so this dispatches on that header alone and never falls back:
+    ///   - `Authorization: Bearer <jwt>` → Google ID-token validation (GoogleToken/).
+    ///   - any other raw value           → agent-key validation (AgentKey/).
+    ///   - no Authorization header       → Deny. Any validation problem → Deny (fail closed).
+    /// Other headers (X-Api-Key, x-google-idtoken) are NOT gateway identity sources and are
+    /// never forwarded to REQUEST authorizers — dispatching on them here is dead code. The
+    /// in-app middlewares (ApiKeyMiddleware, GoogleIdTokenMiddleware) repeat the checks as
+    /// defense-in-depth.
     /// </summary>
     public class Function
     {
-        public const string ApiKeyHeaderName = "X-Api-Key";
-        public const string GoogleTokenHeaderName = "x-google-idtoken";
         public const string AuthorizationHeaderName = "Authorization";
         public const string BearerPrefix = "Bearer ";
         public const string GoogleClientIdEnvVar = "GOOGLE_CLIENT_ID";
@@ -29,25 +29,15 @@ namespace GuitoApiAuthorizer
         private readonly IAgentKeyValidator _agentKeyValidator;
         private readonly IGoogleTokenValidator _googleTokenValidator;
 
-        public Function() : this(
-            new AgentKeyValidator(
-                new SecretsManagerKeysLoader(
-                    Environment.GetEnvironmentVariable("SECRETS_SECRET_NAME") ?? "guito-api/prod")))
+        public Function() : this(DefaultAgentKeyValidator(), DefaultGoogleTokenValidator())
         {
-            _googleTokenValidator ??= new GoogleTokenValidator(
-                new HttpJwksClient(),
-                Environment.GetEnvironmentVariable(GoogleClientIdEnvVar) ?? string.Empty,
-                (Environment.GetEnvironmentVariable(GoogleAllowedEmailsEnvVar) ?? string.Empty).Split(','));
         }
 
         /// <summary>Test seam: inject fake validators for either path.</summary>
         public Function(IAgentKeyValidator agentKeyValidator, IGoogleTokenValidator? googleTokenValidator = null)
         {
             _agentKeyValidator = agentKeyValidator;
-            _googleTokenValidator = googleTokenValidator ?? new GoogleTokenValidator(
-                new HttpJwksClient(),
-                Environment.GetEnvironmentVariable(GoogleClientIdEnvVar) ?? string.Empty,
-                (Environment.GetEnvironmentVariable(GoogleAllowedEmailsEnvVar) ?? string.Empty).Split(','));
+            _googleTokenValidator = googleTokenValidator ?? DefaultGoogleTokenValidator();
         }
 
         public async Task<APIGatewayCustomAuthorizerV2IamResponse> FunctionHandlerAsync(
@@ -57,36 +47,50 @@ namespace GuitoApiAuthorizer
                 ?? $"arn:aws:execute-api:*:{Environment.GetEnvironmentVariable("AWS_REGION") ?? "*"}";
 
             // Gateway identity source is a single header: Authorization. Bearer <jwt> →
-            // Google path; raw value → agent key. Legacy X-Api-Key header still works.
-            var googleToken = GetHeaderValue(request, GoogleTokenHeaderName);
-            if (googleToken is null)
-            {
-                var authHeader = GetHeaderValue(request, AuthorizationHeaderName);
-                if (authHeader is not null && authHeader.StartsWith(BearerPrefix, StringComparison.OrdinalIgnoreCase))
-                    googleToken = authHeader.Substring(BearerPrefix.Length);
-            }
-            if (googleToken is not null)
-            {
-                var result = await _googleTokenValidator.ValidateAsync(googleToken);
-                if (result.Valid)
-                {
-                    context.Logger.LogInformation($"Google token accepted for email: {result.Claims!.Email}");
-                    return Allow(methodArn, "human");
-                }
-                context.Logger.LogWarning($"Google token rejected: {result.FailureReason}");
-                return Deny(methodArn);
-            }
+            // Google path; any other raw value → agent key. Neither → Deny.
+            var authorization = GetHeaderValue(request, AuthorizationHeaderName);
+            if (authorization is null)
+                return Deny(methodArn, "anonymous", "no Authorization header");
 
-            // Agent key: X-Api-Key header (legacy) or a non-Bearer Authorization value.
-            var providedKey = GetHeaderValue(request, ApiKeyHeaderName)
-                ?? NonBearerAuthorization(request);
-            var agentResult = await _agentKeyValidator.ValidateAsync(providedKey);
-            if (agentResult.Valid)
-                return Allow(methodArn, "agent");
-
-            context.Logger.LogWarning($"X-Api-Key rejected: {agentResult.FailureReason}");
-            return Deny(methodArn);
+            return authorization.StartsWith(BearerPrefix, StringComparison.OrdinalIgnoreCase)
+                ? await AuthorizeGoogleAsync(authorization.Substring(BearerPrefix.Length), methodArn, context)
+                : await AuthorizeAgentAsync(authorization, methodArn, context);
         }
+
+        private async Task<APIGatewayCustomAuthorizerV2IamResponse> AuthorizeGoogleAsync(
+            string idToken, string methodArn, ILambdaContext context)
+        {
+            var result = await _googleTokenValidator.ValidateAsync(idToken);
+            if (result.Valid)
+            {
+                context.Logger.LogInformation($"Google token accepted for email: {result.Claims!.Email}");
+                return Allow(methodArn, "human");
+            }
+            context.Logger.LogWarning($"Google token rejected: {result.FailureReason}");
+            return Deny(methodArn, "human", result.FailureReason);
+        }
+
+        private async Task<APIGatewayCustomAuthorizerV2IamResponse> AuthorizeAgentAsync(
+            string providedKey, string methodArn, ILambdaContext context)
+        {
+            var result = await _agentKeyValidator.ValidateAsync(providedKey);
+            if (result.Valid)
+            {
+                context.Logger.LogInformation("Agent key accepted");
+                return Allow(methodArn, "agent");
+            }
+            context.Logger.LogWarning($"Agent key rejected: {result.FailureReason}");
+            return Deny(methodArn, "agent", result.FailureReason);
+        }
+
+        private static AgentKeyValidator DefaultAgentKeyValidator() =>
+            new(new SecretsManagerKeysLoader(
+                Environment.GetEnvironmentVariable("SECRETS_SECRET_NAME") ?? "guito-api/prod"));
+
+        private static GoogleTokenValidator DefaultGoogleTokenValidator() =>
+            new(new HttpJwksClient(),
+                Environment.GetEnvironmentVariable(GoogleClientIdEnvVar) ?? string.Empty,
+                (Environment.GetEnvironmentVariable(GoogleAllowedEmailsEnvVar) ?? string.Empty).Split(','));
 
         private static string? GetHeaderValue(APIGatewayCustomAuthorizerV2Request request, string name)
         {
@@ -101,22 +105,15 @@ namespace GuitoApiAuthorizer
             return null;
         }
 
-        /// <summary>Authorization value when present and not a Bearer token.</summary>
-        private static string? NonBearerAuthorization(APIGatewayCustomAuthorizerV2Request request)
-        {
-            var authHeader = GetHeaderValue(request, AuthorizationHeaderName);
-            if (authHeader is null || authHeader.StartsWith(BearerPrefix, StringComparison.OrdinalIgnoreCase))
-                return null;
-            return authHeader;
-        }
-
         private static APIGatewayCustomAuthorizerV2IamResponse Allow(string methodArn, string principal) =>
-            Policy(methodArn, "Allow", principal);
+            Policy(methodArn, "Allow", principal, null);
 
-        private static APIGatewayCustomAuthorizerV2IamResponse Deny(string methodArn) =>
-            Policy(methodArn, "Deny", "agent");
+        private static APIGatewayCustomAuthorizerV2IamResponse Deny(
+            string methodArn, string principal, string reason) =>
+            Policy(methodArn, "Deny", principal, reason);
 
-        private static APIGatewayCustomAuthorizerV2IamResponse Policy(string methodArn, string effect, string principal) =>
+        private static APIGatewayCustomAuthorizerV2IamResponse Policy(
+            string methodArn, string effect, string principal, string? reason) =>
             new()
             {
                 PrincipalID = principal,
@@ -133,6 +130,10 @@ namespace GuitoApiAuthorizer
                         },
                     ],
                 },
+                // Context carries the rejection reason for CloudWatch/edge debugging.
+                Context = reason is null
+                    ? new Dictionary<string, object>()
+                    : new Dictionary<string, object> { ["DenyReason"] = reason },
             };
     }
 }

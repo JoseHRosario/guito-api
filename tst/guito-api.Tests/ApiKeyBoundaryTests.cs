@@ -75,12 +75,17 @@ public class ApiKeyBoundaryTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task ApiKeyMiddleware_ShouldReturnUnauthorized_WhenHeaderValueIsUnknown()
+    public async Task ApiKeyMiddleware_ShouldReturnForbidden_WhenHeaderValueIsUnknown()
     {
+        // Status convention: missing credentials → 401, rejected credentials → 403.
         var unknown = "xxx" + StoredValue[3..];
         var client = ClientWith(gate: true, headerValue: unknown);
+
         var response = await client.GetAsync("/expense/latest/1");
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Equal("Invalid API key", body); // produced by ApiKeyMiddleware, not another gate
     }
 
     [Fact]

@@ -4,11 +4,11 @@ using System.Text.Json;
 
 namespace GuitoApiAuthorizer.GoogleToken
 {
-
     /// <summary>
     /// Verifies Google ID tokens (RS256) against Google's JWKS plus the local policy:
     /// issuer, audience (GOOGLE_CLIENT_ID), expiry, and the allowed-email allowlist.
-    /// Independent of the agent-key path (ADR-0003); fail-closed everywhere.
+    /// Independent of the agent-key path (ADR-0003); fail-closed everywhere — including
+    /// a missing `alg` and any JSON/decoding problem, which deny instead of throwing.
     /// </summary>
     public class GoogleTokenValidator : IGoogleTokenValidator
     {
@@ -34,7 +34,7 @@ namespace GuitoApiAuthorizer.GoogleToken
             _nowOverride = nowOverride;
         }
 
-        public async Task<GoogleTokenResult> ValidateAsync(string? idToken)
+        public async Task<GoogleTokenResult> ValidateAsync(string? idToken, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(idToken))
                 return Fail("missing token");
@@ -45,46 +45,68 @@ namespace GuitoApiAuthorizer.GoogleToken
             if (parts.Length != 3)
                 return Fail("malformed token");
 
-            string headerJson, payloadJson;
-            byte[] signature;
+            JsonDocument? headerDocument = null;
+            JsonDocument? payloadDocument = null;
             try
             {
-                headerJson = Base64UrlDecodeString(parts[0]);
-                payloadJson = Base64UrlDecodeString(parts[1]);
-                signature = Base64UrlDecodeBytes(parts[2]);
+                if (!TryDecodeJwt(parts, out headerDocument, out payloadDocument, out var signature))
+                    return Fail("malformed token");
+
+                if (!RequiresRs256(headerDocument.RootElement))
+                    return Fail("unsupported alg");
+
+                var keyId = KeyId(headerDocument.RootElement);
+
+                if (!TryReadExpirySeconds(payloadDocument.RootElement, out var exp))
+                    return Fail("missing or invalid exp");
+
+                return await ValidateSignedTokenAsync(parts, signature, keyId, exp, payloadDocument.RootElement,
+                    cancellationToken);
             }
             catch (FormatException)
             {
                 return Fail("malformed token");
             }
+            catch (JsonException)
+            {
+                return Fail("malformed token");
+            }
+            finally
+            {
+                headerDocument?.Dispose();
+                payloadDocument?.Dispose();
+            }
+        }
 
-            var header = JsonDocument.Parse(headerJson).RootElement;
-            if (header.TryGetProperty("alg", out var alg) && alg.GetString() != "RS256")
-                return Fail("unsupported alg");
-            var kid = header.TryGetProperty("kid", out var kidElement) ? kidElement.GetString() : null;
-
-            var payload = JsonDocument.Parse(payloadJson).RootElement;
-
-            // Expiry before JWKS fetch: expired tokens need no network round trip.
-            if (!payload.TryGetProperty("exp", out var expElement) || expAdmits(expElement, out var exp) is false)
-                return Fail("missing or invalid exp");
+        private async Task<GoogleTokenResult> ValidateSignedTokenAsync(
+            string[] parts, byte[] signature, string? keyId, long exp, JsonElement payload,
+            CancellationToken cancellationToken)
+        {
             var now = _nowOverride ?? DateTimeOffset.UtcNow;
             if (exp <= now.ToUnixTimeSeconds())
                 return Fail("token expired");
 
-            var keys = await _jwksClient.GetKeysAsync();
-            var key = keys.FirstOrDefault(k => k.Kid == kid);
+            var keys = await _jwksClient.GetKeysAsync(cancellationToken);
+            var key = keys.FirstOrDefault(k => k.Kid == keyId);
             if (key is null)
                 return Fail("unknown kid");
 
             if (!VerifySignature(Encoding.ASCII.GetBytes($"{parts[0]}.{parts[1]}"), signature, key))
                 return Fail("signature verification failed");
 
+            return ValidateClaims(payload, exp);
+        }
+
+        private GoogleTokenResult ValidateClaims(JsonElement payload, long exp)
+        {
+            // Expiry before JWKS fetch happens in ValidateSignedTokenAsync; claims stay here.
             var issuer = payload.TryGetProperty("iss", out var iss) ? iss.GetString() : null;
             if (issuer is null || !AllowedIssuers.Contains(issuer))
                 return Fail("untrusted issuer");
 
-            var audience = payload.TryGetProperty("aud", out var aud) ? aud.GetString() : null;
+            var audience = payload.TryGetProperty("aud", out var aud) && aud.ValueKind == JsonValueKind.String
+                ? aud.GetString()
+                : null;
             if (audience != _audience)
                 return Fail("audience mismatch");
 
@@ -96,10 +118,28 @@ namespace GuitoApiAuthorizer.GoogleToken
                 new GoogleTokenClaims(email, audience, issuer, exp));
         }
 
-        private static bool expAdmits(JsonElement exp, out long value)
+        private static bool TryDecodeJwt(
+            string[] parts, out JsonDocument? headerDocument, out JsonDocument? payloadDocument, out byte[] signature)
+        {
+            headerDocument = JsonDocument.Parse(Base64UrlDecodeString(parts[0]));
+            payloadDocument = JsonDocument.Parse(Base64UrlDecodeString(parts[1]));
+            signature = Base64UrlDecodeBytes(parts[2]);
+            return true;
+        }
+
+        // `alg` is required and must be RS256 — absence fails closed.
+        private static bool RequiresRs256(JsonElement header) =>
+            header.TryGetProperty("alg", out var alg) && alg.GetString() == "RS256";
+
+        private static string? KeyId(JsonElement header) =>
+            header.TryGetProperty("kid", out var kidElement) ? kidElement.GetString() : null;
+
+        private static bool TryReadExpirySeconds(JsonElement payload, out long value)
         {
             value = 0;
-            return exp.ValueKind == JsonValueKind.Number && exp.TryGetInt64(out value);
+            return payload.TryGetProperty("exp", out var expElement) &&
+                   expElement.ValueKind == JsonValueKind.Number &&
+                   expElement.TryGetInt64(out value);
         }
 
         private static bool VerifySignature(byte[] signedInput, byte[] signature, JsonWebKey key)

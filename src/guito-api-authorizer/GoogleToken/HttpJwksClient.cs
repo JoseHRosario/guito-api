@@ -15,12 +15,12 @@ namespace GuitoApiAuthorizer.GoogleToken
         private IReadOnlyList<JsonWebKey>? _cached;
         private DateTimeOffset _cachedUntil;
 
-        public async Task<IReadOnlyList<JsonWebKey>> GetKeysAsync()
+        public async Task<IReadOnlyList<JsonWebKey>> GetKeysAsync(CancellationToken cancellationToken = default)
         {
             if (_cached is not null && DateTimeOffset.UtcNow < _cachedUntil)
                 return _cached;
 
-            var response = await _httpClient.GetAsync(GoogleCertsUrl);
+            var response = await _httpClient.GetAsync(GoogleCertsUrl, cancellationToken);
             response.EnsureSuccessStatusCode();
 
             var json = await response.Content.ReadAsStringAsync();
