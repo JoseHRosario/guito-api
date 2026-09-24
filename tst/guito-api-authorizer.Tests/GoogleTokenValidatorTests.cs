@@ -181,6 +181,24 @@ namespace GuitoApiAuthorizer.Tests
         }
 
         [Fact]
+        public async Task FunctionHandler_ShouldReturnAllowHuman_WhenAuthorizationHeaderCarriesBearerToken()
+        {
+            var function = new Function(new AgentKeyValidator(new FakeKeysLoader(["agent-key"])), new StubGoogleValidator(valid: true));
+            var response = await function.FunctionHandlerAsync(Request(authHeader: "Bearer some-jwt"), FakeContext());
+            Assert.Equal("Allow", Effect(response));
+            Assert.Equal("human", response.PrincipalID);
+        }
+
+        [Fact]
+        public async Task FunctionHandler_ShouldReturnAllowAgent_WhenAuthorizationHeaderCarriesRawKey()
+        {
+            var function = new Function(new AgentKeyValidator(new FakeKeysLoader(["agent-key"])), new StubGoogleValidator(valid: false));
+            var response = await function.FunctionHandlerAsync(Request(authHeader: "agent-key"), FakeContext());
+            Assert.Equal("Allow", Effect(response));
+            Assert.Equal("agent", response.PrincipalID);
+        }
+
+        [Fact]
         public async Task FunctionHandler_ShouldAllowHumanPath_WhenKeysLoaderFails()
         {
             // Key-loader failure must not affect the human path (paths stay independent).
@@ -311,15 +329,17 @@ namespace GuitoApiAuthorizer.Tests
         }
 
         private static APIGatewayCustomAuthorizerV2Request Request(
-            string? apiKey = null, string? googleToken = null)
+            string? apiKey = null, string? googleToken = null, string? authHeader = null)
         {
             var request = new APIGatewayCustomAuthorizerV2Request();
-            if (apiKey is not null)
-                request.Headers ??= new Dictionary<string, string>();
+            if (apiKey is not null || googleToken is not null || authHeader is not null)
+                request.Headers = new Dictionary<string, string>();
             if (apiKey is not null)
                 request.Headers["X-Api-Key"] = apiKey;
             if (googleToken is not null)
-                (request.Headers ??= new Dictionary<string, string>())["x-google-idtoken"] = googleToken;
+                request.Headers["x-google-idtoken"] = googleToken;
+            if (authHeader is not null)
+                request.Headers["Authorization"] = authHeader;
             return request;
         }
 

@@ -50,6 +50,10 @@ create_or_update () { # name handler memory timeout zip [extra env...]
       --zip-file "fileb://$zip" >/dev/null
   fi
   aws --region "$REGION" lambda wait function-active-v2 --function-name "$name"
+  # keep the handler in sync with code changes (e.g. method renames); after the wait
+  # so it never conflicts with the code update in flight
+  aws --region "$REGION" lambda update-function-configuration --function-name "$name" \
+    --handler "$handler" >/dev/null
 }
 
 create_or_update "$API_NAME" 'guito-api::GuitoApi.LambdaEntryPoint::FunctionHandlerAsync' 512 30 /tmp/guito-api.zip
@@ -84,13 +88,13 @@ AUTH_ARN=$(aws --region "$REGION" lambda get-function --function-name "$API_NAME
 AUTH_ID=$(aws --region "$REGION" apigatewayv2 get-authorizers --api-id "$API_ID" --query "Items[?Name=='guito-key-authorizer'].AuthorizerId" --output text)
 [ -n "$AUTH_ID" ] || AUTH_ID=$(aws --region "$REGION" apigatewayv2 create-authorizer --api-id "$API_ID" --name guito-key-authorizer \
   --authorizer-type REQUEST --authorizer-uri "arn:aws:apigateway:$REGION:lambda:path/2015-03-31/functions/$AUTH_ARN/invocations" \
-  --identity-source '$request.header.X-Api-Key, $request.header.x-google-idtoken' --authorizer-payload-format-version 2.0 \
+  --identity-source '$request.header.Authorization' --authorizer-payload-format-version 2.0 \
   --authorizer-result-ttl-in-seconds 0 --query AuthorizerId --output text)
 # Issue #13: the single route authorizer dispatches on header inside the function,
 # so BOTH headers must trigger an authorizer invocation.
 if [ -n "$AUTH_ID" ]; then
   aws --region "$REGION" apigatewayv2 update-authorizer --api-id "$API_ID" --authorizer-id "$AUTH_ID" \
-    --identity-source '$request.header.X-Api-Key, $request.header.x-google-idtoken' >/dev/null
+    --identity-source '$request.header.Authorization' >/dev/null
 fi
 
 INT_ID=$(aws --region "$REGION" apigatewayv2 get-integrations --api-id "$API_ID" --query 'Items[0].IntegrationId' --output text)
@@ -124,8 +128,10 @@ aws --region "$REGION" lambda add-permission --function-name "$API_NAME-authoriz
 aws --region "$REGION" apigatewayv2 create-stage --api-id "$API_ID" --stage-name '$default' --auto-deploy >/dev/null 2>&1 || true
 aws --region "$REGION" logs create-log-group --log-group-name /aws/apigateway/guito-api-access >/dev/null 2>&1 || true
 aws --region "$REGION" logs put-retention-policy --log-group-name /aws/apigateway/guito-api-access --retention-in-days 14 2>/dev/null || true
+ACCESS_LOG_ARN=$(aws --region "$REGION" logs describe-log-groups --log-group-name-prefix /aws/apigateway/guito-api-access \
+  --query 'logGroups[0].arn' --output text)
 aws --region "$REGION" apigatewayv2 update-stage --api-id "$API_ID" --stage-name '$default' \
-  --access-log-settings '{"DestinationArn":"arn:aws:logs:'"$REGION"':*:log-group:/aws/apigateway/guito-api-access","Format":"{\"requestId\":\"$context.requestId\",\"ip\":\"$context.identity.sourceIp\",\"httpMethod\":\"$context.httpMethod\",\"path\":\"$context.path\",\"status\":\"$context.status\",\"authorizerError\":\"$context.authorizer.error\",\"integrationError\":\"$context.integration.error\"}"}' >/dev/null
+  --access-log-settings '{"DestinationArn":"'"$ACCESS_LOG_ARN"'","Format":"{\"requestId\":\"$context.requestId\",\"ip\":\"$context.identity.sourceIp\",\"httpMethod\":\"$context.httpMethod\",\"path\":\"$context.path\",\"status\":\"$context.status\",\"authorizerError\":\"$context.authorizer.error\",\"integrationError\":\"$context.integration.error\"}"}' >/dev/null
 aws --region "$REGION" apigatewayv2 create-deployment --api-id "$API_ID" --stage-name '$default' >/dev/null
 
 echo "Deployed. Endpoint: $(aws --region "$REGION" apigatewayv2 get-api --api-id "$API_ID" --query ApiEndpoint --output text)"

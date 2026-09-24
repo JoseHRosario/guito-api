@@ -6,6 +6,7 @@ POST {{Api_HostAddress}}/AI/extract
 Accept: */*
 Content-Type: application/json
 X-Api-Key: {{Agent_ApiKey}}
+Authorization: {{Agent_ApiKey}}
 
 {
   "Language": "en-US",
@@ -17,18 +18,21 @@ GET {{Api_HostAddress}}/Expense/match/
 Accept: */*
 Content-Type: application/json
 X-Api-Key: {{Agent_ApiKey}}
+Authorization: {{Agent_ApiKey}}
 
 ### List Account Transactions
 GET {{Api_HostAddress}}/Account/transactions/?dateFrom={{DateFrom}}&dateTo={{DateTo}}
 Accept: */*
 Content-Type: application/json
 X-Api-Key: {{Agent_ApiKey}}
+Authorization: {{Agent_ApiKey}}
 
 ### Create Expense
 POST {{Api_HostAddress}}/Expense/
 Accept: */*
 Content-Type: application/json
 X-Api-Key: {{Agent_ApiKey}}
+Authorization: {{Agent_ApiKey}}
 
 {
   "date": "2024-03-19T12:15:42.953Z",
@@ -42,15 +46,18 @@ GET {{Api_HostAddress}}/Expense/latest/5
 Accept: */*
 Content-Type: application/json
 X-Api-Key: {{Agent_ApiKey}}
+Authorization: {{Agent_ApiKey}}
 
 ### List Categories
 GET {{Api_HostAddress}}/Category/
 Accept: */*
 Content-Type: application/json
 X-Api-Key: {{Agent_ApiKey}}
+Authorization: {{Agent_ApiKey}}
 
 ### Health Check
 GET {{Api_HostAddress}}/healthz/
 Accept: */*
 Content-Type: application/json
 X-Api-Key: {{Agent_ApiKey}}
+Authorization: {{Agent_ApiKey}}

@@ -21,6 +21,8 @@ namespace GuitoApiAuthorizer
     {
         public const string ApiKeyHeaderName = "X-Api-Key";
         public const string GoogleTokenHeaderName = "x-google-idtoken";
+        public const string AuthorizationHeaderName = "Authorization";
+        public const string BearerPrefix = "Bearer ";
         public const string GoogleClientIdEnvVar = "GOOGLE_CLIENT_ID";
         public const string GoogleAllowedEmailsEnvVar = "GOOGLE_ALLOWED_EMAILS";
 
@@ -54,7 +56,15 @@ namespace GuitoApiAuthorizer
             var methodArn = request.RouteArn
                 ?? $"arn:aws:execute-api:*:{Environment.GetEnvironmentVariable("AWS_REGION") ?? "*"}";
 
+            // Gateway identity source is a single header: Authorization. Bearer <jwt> →
+            // Google path; raw value → agent key. Legacy X-Api-Key header still works.
             var googleToken = GetHeaderValue(request, GoogleTokenHeaderName);
+            if (googleToken is null)
+            {
+                var authHeader = GetHeaderValue(request, AuthorizationHeaderName);
+                if (authHeader is not null && authHeader.StartsWith(BearerPrefix, StringComparison.OrdinalIgnoreCase))
+                    googleToken = authHeader.Substring(BearerPrefix.Length);
+            }
             if (googleToken is not null)
             {
                 var result = await _googleTokenValidator.ValidateAsync(googleToken);
@@ -67,7 +77,10 @@ namespace GuitoApiAuthorizer
                 return Deny(methodArn);
             }
 
-            var agentResult = await _agentKeyValidator.ValidateAsync(GetHeaderValue(request, ApiKeyHeaderName));
+            // Agent key: X-Api-Key header (legacy) or a non-Bearer Authorization value.
+            var providedKey = GetHeaderValue(request, ApiKeyHeaderName)
+                ?? NonBearerAuthorization(request);
+            var agentResult = await _agentKeyValidator.ValidateAsync(providedKey);
             if (agentResult.Valid)
                 return Allow(methodArn, "agent");
 
@@ -86,6 +99,15 @@ namespace GuitoApiAuthorizer
                     return pair.Value;
             }
             return null;
+        }
+
+        /// <summary>Authorization value when present and not a Bearer token.</summary>
+        private static string? NonBearerAuthorization(APIGatewayCustomAuthorizerV2Request request)
+        {
+            var authHeader = GetHeaderValue(request, AuthorizationHeaderName);
+            if (authHeader is null || authHeader.StartsWith(BearerPrefix, StringComparison.OrdinalIgnoreCase))
+                return null;
+            return authHeader;
         }
 
         private static APIGatewayCustomAuthorizerV2IamResponse Allow(string methodArn, string principal) =>
