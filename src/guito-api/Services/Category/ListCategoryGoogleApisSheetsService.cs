@@ -23,10 +23,10 @@ namespace GuitoApi.Services.Category
             _logger = logger;
         }
 
-        public async Task<CategoryList> List()
+        public async Task<CategoryList> ListAsync()
         {
             var output = new CategoryList();
-            SheetsService service = await _googlesheetsService.Get();
+            SheetsService service = await _googlesheetsService.GetAsync();
 
             // Read values from the specified range
             SpreadsheetsResource.ValuesResource.GetRequest request =

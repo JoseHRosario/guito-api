@@ -17,7 +17,7 @@ public class FakeGooglesheetsService : IGooglesheetsService
 
     public FakeGooglesheetsService(FakeSheetsHttpHandler handler) => _handler = handler;
 
-    public Task<SheetsService> Get()
+    public Task<SheetsService> GetAsync()
     {
         var service = new SheetsService(new BaseClientService.Initializer
         {

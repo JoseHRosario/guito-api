@@ -21,7 +21,7 @@ namespace GuitoApiAuthorizer.Tests
         private const string AllowedEmail = "jose@example.com";
 
         [Fact]
-        public async Task Valid_token_is_accepted()
+        public async Task ValidateAsync_ShouldReturnValid_WhenTokenIsSignedByGoogleAndEmailAllowed()
         {
             var result = await ValidateAsync(MakeToken());
             Assert.True(result.Valid, result.FailureReason);
@@ -29,7 +29,7 @@ namespace GuitoApiAuthorizer.Tests
         }
 
         [Fact]
-        public async Task Missing_token_is_rejected()
+        public async Task ValidateAsync_ShouldFail_WhenTokenIsMissing()
         {
             var result = await ValidateAsync(null);
             Assert.False(result.Valid);
@@ -37,49 +37,49 @@ namespace GuitoApiAuthorizer.Tests
         }
 
         [Fact]
-        public async Task Malformed_token_is_rejected()
+        public async Task ValidateAsync_ShouldFail_WhenTokenIsMalformed()
         {
             Assert.False((await ValidateAsync("not-a-jwt")).Valid);
             Assert.False((await ValidateAsync("a.b")).Valid);
         }
 
         [Fact]
-        public async Task Expired_token_is_rejected()
+        public async Task ValidateAsync_ShouldFail_WhenTokenIsExpired()
         {
             var result = await ValidateAsync(MakeToken(exp: FixedNow.ToUnixTimeSeconds() - 100));
             Assert.Equal("token expired", result.FailureReason);
         }
 
         [Fact]
-        public async Task Wrong_audience_is_rejected()
+        public async Task ValidateAsync_ShouldFail_WhenAudienceMismatches()
         {
             var result = await ValidateAsync(MakeToken(audience: "other-client-id"));
             Assert.Equal("audience mismatch", result.FailureReason);
         }
 
         [Fact]
-        public async Task Untrusted_issuer_is_rejected()
+        public async Task ValidateAsync_ShouldFail_WhenIssuerIsNotGoogle()
         {
             var result = await ValidateAsync(MakeToken(issuer: "https://evil.example.com"));
             Assert.Equal("untrusted issuer", result.FailureReason);
         }
 
         [Fact]
-        public async Task Non_allowlisted_email_is_rejected()
+        public async Task ValidateAsync_ShouldFail_WhenEmailIsNotAllowlisted()
         {
             var result = await ValidateAsync(MakeToken(email: "stranger@example.com"));
             Assert.Equal("email not allowed", result.FailureReason);
         }
 
         [Fact]
-        public async Task Missing_email_is_rejected()
+        public async Task ValidateAsync_ShouldFail_WhenTokenHasNoEmailClaim()
         {
             var result = await ValidateAsync(MakeToken(email: null));
             Assert.Equal("email not allowed", result.FailureReason);
         }
 
         [Fact]
-        public async Task Signature_from_unknown_key_is_rejected()
+        public async Task ValidateAsync_ShouldFail_WhenSignatureIsFromUnknownKey()
         {
             // Token signed by a key that is NOT in the served JWKS.
             var result = await ValidateAsync(MakeToken(signWithFreshKey: true));
@@ -87,7 +87,7 @@ namespace GuitoApiAuthorizer.Tests
         }
 
         [Fact]
-        public async Task Tampered_payload_is_rejected()
+        public async Task ValidateAsync_ShouldFail_WhenPayloadIsTamperedWithoutResigning()
         {
             var token = MakeToken();
             var parts = token.Split('.');
@@ -100,21 +100,21 @@ namespace GuitoApiAuthorizer.Tests
         }
 
         [Fact]
-        public async Task Non_rs256_alg_is_rejected()
+        public async Task ValidateAsync_ShouldFail_WhenAlgIsNotRs256()
         {
             var result = await ValidateAsync(MakeToken(alg: "HS256"));
             Assert.Equal("unsupported alg", result.FailureReason);
         }
 
         [Fact]
-        public async Task Both_issuer_forms_are_accepted()
+        public async Task ValidateAsync_ShouldAcceptBothIssuerForms_WhenTokenIsFromGoogle()
         {
             Assert.True((await ValidateAsync(MakeToken(issuer: "accounts.google.com"))).Valid);
             Assert.True((await ValidateAsync(MakeToken(issuer: "https://accounts.google.com"))).Valid);
         }
 
         [Fact]
-        public async Task Validator_without_client_id_fails_closed()
+        public async Task ValidateAsync_ShouldFailClosed_WhenClientIdIsNotConfigured()
         {
             var validator = new GoogleTokenValidator(new FakeJwksClient(ServeKeys()), string.Empty, [AllowedEmail]);
             var result = await validator.ValidateAsync(MakeToken());
@@ -122,7 +122,7 @@ namespace GuitoApiAuthorizer.Tests
         }
 
         [Fact]
-        public void Jwks_parses_google_shape()
+        public void ParseJwks_ShouldExtractKidNAndE_WhenJwksHasGoogleShape()
         {
             var keys = HttpJwksClient.ParseJwks(JwksJson(Jwk("kid-1")));
             var key = Assert.Single(keys);
@@ -132,7 +132,7 @@ namespace GuitoApiAuthorizer.Tests
         }
 
         [Fact]
-        public async Task Jwks_client_caches_until_max_age_expires()
+        public async Task HttpJwksClient_ShouldServeFromCache_WhenMaxAgeHasNotExpired()
         {
             var handler = new FakeJwksHandler();
             var client = new HttpJwksClient(new HttpClient(handler));
@@ -144,48 +144,48 @@ namespace GuitoApiAuthorizer.Tests
         // --- dispatcher (Function) tests -------------------------------------------------
 
         [Fact]
-        public async Task Dispatcher_allows_valid_google_token_without_api_key()
+        public async Task FunctionHandler_ShouldReturnAllowHuman_WhenGoogleTokenIsValid()
         {
             var function = new Function(new AgentKeyValidator(new FakeKeysLoader(["agent-key"])), new StubGoogleValidator(valid: true));
-            var response = await function.FunctionHandler(Request(googleToken: "some-token"), FakeContext());
+            var response = await function.FunctionHandlerAsync(Request(googleToken: "some-token"), FakeContext());
             Assert.Equal("Allow", Effect(response));
             Assert.Equal("human", response.PrincipalID);
         }
 
         [Fact]
-        public async Task Dispatcher_denies_invalid_google_token()
+        public async Task FunctionHandler_ShouldReturnDeny_WhenGoogleTokenIsInvalid()
         {
             var function = new Function(new AgentKeyValidator(new FakeKeysLoader(["agent-key"])), new StubGoogleValidator(valid: false));
-            var response = await function.FunctionHandler(Request(googleToken: "bad-token"), FakeContext());
+            var response = await function.FunctionHandlerAsync(Request(googleToken: "bad-token"), FakeContext());
             Assert.Equal("Deny", Effect(response));
         }
 
         [Fact]
-        public async Task Dispatcher_agent_path_still_works_with_google_validator_present()
+        public async Task FunctionHandler_ShouldReturnAllowAgent_WhenApiKeyIsValid_AndNotConsultGoogleValidator()
         {
             // The Google validator must never be consulted for the agent path (independence).
             var validator = new CountingGoogleValidator(valid: true);
             var function = new Function(new AgentKeyValidator(new FakeKeysLoader(["agent-key"])), validator);
-            var response = await function.FunctionHandler(Request(apiKey: "agent-key"), FakeContext());
+            var response = await function.FunctionHandlerAsync(Request(apiKey: "agent-key"), FakeContext());
             Assert.Equal("Allow", Effect(response));
             Assert.Equal("agent", response.PrincipalID);
             Assert.Equal(0, validator.Calls);
         }
 
         [Fact]
-        public async Task Dispatcher_denies_requests_with_neither_header()
+        public async Task FunctionHandler_ShouldReturnDeny_WhenNoCredentialsArePresent()
         {
             var function = new Function(new AgentKeyValidator(new FakeKeysLoader(["agent-key"])), new StubGoogleValidator(valid: true));
-            var response = await function.FunctionHandler(Request(), FakeContext());
+            var response = await function.FunctionHandlerAsync(Request(), FakeContext());
             Assert.Equal("Deny", Effect(response));
         }
 
         [Fact]
-        public async Task Dispatcher_google_path_does_not_load_agent_keys()
+        public async Task FunctionHandler_ShouldAllowHumanPath_WhenKeysLoaderFails()
         {
             // Key-loader failure must not affect the human path (paths stay independent).
             var function = new Function(new AgentKeyValidator(new ThrowingKeysLoader()), new StubGoogleValidator(valid: true));
-            var response = await function.FunctionHandler(Request(googleToken: "t"), FakeContext());
+            var response = await function.FunctionHandlerAsync(Request(googleToken: "t"), FakeContext());
             Assert.Equal("Allow", Effect(response));
         }
 

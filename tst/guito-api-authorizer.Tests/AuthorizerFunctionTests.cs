@@ -55,10 +55,10 @@ public class AuthorizerFunctionTests
         };
 
     [Fact]
-    public async Task Valid_key_gets_allow_policy()
+    public async Task FunctionHandler_ShouldReturnAllow_WhenApiKeyIsValid()
     {
         var function = FunctionWith(new FakeKeysLoader("alpha", "beta"));
-        var response = await function.FunctionHandler(Request(new Dictionary<string, string>
+        var response = await function.FunctionHandlerAsync(Request(new Dictionary<string, string>
         {
             ["X-Api-Key"] = "beta",
         }), new TestContext());
@@ -70,10 +70,10 @@ public class AuthorizerFunctionTests
     }
 
     [Fact]
-    public async Task Header_name_is_case_insensitive()
+    public async Task FunctionHandler_ShouldReturnAllow_WhenApiKeyHeaderCaseDiffers()
     {
         var function = FunctionWith(new FakeKeysLoader("alpha"));
-        var response = await function.FunctionHandler(Request(new Dictionary<string, string>
+        var response = await function.FunctionHandlerAsync(Request(new Dictionary<string, string>
         {
             ["x-api-key"] = "alpha",
         }), new TestContext());
@@ -82,18 +82,18 @@ public class AuthorizerFunctionTests
     }
 
     [Fact]
-    public async Task Missing_key_gets_deny()
+    public async Task FunctionHandler_ShouldReturnDeny_WhenApiKeyIsMissing()
     {
         var function = FunctionWith(new FakeKeysLoader("alpha"));
-        var response = await function.FunctionHandler(Request(new Dictionary<string, string>()), new TestContext());
+        var response = await function.FunctionHandlerAsync(Request(new Dictionary<string, string>()), new TestContext());
         Assert.Equal("Deny", response.PolicyDocument.Statement.Single().Effect);
     }
 
     [Fact]
-    public async Task Unknown_key_gets_deny()
+    public async Task FunctionHandler_ShouldReturnDeny_WhenApiKeyIsUnknown()
     {
         var function = FunctionWith(new FakeKeysLoader("alpha"));
-        var response = await function.FunctionHandler(Request(new Dictionary<string, string>
+        var response = await function.FunctionHandlerAsync(Request(new Dictionary<string, string>
         {
             ["X-Api-Key"] = "intruder",
         }), new TestContext());
@@ -101,10 +101,10 @@ public class AuthorizerFunctionTests
     }
 
     [Fact]
-    public async Task Empty_keys_list_fails_closed()
+    public async Task FunctionHandler_ShouldReturnDeny_WhenKeysListIsEmpty()
     {
         var function = FunctionWith(new FakeKeysLoader());
-        var response = await function.FunctionHandler(Request(new Dictionary<string, string>
+        var response = await function.FunctionHandlerAsync(Request(new Dictionary<string, string>
         {
             ["X-Api-Key"] = "alpha",
         }), new TestContext());
@@ -112,10 +112,10 @@ public class AuthorizerFunctionTests
     }
 
     [Fact]
-    public async Task Keys_loader_failure_fails_closed()
+    public async Task FunctionHandler_ShouldReturnDeny_WhenKeysLoaderFails()
     {
         var function = FunctionWith(new ThrowingKeysLoader());
-        var response = await function.FunctionHandler(Request(new Dictionary<string, string>
+        var response = await function.FunctionHandlerAsync(Request(new Dictionary<string, string>
         {
             ["X-Api-Key"] = "alpha",
         }), new TestContext());

@@ -50,7 +50,7 @@ namespace GuitoApi.Middleware
                 if (string.IsNullOrEmpty(apiKey))
                 {
                     _logger.LogWarning("Missing API key. Returning: {Status}", HttpStatusCode.Unauthorized);
-                    await WriteErrorToResponse(httpContext, HttpStatusCode.Unauthorized, "Missing API key");
+                    await WriteErrorToResponseAsync(httpContext, HttpStatusCode.Unauthorized, "Missing API key");
                     return;
                 }
 
@@ -60,7 +60,7 @@ namespace GuitoApi.Middleware
                 if (!IsKnownKey(payload.ApiKeys, apiKey))
                 {
                     _logger.LogWarning("Invalid API key. Returning: {Status}", HttpStatusCode.Unauthorized);
-                    await WriteErrorToResponse(httpContext, HttpStatusCode.Unauthorized, "Invalid API key");
+                    await WriteErrorToResponseAsync(httpContext, HttpStatusCode.Unauthorized, "Invalid API key");
                     return;
                 }
 
@@ -91,7 +91,7 @@ namespace GuitoApi.Middleware
                    CryptographicOperations.FixedTimeEquals(expectedBytes, actualBytes);
         }
 
-        private Task WriteErrorToResponse(HttpContext context, HttpStatusCode statusCode, string errorMessage)
+        private Task WriteErrorToResponseAsync(HttpContext context, HttpStatusCode statusCode, string errorMessage)
         {
             context.Response.StatusCode = (int)statusCode;
             return context.Response.WriteAsync(errorMessage);

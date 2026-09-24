@@ -10,7 +10,7 @@ namespace GuitoApi.Services.ArtificialIntelligence
     /// </summary>
     public class ExtractMethodService : IExtractMethodService
     {
-        public Task<ExpenseExtracted> ExtractMethod(ExpenseExtract input)
+        public Task<ExpenseExtracted> ExtractMethodAsync(ExpenseExtract input)
         {
             throw new ProblemException(
                 (int)System.Net.HttpStatusCode.NotImplemented,

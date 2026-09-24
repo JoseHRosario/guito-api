@@ -46,7 +46,7 @@ namespace GuitoApi.Middleware
                     if (string.IsNullOrEmpty(identityToken))
                     {
                         _logger.LogWarning($"Missing identityToken from http header. Returning:  {HttpStatusCode.Unauthorized}");
-                        await WriteErrorToResponse(httpContext, HttpStatusCode.Unauthorized, "Missing IdentityToken");
+                        await WriteErrorToResponseAsync(httpContext, HttpStatusCode.Unauthorized, "Missing IdentityToken");
                         return;
                     }
 
@@ -54,7 +54,7 @@ namespace GuitoApi.Middleware
                     if (!IsValidToken(payload))
                     {
                         _logger.LogWarning("IdentityToken failed validation rules for email: {email}", payload.Email);
-                        await WriteErrorToResponse(httpContext, HttpStatusCode.Unauthorized, "Invalid IdentityToken");
+                        await WriteErrorToResponseAsync(httpContext, HttpStatusCode.Unauthorized, "Invalid IdentityToken");
                         return;
                     }
 
@@ -65,13 +65,13 @@ namespace GuitoApi.Middleware
                 catch (InvalidJwtException e)
                 {
                     _logger.LogWarning("IdentityToken failed validation, {Message}", e.Message);
-                    await WriteErrorToResponse(httpContext, HttpStatusCode.Unauthorized, e.Message);
+                    await WriteErrorToResponseAsync(httpContext, HttpStatusCode.Unauthorized, e.Message);
                     return;
                 }
                 catch (Exception)
                 {
                     _logger.LogWarning("IdentityToken failed validation");
-                    await WriteErrorToResponse(httpContext, HttpStatusCode.Unauthorized, "Invalid IdentityToken");
+                    await WriteErrorToResponseAsync(httpContext, HttpStatusCode.Unauthorized, "Invalid IdentityToken");
                     return;
                 }
             }
@@ -84,7 +84,7 @@ namespace GuitoApi.Middleware
             return _options.Authentication.AllowedLogins.Contains(payload.Email) &&
                     _options.Authentication.OAuthAudience == payload.Audience.ToString();
         }
-        private Task WriteErrorToResponse(HttpContext context, HttpStatusCode statusCode, string errorMessage)
+        private Task WriteErrorToResponseAsync(HttpContext context, HttpStatusCode statusCode, string errorMessage)
         {
             context.Response.StatusCode = (int)statusCode;
             return context.Response.WriteAsync(errorMessage);

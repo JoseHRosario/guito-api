@@ -16,7 +16,7 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
     public ApiBoundaryTests(CustomWebApplicationFactory factory) => _factory = factory;
 
     [Fact]
-    public async Task Healthz_returns_ok()
+    public async Task HealthzEndpoint_ShouldReturnOk_WhenCalledWithoutCredentials()
     {
         var client = _factory.CreateClient();
         var response = await client.GetAsync("/healthz");
@@ -24,7 +24,7 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task Create_expense_appends_to_spreadsheet()
+    public async Task CreateExpense_ShouldAppendPayloadToSpreadsheet_WhenExpenseIsValid()
     {
         var client = _factory.CreateClient();
         var response = await client.PostAsJsonAsync("/expense", new ExpenseCreate
@@ -52,7 +52,7 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task List_latest_expenses_reads_spreadsheet()
+    public async Task ListLatestAsync_ShouldReadRowsFromSpreadsheet_WhenExpensesExist()
     {
         var client = _factory.CreateClient();
         var response = await client.GetAsync("/expense/latest/10");
@@ -69,7 +69,7 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task Match_expenses_combines_transactions_and_expenses()
+    public async Task MatchExpensesAsync_ShouldCombineTransactionsAndExpenses_WhenBothAreAvailable()
     {
         var client = _factory.CreateClient();
         var response = await client.GetAsync("/expense/match");
@@ -84,7 +84,7 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task List_categories_reads_spreadsheet()
+    public async Task ListAsync_ShouldReadCategoriesFromSpreadsheet_WhenCategoriesExist()
     {
         var client = _factory.CreateClient();
         var response = await client.GetAsync("/category");
@@ -96,7 +96,7 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task Extract_returns_501_with_clear_message()
+    public async Task ExtractAsync_ShouldReturn501_WhenExtractionIsStubbed()
     {
         var client = _factory.CreateClient();
         var response = await client.PostAsJsonAsync("/ai/extract", new ExpenseExtract
@@ -111,7 +111,7 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task Google_id_token_validation_rejects_requests_without_header()
+    public async Task GoogleIdTokenMiddleware_ShouldRejectRequest_WhenIdTokenHeaderIsMissing()
     {
         var client = _factory.WithWebHostBuilder(b =>
             b.ConfigureAppConfiguration((_, cfg) => cfg.AddInMemoryCollection(

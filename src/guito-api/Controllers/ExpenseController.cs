@@ -23,22 +23,22 @@ namespace GuitoApi.Controllers
         }
 
         [HttpPost]
-        public async Task Create([FromBody] ExpenseCreate value)
+        public async Task CreateAsync([FromBody] ExpenseCreate value)
         {
-            await _createExpenseService.Create(value);
+            await _createExpenseService.CreateAsync(value);
         }
 
         [HttpGet("latest/{count}")]
-        public async Task<ExpenseListLatest> ListLatest(int count)
+        public async Task<ExpenseListLatest> ListLatestAsync(int count)
         {
-            return await _listLatestExpensesService.ListLatest(count);
+            return await _listLatestExpensesService.ListLatestAsync(count);
         }
 
         [HttpGet("match")]
         [ResponseCache(Duration = 120, Location = ResponseCacheLocation.Any)]
-        public async Task<ExpenseMatchList> MatchExpenses()
+        public async Task<ExpenseMatchList> MatchExpensesAsync()
         {
-            return await _matchExpensesService.MatchExpenses();
+            return await _matchExpensesService.MatchExpensesAsync();
         }
     }
 }

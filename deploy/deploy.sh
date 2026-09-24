@@ -53,7 +53,7 @@ create_or_update () { # name handler memory timeout zip [extra env...]
 }
 
 create_or_update "$API_NAME" 'guito-api::GuitoApi.LambdaEntryPoint::FunctionHandlerAsync' 512 30 /tmp/guito-api.zip
-create_or_update "$API_NAME-authorizer" 'guito-api-authorizer::GuitoApiAuthorizer.Function::FunctionHandler' 128 10 /tmp/guito-authorizer.zip
+create_or_update "$API_NAME-authorizer" 'guito-api-authorizer::GuitoApiAuthorizer.Function::FunctionHandlerAsync' 128 10 /tmp/guito-authorizer.zip
 
 # --- 3b. Google human-auth config (issue #13) ----------------------------------
 # Provide GOOGLE_CLIENT_ID / GOOGLE_ALLOWED_EMAILS in the shell environment.

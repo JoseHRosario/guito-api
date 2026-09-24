@@ -4,6 +4,6 @@ namespace GuitoApi.Services.Category
 {
     public interface IListCategoryService
     {
-        public Task<CategoryList> List();
+        public Task<CategoryList> ListAsync();
     }
 }

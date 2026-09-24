@@ -5,7 +5,7 @@ namespace GuitoApi.Services.Account
 {
     public class ListTransactionsDummyService : IListTransactionsService
     {
-        public Task<TransactionList> List(DateTime? dateFrom, DateTime? dateTo)
+        public Task<TransactionList> ListAsync(DateTime? dateFrom, DateTime? dateTo)
         {
             var output = new TransactionList();
             var response = @"{

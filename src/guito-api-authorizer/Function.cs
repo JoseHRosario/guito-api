@@ -48,7 +48,7 @@ namespace GuitoApiAuthorizer
                 (Environment.GetEnvironmentVariable(GoogleAllowedEmailsEnvVar) ?? string.Empty).Split(','));
         }
 
-        public async Task<APIGatewayCustomAuthorizerV2IamResponse> FunctionHandler(
+        public async Task<APIGatewayCustomAuthorizerV2IamResponse> FunctionHandlerAsync(
             APIGatewayCustomAuthorizerV2Request request, ILambdaContext context)
         {
             var methodArn = request.RouteArn

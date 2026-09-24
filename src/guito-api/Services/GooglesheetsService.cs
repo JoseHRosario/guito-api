@@ -22,7 +22,7 @@ namespace GuitoApi.Services
             _secretsProvider = secretsProvider;
         }
 
-        public async Task<SheetsService> Get()
+        public async Task<SheetsService> GetAsync()
         {
             GoogleCredential credential;
 
