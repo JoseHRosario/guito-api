@@ -1,6 +1,8 @@
 using Amazon.Lambda.APIGatewayEvents;
 using Amazon.Lambda.Core;
 using GuitoApiAuthorizer;
+using GuitoApiAuthorizer.AgentKey;
+using GuitoApiAuthorizer.GoogleToken;
 
 namespace GuitoApiAuthorizer.Tests;
 
@@ -11,6 +13,8 @@ namespace GuitoApiAuthorizer.Tests;
 /// </summary>
 public class AuthorizerFunctionTests
 {
+    private static Function FunctionWith(IKeysLoader keysLoader, IGoogleTokenValidator? google = null) =>
+        new(new AgentKeyValidator(keysLoader), google);
     private sealed class FakeKeysLoader(params string[] keys) : IKeysLoader
     {
         public Task<IReadOnlyList<string>> LoadAsync() => Task.FromResult<IReadOnlyList<string>>(keys);
@@ -53,7 +57,7 @@ public class AuthorizerFunctionTests
     [Fact]
     public async Task Valid_key_gets_allow_policy()
     {
-        var function = new Function(new FakeKeysLoader("alpha", "beta"));
+        var function = FunctionWith(new FakeKeysLoader("alpha", "beta"));
         var response = await function.FunctionHandler(Request(new Dictionary<string, string>
         {
             ["X-Api-Key"] = "beta",
@@ -68,7 +72,7 @@ public class AuthorizerFunctionTests
     [Fact]
     public async Task Header_name_is_case_insensitive()
     {
-        var function = new Function(new FakeKeysLoader("alpha"));
+        var function = FunctionWith(new FakeKeysLoader("alpha"));
         var response = await function.FunctionHandler(Request(new Dictionary<string, string>
         {
             ["x-api-key"] = "alpha",
@@ -80,7 +84,7 @@ public class AuthorizerFunctionTests
     [Fact]
     public async Task Missing_key_gets_deny()
     {
-        var function = new Function(new FakeKeysLoader("alpha"));
+        var function = FunctionWith(new FakeKeysLoader("alpha"));
         var response = await function.FunctionHandler(Request(new Dictionary<string, string>()), new TestContext());
         Assert.Equal("Deny", response.PolicyDocument.Statement.Single().Effect);
     }
@@ -88,7 +92,7 @@ public class AuthorizerFunctionTests
     [Fact]
     public async Task Unknown_key_gets_deny()
     {
-        var function = new Function(new FakeKeysLoader("alpha"));
+        var function = FunctionWith(new FakeKeysLoader("alpha"));
         var response = await function.FunctionHandler(Request(new Dictionary<string, string>
         {
             ["X-Api-Key"] = "intruder",
@@ -99,7 +103,7 @@ public class AuthorizerFunctionTests
     [Fact]
     public async Task Empty_keys_list_fails_closed()
     {
-        var function = new Function(new FakeKeysLoader());
+        var function = FunctionWith(new FakeKeysLoader());
         var response = await function.FunctionHandler(Request(new Dictionary<string, string>
         {
             ["X-Api-Key"] = "alpha",
@@ -110,7 +114,7 @@ public class AuthorizerFunctionTests
     [Fact]
     public async Task Keys_loader_failure_fails_closed()
     {
-        var function = new Function(new ThrowingKeysLoader());
+        var function = FunctionWith(new ThrowingKeysLoader());
         var response = await function.FunctionHandler(Request(new Dictionary<string, string>
         {
             ["X-Api-Key"] = "alpha",

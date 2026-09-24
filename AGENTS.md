@@ -72,8 +72,7 @@ Request path: **Controller → Service → Data access**. Each layer has one job
 
 ### Authorizer (`src/guito-api-authorizer/`)
 - Separate Lambda project/function, invoked by API Gateway before any route. Deploys independently from `src/guito-api/` (separate GitHub Actions job/zip).
-- Keys come from `SecretsManagerKeysLoader` (same secret, 5-min cache); any load failure → Deny. Key comparison is constant-time (`FixedTimeEquals`).
-- Returns IAM-policy responses (not simple responses) — the authorizer is wired with `EnableSimpleResponses=false`.
+- Two validator directories, mirroring each other: `AgentKey/` (X-Api-Key: `IKeysLoader`/`SecretsManagerKeysLoader`, `AgentKeyValidator` fixed-time compare, any load failure → Deny) and `GoogleToken/` (RS256/JWKS + iss/aud/exp/allowlist). `Function.cs` only dispatches on header and turns validator results into IAM policies (`EnableSimpleResponses=false`).
 - Keep it small: no Sheets, no business logic, no API dependencies. Shared crypto/key logic between API and authorizer is duplicated on purpose (separate assemblies); note it if you change one.
 
 ### Testing (`tst/guito-api.Tests/`)

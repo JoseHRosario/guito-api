@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Amazon.Lambda.Core;
 using Amazon.Lambda.APIGatewayEvents;
+using GuitoApiAuthorizer.AgentKey;
 using GuitoApiAuthorizer.GoogleToken;
 using Xunit;
 
@@ -145,7 +146,7 @@ namespace GuitoApiAuthorizer.Tests
         [Fact]
         public async Task Dispatcher_allows_valid_google_token_without_api_key()
         {
-            var function = new Function(new FakeKeysLoader(["agent-key"]), new StubGoogleValidator(valid: true));
+            var function = new Function(new AgentKeyValidator(new FakeKeysLoader(["agent-key"])), new StubGoogleValidator(valid: true));
             var response = await function.FunctionHandler(Request(googleToken: "some-token"), FakeContext());
             Assert.Equal("Allow", Effect(response));
             Assert.Equal("human", response.PrincipalID);
@@ -154,7 +155,7 @@ namespace GuitoApiAuthorizer.Tests
         [Fact]
         public async Task Dispatcher_denies_invalid_google_token()
         {
-            var function = new Function(new FakeKeysLoader(["agent-key"]), new StubGoogleValidator(valid: false));
+            var function = new Function(new AgentKeyValidator(new FakeKeysLoader(["agent-key"])), new StubGoogleValidator(valid: false));
             var response = await function.FunctionHandler(Request(googleToken: "bad-token"), FakeContext());
             Assert.Equal("Deny", Effect(response));
         }
@@ -164,7 +165,7 @@ namespace GuitoApiAuthorizer.Tests
         {
             // The Google validator must never be consulted for the agent path (independence).
             var validator = new CountingGoogleValidator(valid: true);
-            var function = new Function(new FakeKeysLoader(["agent-key"]), validator);
+            var function = new Function(new AgentKeyValidator(new FakeKeysLoader(["agent-key"])), validator);
             var response = await function.FunctionHandler(Request(apiKey: "agent-key"), FakeContext());
             Assert.Equal("Allow", Effect(response));
             Assert.Equal("agent", response.PrincipalID);
@@ -174,7 +175,7 @@ namespace GuitoApiAuthorizer.Tests
         [Fact]
         public async Task Dispatcher_denies_requests_with_neither_header()
         {
-            var function = new Function(new FakeKeysLoader(["agent-key"]), new StubGoogleValidator(valid: true));
+            var function = new Function(new AgentKeyValidator(new FakeKeysLoader(["agent-key"])), new StubGoogleValidator(valid: true));
             var response = await function.FunctionHandler(Request(), FakeContext());
             Assert.Equal("Deny", Effect(response));
         }
@@ -183,7 +184,7 @@ namespace GuitoApiAuthorizer.Tests
         public async Task Dispatcher_google_path_does_not_load_agent_keys()
         {
             // Key-loader failure must not affect the human path (paths stay independent).
-            var function = new Function(new ThrowingKeysLoader(), new StubGoogleValidator(valid: true));
+            var function = new Function(new AgentKeyValidator(new ThrowingKeysLoader()), new StubGoogleValidator(valid: true));
             var response = await function.FunctionHandler(Request(googleToken: "t"), FakeContext());
             Assert.Equal("Allow", Effect(response));
         }

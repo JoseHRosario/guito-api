@@ -2,30 +2,18 @@ using System.Text.Json;
 using Amazon.SecretsManager;
 using Amazon.SecretsManager.Model;
 
-namespace GuitoApiAuthorizer
+namespace GuitoApiAuthorizer.AgentKey
 {
-    /// <summary>Agent keys for the X-Api-Key authorizer (issue #4/#3).</summary>
-    public interface IKeysLoader
-    {
-        Task<IReadOnlyList<string>> LoadAsync();
-    }
-
     /// <summary>
     /// Loads ApiKeys from the same Secrets Manager secret the API uses
     /// ("guito-api/prod", JSON document with an ApiKeys array). Caches for 5 min.
     /// </summary>
-    public class SecretsManagerKeysLoader : IKeysLoader
+    public class SecretsManagerKeysLoader(string secretName) : IKeysLoader
     {
         private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
 
-        private readonly string _secretName;
         private IReadOnlyList<string>? _cached;
         private DateTimeOffset _cachedAt;
-
-        public SecretsManagerKeysLoader(string secretName)
-        {
-            _secretName = secretName;
-        }
 
         public async Task<IReadOnlyList<string>> LoadAsync()
         {
@@ -35,7 +23,7 @@ namespace GuitoApiAuthorizer
             using var client = new AmazonSecretsManagerClient(new AmazonSecretsManagerConfig()); // region from AWS_REGION env var
             var response = await client.GetSecretValueAsync(new GetSecretValueRequest
             {
-                SecretId = _secretName,
+                SecretId = secretName,
             });
 
             using var document = JsonDocument.Parse(response.SecretString);
