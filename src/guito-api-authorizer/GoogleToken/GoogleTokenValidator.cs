@@ -4,18 +4,6 @@ using System.Text.Json;
 
 namespace GuitoApiAuthorizer.GoogleToken
 {
-    public record GoogleTokenClaims(string Email, string Audience, string Issuer, long ExpiresAtSeconds);
-
-    public record GoogleTokenResult(bool Valid, string? FailureReason, GoogleTokenClaims? Claims);
-
-    /// <summary>
-    /// Result of verifying a Google ID token's signature with a JWK. Exposed so the
-    /// validator can distinguish "signature bad" from "claims bad" in tests.
-    /// </summary>
-    public interface IGoogleTokenValidator
-    {
-        Task<GoogleTokenResult> ValidateAsync(string? idToken);
-    }
 
     /// <summary>
     /// Verifies Google ID tokens (RS256) against Google's JWKS plus the local policy:
