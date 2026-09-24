@@ -52,6 +52,29 @@ public class ApiKeyBoundaryTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
+    public async Task ApiKeyMiddleware_ShouldPassGoogleCredentialsThrough_WhenOnlyHumanPathHeadersArePresent()
+    {
+        // Human path (ADR-0003): a request presenting Google credentials is gated
+        // by GoogleIdTokenMiddleware, not by the agent-key gate. The agent gate must
+        // not demand an X-Api-Key from it — a Bearer request without an agent key
+        // fails in the Google middleware ("Missing IdentityToken"), never with
+        // "Missing API key".
+        var client = _factory.WithWebHostBuilder(b =>
+            b.ConfigureAppConfiguration((_, cfg) => cfg.AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["AppConfiguration:Authentication:ValidateApiKey"] = true.ToString(),
+                    ["AppConfiguration:Authentication:ValidateIdToken"] = true.ToString(),
+                }))).CreateClient();
+        client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", "Bearer some.jwt.value");
+
+        var response = await client.GetAsync("/expense/latest/1");
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("Missing API key", body);
+    }
+
+    [Fact]
     public async Task ApiKeyMiddleware_ShouldReturnUnauthorized_WhenHeaderValueIsUnknown()
     {
         var unknown = "xxx" + StoredValue[3..];
