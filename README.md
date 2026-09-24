@@ -24,7 +24,7 @@ Google (OAuth PKCE)          CLI / AI agents (X-Api-Key)
 
 - **Runtime**: .NET 10 on AWS Lambda (managed dotnet10 runtime, arm64, eu-west-1) behind API Gateway HTTP API; logs in CloudWatch. Two functions: `guito-api` (the app) and `guito-api-authorizer` (the X-Api-Key gate).
 - **Datastore**: a Google Spreadsheet, accessed with a dedicated service account — no database, no migration.
-- **Auth**: dual scheme — Google ID tokens for the UI (OAuth PKCE, planned authorizer per #4) and a personal `X-Api-Key` for CLI/AI agents. The agent path is enforced twice, independently: an API Gateway REQUEST authorizer (`guito-api-authorizer`, IAM-policy Allow/Deny, fail-closed) at the edge, and `ApiKeyMiddleware` inside the API as defense-in-depth.
+- **Auth**: dual scheme — a personal `X-Api-Key` for CLI/AI agents and Google ID tokens for the UI (OAuth PKCE, issue #13/#8). Both are enforced at the edge by the `guito-key-authorizer` REQUEST authorizer (single function, two independent validators — API Gateway allows one CUSTOM authorizer per route) and repeated inside the API by `ApiKeyMiddleware` / `GoogleIdTokenMiddleware` as defense-in-depth. Human-path config (`GOOGLE_CLIENT_ID`, `GOOGLE_ALLOWED_EMAILS`) arrives via Lambda env vars set in `deploy/deploy.sh` §3b; unset → human path deny-closed.
 - **Bank sync**: PSD2 transaction retrieval behind `IListTransactionsService` — GoCardless Bank Account Data first, Enable Banking free tier as fallback; consents are re-authenticated manually (~90 days).
 - **AI extraction**: endpoint stubbed (501) during the revival; a new implementation over OpenRouter is planned.
 

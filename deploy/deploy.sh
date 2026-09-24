@@ -38,13 +38,13 @@ dotnet publish src/guito-api-authorizer -c Release -f net10.0 -r "linux-$ARCH" -
 ( cd /tmp/pub-auth && rm -f /tmp/guito-authorizer.zip && zip -qr /tmp/guito-authorizer.zip . )
 
 # --- 3. Functions -------------------------------------------------------------
-create_or_update () { # name handler memory timeout zip
-  local name=$1 handler=$2 memory=$3 timeout=$4 zip=$5
+create_or_update () { # name handler memory timeout zip [extra env...]
+  local name=$1 handler=$2 memory=$3 timeout=$4 zip=$5; shift 5
   if ! aws --region "$REGION" lambda get-function --function-name "$name" >/dev/null 2>&1; then
     aws --region "$REGION" lambda create-function --function-name "$name" \
       --role "arn:aws:iam::*:role/$ROLE" --runtime dotnet10 --architectures "$ARCH" \
       --handler "$handler" --zip-file "fileb://$zip" --memory-size "$memory" --timeout "$timeout" \
-      --tags Project=Guito >/dev/null
+      --tags Project=Guito "$@" >/dev/null
   else
     aws --region "$REGION" lambda update-function-code --function-name "$name" \
       --zip-file "fileb://$zip" >/dev/null
@@ -54,6 +54,23 @@ create_or_update () { # name handler memory timeout zip
 
 create_or_update "$API_NAME" 'guito-api::GuitoApi.LambdaEntryPoint::FunctionHandlerAsync' 512 30 /tmp/guito-api.zip
 create_or_update "$API_NAME-authorizer" 'guito-api-authorizer::GuitoApiAuthorizer.Function::FunctionHandler' 128 10 /tmp/guito-authorizer.zip
+
+# --- 3b. Google human-auth config (issue #13) ----------------------------------
+# Provide GOOGLE_CLIENT_ID / GOOGLE_ALLOWED_EMAILS in the shell environment.
+# Until set, the authorizer's human path stays deny-closed and the API rejects
+# human requests (empty allowlist) — the agent X-Api-Key path is unaffected.
+if [ -n "${GOOGLE_CLIENT_ID:-}" ] && [ -n "${GOOGLE_ALLOWED_EMAILS:-}" ]; then
+  aws --region "$REGION" lambda update-function-configuration --function-name "$API_NAME-authorizer" \
+    --environment "Variables={SECRETS_SECRET_NAME=$SECRET_NAME,GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID,GOOGLE_ALLOWED_EMAILS=$GOOGLE_ALLOWED_EMAILS}" >/dev/null
+  # In-app defense-in-depth layer mirrors the same policy for the API function.
+  API_EMAILS_JSON=$(python3 -c "import json,sys; print(json.dumps([e.strip() for e in sys.argv[1].split(',')]))" "$GOOGLE_ALLOWED_EMAILS")
+  aws --region "$REGION" lambda update-function-configuration --function-name "$API_NAME" \
+    --environment "Variables={AppConfiguration__Authentication__OAuthAudience=$GOOGLE_CLIENT_ID,AppConfiguration__Authentication__AllowedLogins=$API_EMAILS_JSON,ASPNETCORE_ENVIRONMENT=Production}" >/dev/null
+  aws --region "$REGION" lambda wait function-updated-v2 --function-name "$API_NAME-authorizer"
+  aws --region "$REGION" lambda wait function-updated-v2 --function-name "$API_NAME"
+else
+  echo "NOTE: GOOGLE_CLIENT_ID/GOOGLE_ALLOWED_EMAILS not set — human auth path deployed deny-closed (agent key path unaffected)."
+fi
 
 # --- 3. HTTP API --------------------------------------------------------------
 API_ID=$(aws --region "$REGION" apigatewayv2 get-apis --query "Items[?Name=='$API_NAME'].ApiId" --output text)
@@ -67,8 +84,14 @@ AUTH_ARN=$(aws --region "$REGION" lambda get-function --function-name "$API_NAME
 AUTH_ID=$(aws --region "$REGION" apigatewayv2 get-authorizers --api-id "$API_ID" --query "Items[?Name=='guito-key-authorizer'].AuthorizerId" --output text)
 [ -n "$AUTH_ID" ] || AUTH_ID=$(aws --region "$REGION" apigatewayv2 create-authorizer --api-id "$API_ID" --name guito-key-authorizer \
   --authorizer-type REQUEST --authorizer-uri "arn:aws:apigateway:$REGION:lambda:path/2015-03-31/functions/$AUTH_ARN/invocations" \
-  --identity-source '$request.header.X-Api-Key' --authorizer-payload-format-version 2.0 \
+  --identity-source '$request.header.X-Api-Key, $request.header.x-google-idtoken' --authorizer-payload-format-version 2.0 \
   --authorizer-result-ttl-in-seconds 0 --query AuthorizerId --output text)
+# Issue #13: the single route authorizer dispatches on header inside the function,
+# so BOTH headers must trigger an authorizer invocation.
+if [ -n "$AUTH_ID" ]; then
+  aws --region "$REGION" apigatewayv2 update-authorizer --api-id "$API_ID" --authorizer-id "$AUTH_ID" \
+    --identity-source '$request.header.X-Api-Key, $request.header.x-google-idtoken' >/dev/null
+fi
 
 INT_ID=$(aws --region "$REGION" apigatewayv2 get-integrations --api-id "$API_ID" --query 'Items[0].IntegrationId' --output text)
 [ -n "$INT_ID" ] || INT_ID=$(aws --region "$REGION" apigatewayv2 create-integration --api-id "$API_ID" \
@@ -106,4 +129,4 @@ aws --region "$REGION" apigatewayv2 update-stage --api-id "$API_ID" --stage-name
 aws --region "$REGION" apigatewayv2 create-deployment --api-id "$API_ID" --stage-name '$default' >/dev/null
 
 echo "Deployed. Endpoint: $(aws --region "$REGION" apigatewayv2 get-api --api-id "$API_ID" --query ApiEndpoint --output text)"
-echo "Smoke test: /healthz → 200; no key → 401; wrong key → 403; valid key (from secret) → 200."
+echo "Smoke test: /healthz → 200; no credentials → 401/403; wrong key → 403; valid key (from secret) → 200; garbage x-google-idtoken → 403; valid Google ID token (GOOGLE_CLIENT_ID configured) → 200."
