@@ -30,8 +30,8 @@ aws --region "$REGION" iam attach-role-policy --role-name "$ROLE" \
 aws --region "$REGION" iam put-role-policy --role-name "$ROLE" --policy-name guito-api-secret-read \
   --policy-document "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"secretsmanager:GetSecretValue\",\"Resource\":\"arn:aws:secretsmanager:$REGION:*:secret:$SECRET_NAME-*\"}]}" >/dev/null
 
-# --- 2. Package (x64 by default; pass arm64 to match arm64 functions) --------
-ARCH=${ARCH:-x64}
+# --- 2. Package (arm64 — matches the deployed functions; ARCH=x64 to override) ---
+ARCH=${ARCH:-arm64}
 dotnet publish src/guito-api -c Release -f net10.0 -r "linux-$ARCH" --self-contained false -o /tmp/pub-api
 dotnet publish src/guito-api-authorizer -c Release -f net10.0 -r "linux-$ARCH" --self-contained false -o /tmp/pub-auth
 ( cd /tmp/pub-api && zip -qr /tmp/guito-api.zip . )
