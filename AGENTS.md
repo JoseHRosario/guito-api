@@ -16,6 +16,7 @@ Guito: personal expense-tracking API (.NET 10, AWS Lambda + API Gateway HTTP API
 - `src/guito-api-authorizer/` — X-Api-Key Lambda authorizer (separate project/function)
 - `tst/guito-api.Tests` — API tests
 - `tst/guito-api-authorizer.Tests` — authorizer tests
+- `sit/guito-api.IntegrationTests` — black-box tests against the DEPLOYED staging stack (NOT hermetic; requires AWS-resolved secrets — run via `scripts/run-staging-tests.sh`, never plain `dotnet test`)
 - `docs/` — ADRs, revival plan
 
 ## Commands
@@ -23,7 +24,7 @@ Guito: personal expense-tracking API (.NET 10, AWS Lambda + API Gateway HTTP API
 ```bash
 dotnet build          # build
 dotnet run --project src/guito-api  # local dev server (Kestrel) — plain dotnet run, no Lambda emulation
-dotnet test           # tests (external behavior only: HTTP boundary, provider seam)
+dotnet test --filter "Category!=Integration"   # tests (external behavior only: HTTP boundary, provider seam)
 dotnet tool restore   # if Lambda tools are needed for packaging checks
 ```
 

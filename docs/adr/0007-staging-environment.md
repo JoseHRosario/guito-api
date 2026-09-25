@@ -8,4 +8,4 @@ The deploy script (`deploy/deploy.sh`) takes `ENV=production|staging` and **defa
 
 **Considered Options**: sharing the prod functions/secret behind a staging flag (rejected — no isolation, staging traffic mutates prod state); per-env IAM roles (rejected as premature — one role with pinned per-env secret ARNs is sufficient at this scale).
 
-**Consequences**: staging shares the dev/staging Google spreadsheet (the same sheet local dev targets); the SA key file is gitignored, so a first staging deploy on a new machine fails by design until that file exists. Integration tests (`tst/guito-api.IntegrationTests`) target this stack via its own agent key, and the prod-key-against-staging 403 is an assertion, not an accident.
+**Consequences**: staging shares the dev/staging Google spreadsheet (the same sheet local dev targets); the SA key file is gitignored, so a first staging deploy on a new machine fails by design until that file exists. Integration tests (`sit/guito-api.IntegrationTests`) target this stack via its own agent key, and the prod-key-against-staging 403 is an assertion, not an accident.

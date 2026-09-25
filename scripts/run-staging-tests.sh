@@ -10,7 +10,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PROJECT="tst/guito-api.IntegrationTests/guito-api.IntegrationTests.csproj"
+PROJECT="sit/guito-api.IntegrationTests/guito-api.IntegrationTests.csproj"
 REGION=eu-west-1
 API_NAME=guito-api-staging
 STAGING_SECRET=guito-api/staging

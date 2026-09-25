@@ -15,12 +15,10 @@
   </ItemGroup>
 
   <!--
-    Deliberately NOT referenced by guito-api.slnx (issue #22): the default
-    `dotnet test` at the repo root (local and CI) runs zero integration tests.
-    Run this suite with scripts/run-staging-tests.sh, which resolves the staging
-    endpoint and both agent keys from AWS Secrets Manager before invoking
-    dotnet test filtered to Category=Integration. Every test class here carries
-    [Trait("Category", "Integration")].
+    Runs against the deployed staging stack only: scripts/run-staging-tests.sh
+    resolves the staging endpoint and both agent keys from AWS Secrets Manager
+    before invoking dotnet test filtered to Category=Integration. Every test
+    class here carries [Trait("Category", "Integration")].
   -->
 
 </Project>
