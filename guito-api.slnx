@@ -3,6 +3,14 @@
     <Project Path="sit/guito-api-auth.IntegrationTests/guito-api-auth.IntegrationTests.csproj" />
     <Project Path="sit/guito-api.IntegrationTests/guito-api.IntegrationTests.csproj" />
     <Project Path="sit/guito-api.IntegrationTests.Common/guito-api.IntegrationTests.Common.csproj" />
+  <Folder Name="/adrs/">
+    <File Path="docs/adr/0001-aws-serverless-deployment-target.md" />
+    <File Path="docs/adr/0002-angular-rewrite-new-repo.md" />
+    <File Path="docs/adr/0003-dual-auth-google-pkce-plus-api-key.md" />
+    <File Path="docs/adr/0004-psd2-provider-interface.md" />
+    <File Path="docs/adr/0005-google-sheets-datastore.md" />
+    <File Path="docs/adr/0006-figma-design-tokens-ui.md" />
+    <File Path="docs/adr/0007-staging-environment.md" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/guito-api/guito-api.csproj" />
