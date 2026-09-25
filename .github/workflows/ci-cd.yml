@@ -10,8 +10,10 @@ name: ci-cd
 
 on:
   push:
-    branches: ['**']   # branch pushes only — a tag push must not deploy anything
-  pull_request:
+    branches: ['**']   # branch pushes only — a tag push must not deploy anything.
+                       # No pull_request trigger: the push run already tests the
+                       # exact head SHA (and reports the check on the PR), so a
+                       # pull_request run would only duplicate it.
   workflow_dispatch:
     inputs:
       environment:
