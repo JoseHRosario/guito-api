@@ -8,8 +8,8 @@ namespace GuitoApi.Services
         // These fallback values predate the conventions sweep and stay: they are what
         // already got written into the Expenses sheet creator column for agent-path
         // requests (no human email claim present), so changing them alters sheet data.
-        private const string FallbackUserName = "Jon Doe";
-        private const string FallbackUserEmail = "JonDoe@Madafaka.com";
+        private const string FallbackUserName = "Meireles";
+        private const string FallbackUserEmail = "xunga.meireles@gmail.com";
 
         private readonly IHttpContextAccessor _httpContextAccessor;
 

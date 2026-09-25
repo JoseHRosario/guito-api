@@ -1,5 +1,12 @@
 @DateFrom = 2024-04-01
 @DateTo = 2024-04-12
+### Mint Google ID token (run this first; token is valid ~1h)
+# @name MintToken
+POST https://oauth2.googleapis.com/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=refresh_token&client_id={{Google_ClientId}}&client_secret={{Google_ClientSecret}}&refresh_token={{Google_RefreshToken}}
+
 
 // Auth contracts (ADR-0003): AGENT requests carry the key in BOTH X-Api-Key
 // (in-app middleware) and Authorization (gateway identity source). HUMAN
@@ -68,8 +75,8 @@ Accept: */*
 ### Human: List Latest Expenses (Google ID token in BOTH headers)
 GET {{Api_HostAddress}}/Expense/latest/5
 Accept: */*
-x-google-idtoken: {{Google_IdToken}}
-Authorization: Bearer {{Google_IdToken}}
+x-google-idtoken: {{MintToken.response.body.$.id_token}}
+Authorization: Bearer {{Mint...en}}
 
 ### Human: Create Expense (Google ID token in BOTH headers)
 POST {{Api_HostAddress}}/Expense/
