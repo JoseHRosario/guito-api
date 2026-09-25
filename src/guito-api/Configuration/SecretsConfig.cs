@@ -3,7 +3,10 @@ namespace GuitoApi.Configuration
     /// <summary>Where runtime secrets come from (issue #3).</summary>
     public class SecretsConfig
     {
-        /// <summary>"Aws" = AWS Secrets Manager; "File" = gitignored local JSON file.</summary>
+        /// <summary>Secrets:Location value selecting AWS Secrets Manager.</summary>
+        public const string LocationAws = "Aws";
+
+        /// <summary>"Aws" = AWS Secrets Manager; anything else = gitignored local JSON file.</summary>
         public string Location { get; set; } = string.Empty;
 
         /// <summary>Secrets Manager secret name (e.g. guito-api/prod).</summary>

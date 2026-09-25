@@ -4,6 +4,6 @@ namespace GuitoApi.Services.Expense
 {
     public interface IMatchExpensesService
     {
-        public Task<ExpenseMatchList> MatchExpensesAsync();
+        public Task<ExpenseMatchList> MatchExpensesAsync(CancellationToken cancellationToken = default);
     }
 }

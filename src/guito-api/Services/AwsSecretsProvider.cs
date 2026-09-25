@@ -15,12 +15,9 @@ namespace GuitoApi.Services
         private SecretsPayload? _cached;
         private DateTimeOffset _cachedAt;
 
-        public AwsSecretsProvider(string secretName)
-        {
-            _secretName = secretName;
-        }
+        public AwsSecretsProvider(string secretName) => _secretName = secretName;
 
-        public async Task<SecretsPayload> GetAsync()
+        public async Task<SecretsPayload> GetAsync(CancellationToken cancellationToken = default)
         {
             if (_cached is not null && DateTimeOffset.UtcNow - _cachedAt < CacheTtl)
                 return _cached;
@@ -30,7 +27,7 @@ namespace GuitoApi.Services
             var response = await client.GetSecretValueAsync(new GetSecretValueRequest
             {
                 SecretId = _secretName,
-            });
+            }, cancellationToken);
             var payload = JsonSerializer.Deserialize<SecretsPayload>(
                 response.SecretString,
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true })

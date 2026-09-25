@@ -8,6 +8,4 @@
         public Nordigen Nordigen { get; set; } = new();
         public SecretsConfig Secrets { get; set; } = new();
     }
-
-   
 }

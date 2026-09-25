@@ -1,17 +1,21 @@
-﻿using Google.Apis.Sheets.v4;
+using System.Globalization;
+using System.Net;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
+using Google.Apis.Sheets.v4;
 using Google.Apis.Sheets.v4.Data;
 using GuitoApi.Configuration;
 using GuitoApi.DataTransferObjects.Output;
 using GuitoApi.Exceptions;
 using Microsoft.Extensions.Options;
-using System.Net;
-using System.Text;
-using System.Text.Json;
 
 namespace GuitoApi.Services.Account
 {
     public class ListTransactionsNordigenService : IListTransactionsService
     {
+        private const int MaxLoggedErrorBodyLength = 500;
+
         private readonly AppConfigurationOptions _options;
         private readonly ILogger<ListTransactionsNordigenService> _logger;
         private readonly IGooglesheetsService _googlesheetsService;
@@ -31,190 +35,192 @@ namespace GuitoApi.Services.Account
             _client.BaseAddress = new Uri(_options.Nordigen.Endpoint);
         }
 
-        public async Task<TransactionList> ListAsync(DateTime? dateFrom, DateTime? dateTo)
+        public async Task<TransactionList> ListAsync(DateTime? dateFrom, DateTime? dateTo,
+            CancellationToken cancellationToken = default)
+        {
+            var token = await GetTokenAsync(cancellationToken);
+            var accountId = await GetAccountIdAsync(token, cancellationToken);
+
+            return await GetTransactionsAsync(token, accountId, dateFrom, dateTo, cancellationToken);
+        }
+
+        private async Task<TransactionList> GetTransactionsAsync(
+            string token, string accountId, DateTime? dateFrom, DateTime? dateTo,
+            CancellationToken cancellationToken)
         {
             var output = new TransactionList();
-            var token = await GetTokenAsync();
-            if (token == null)
-                return output;
+            var response = await SendAuthenticatedRequestAsync(token,
+                $"accounts/{accountId}/transactions/?date_from={GetDateFrom(dateFrom)}&date_to={GetDateTo(dateTo)}",
+                cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                throw await CreateUpstreamErrorExceptionAsync(response, "getting transactions", cancellationToken);
+            }
 
-            var accountId = await GetAccountIdAsync(token);
-            if (accountId == null)
-                return output;
+            var content = await response.Content.ReadAsStringAsync();
+            using var document = JsonDocument.Parse(content);
+            var transactions = document.RootElement
+                .GetProperty("transactions")
+                .GetProperty("booked");
 
-            output = await GetTransactionsAsync(token, accountId, dateFrom, dateTo);
+            foreach (var transaction in transactions.EnumerateArray())
+            {
+                var expense = ToTransactionDetailOrNull(transaction);
+                if (expense is not null)
+                    output.Transactions.Add(expense);
+            }
+
             return output;
         }
 
-        private async Task<TransactionList> GetTransactionsAsync(string token, string accountId, DateTime? dateFrom, DateTime? dateTo)
+        private static TransactionListDetail? ToTransactionDetailOrNull(JsonElement transaction)
         {
-            var output = new TransactionList();
-            var client = _client;
-            var path = $"accounts/{accountId}/transactions/?date_from={GetDateFrom(dateFrom)}&date_to={GetDateTo(dateTo)}";
-            var request = new HttpRequestMessage(HttpMethod.Get, path);
-            request.Headers.Add("Authorization", $"Bearer {token}");
-            var response = await client.SendAsync(request);
-            if (response.IsSuccessStatusCode)
-            {
-                var content = await response.Content.ReadAsStringAsync();
-                var document = JsonDocument.Parse(content);
-                var transactions = document.RootElement
-                    .GetProperty("transactions")
-                    .GetProperty("booked");
-                foreach (var transaction in transactions.EnumerateArray())
-                {
-                    var transactionAmount = transaction
-                        .GetProperty("transactionAmount")
-                        .GetProperty("amount").GetString();
-                    if (transactionAmount == null)
-                        continue;
+            var amountText = transaction
+                .GetProperty("transactionAmount")
+                .GetProperty("amount")
+                .GetString();
+            if (amountText is null || !decimal.TryParse(amountText, out var amount))
+                return null;
 
-                    var amount = decimal.Parse(transactionAmount);
-                    // We only want debits
-                    if (amount > 0)
-                        continue;
+            // We only want debits
+            if (amount > 0)
+                return null;
 
-#pragma warning disable CS8604 // Possible null reference argument.
-                    var transactionDetail = new TransactionListDetail
-                    {
-                        Amount = amount * -1,
-                        Date = transaction.GetProperty("bookingDate").GetString() == null
-                            ? null
-                            : DateTime.Parse(transaction.GetProperty("bookingDate").GetString()),
-                        Description = transaction.GetProperty("remittanceInformationUnstructured").GetString(),
-                        Id = transaction.GetProperty("internalTransactionId").GetString()
-                    };
-#pragma warning restore CS8604 // Possible null reference argument.
-                    output.Transactions.Add(transactionDetail);
-                }
-            }
-            else
+            return new TransactionListDetail
             {
-                _logger.LogError("Nordigen API Error. Status Code: {0}, Reason Phrase - {1} ", response.StatusCode, response.ReasonPhrase);
-                throw new ProblemException((int)response.StatusCode, $"Nordigen API Error: {response.ReasonPhrase}");
-            }
-            return output;
+                Amount = amount * -1,
+                Date = ParseBookingDate(transaction),
+                Description = transaction.GetProperty("remittanceInformationUnstructured").GetString(),
+                Id = transaction.GetProperty("internalTransactionId").GetString()
+            };
         }
 
-        private string GetDateFrom(DateTime? date)
+        private static DateTime? ParseBookingDate(JsonElement transaction)
         {
-            date = date ?? DateTime.Now.AddDays(-20);
-            return date.Value.ToString("yyyy-MM-dd");
+            var bookingDate = transaction.GetProperty("bookingDate").GetString();
+            return DateTime.TryParse(bookingDate, CultureInfo.InvariantCulture, DateTimeStyles.None, out var result)
+                ? result
+                : null;
         }
 
-        private string GetDateTo(DateTime? date)
-        {
-            date = date ?? DateTime.Now;
-            return date.Value.ToString("yyyy-MM-dd");
-        }
+        private string GetDateFrom(DateTime? date) => FormatDate(date ?? DateTime.Now.AddDays(-20));
 
-        private async Task<string?> GetAccountIdAsync(string token)
+        private string GetDateTo(DateTime? date) => FormatDate(date ?? DateTime.Now);
+
+        private static string FormatDate(DateTime date) => date.ToString("yyyy-MM-dd");
+
+        private async Task<string> GetAccountIdAsync(string token, CancellationToken cancellationToken)
         {
-            string? accountId = null;
-            var client = _client;
-            var requisitionId = await GetRequisitionIdAsync();
-            var path = $"requisitions/{requisitionId}/";
-            var request = new HttpRequestMessage(HttpMethod.Get, path);
-            request.Headers.Add("Authorization", $"Bearer {token}");
-            var response = await client.SendAsync(request);
-            if (response.IsSuccessStatusCode)
+            var requisitionId = await GetRequisitionIdAsync(cancellationToken);
+            var response = await SendAuthenticatedRequestAsync(token, $"requisitions/{requisitionId}/", cancellationToken);
+            if (!response.IsSuccessStatusCode)
             {
-                var content = await response.Content.ReadAsStringAsync();
-                var document = JsonDocument.Parse(content);
-                var accounts = document.RootElement.GetProperty("accounts");
-                foreach (var account in accounts.EnumerateArray())
-                {
-                    var accountGuid = account.GetString();
-                    if (accountGuid == null)
-                        continue;
-                    var iban = await GetAccountIbanAsync(token, accountGuid);
-                    if (iban == _options.Nordigen.Iban)
-                    {
-                        accountId = accountGuid;
-                        break;
-                    }
-                }
+                throw await CreateUpstreamErrorExceptionAsync(response, "getting account id", cancellationToken);
             }
 
-            if (string.IsNullOrWhiteSpace(accountId) || !response.IsSuccessStatusCode)
+            var content = await response.Content.ReadAsStringAsync();
+            using var document = JsonDocument.Parse(content);
+            var accounts = document.RootElement.GetProperty("accounts");
+            foreach (var account in accounts.EnumerateArray())
             {
-                _logger.LogError("Failed to get account id from Nordigen");
-                throw new ProblemException((int)HttpStatusCode.BadGateway, "Failed to get account id from Nordigen");
+                var accountGuid = account.GetString();
+                if (accountGuid is null)
+                    continue;
+
+                var iban = await GetAccountIbanAsync(token, accountGuid, cancellationToken);
+                if (iban == _options.Nordigen.Iban)
+                    return accountGuid;
             }
-            return accountId;
+
+            _logger.LogError("Failed to get account id from Nordigen");
+            throw new ProblemException((int)HttpStatusCode.BadGateway, "Failed to get account id from Nordigen");
         }
 
-        private async Task<string?> GetRequisitionIdAsync()
+        private async Task<string?> GetRequisitionIdAsync(CancellationToken cancellationToken)
         {
-            string? requisitionId = null;
             SheetsService service = await _googlesheetsService.GetAsync();
-
-            // Read values from the specified range
             SpreadsheetsResource.ValuesResource.GetRequest request =
                 service.Spreadsheets.Values.Get(_options.Googlesheets.SpreadsheetId, _options.Googlesheets.RequisitionRange);
 
-            ValueRange response = await request.ExecuteAsync();
-            IList<IList<object>> values = response.Values;
-            if (values != null && values.Count > 0)
-            {
-                var value = values.FirstOrDefault();
-                requisitionId = value?.FirstOrDefault()?.ToString();
-            }
-            return requisitionId;
+            ValueRange response = await request.ExecuteAsync(cancellationToken);
+            var values = response.Values;
+            if (values is not { Count: > 0 })
+                return null;
+
+            var firstRow = values.FirstOrDefault();
+            return firstRow?.FirstOrDefault()?.ToString();
         }
 
-        private async Task<string?> GetAccountIbanAsync(string token, string accountId)
+        private async Task<string> GetAccountIbanAsync(string token, string accountId,
+            CancellationToken cancellationToken)
         {
-            string? iban = null;
-            var client = _client;
-            var path = $"accounts/{accountId}/";
-            var request = new HttpRequestMessage(HttpMethod.Get, path);
-            request.Headers.Add("Authorization", $"Bearer {token}");
-            var response = await client.SendAsync(request);
-            if (response.IsSuccessStatusCode)
+            var response = await SendAuthenticatedRequestAsync(token, $"accounts/{accountId}/", cancellationToken);
+            if (!response.IsSuccessStatusCode)
             {
-                var content = await response.Content.ReadAsStringAsync();
-                var document = JsonDocument.Parse(content);
-                var property = document.RootElement.GetProperty("iban");
-                iban = property.GetString();
+                throw await CreateUpstreamErrorExceptionAsync(response, "getting account iban", cancellationToken);
             }
 
-            if (string.IsNullOrWhiteSpace(iban) || !response.IsSuccessStatusCode)
+            var content = await response.Content.ReadAsStringAsync();
+            using var document = JsonDocument.Parse(content);
+            var iban = document.RootElement.GetProperty("iban").GetString();
+            if (string.IsNullOrWhiteSpace(iban))
             {
                 _logger.LogError("Failed to get account iban from Nordigen");
                 throw new ProblemException((int)HttpStatusCode.BadGateway, "Failed to get account iban from Nordigen");
             }
+
             return iban;
         }
 
-
-        private async Task<string?> GetTokenAsync()
+        private async Task<string> GetTokenAsync(CancellationToken cancellationToken)
         {
-            string? token = null;
-            var client = _client;
-            var request = new HttpRequestMessage(HttpMethod.Post, "token/new/");
+            using var request = new HttpRequestMessage(HttpMethod.Post, "token/new/");
             var payload = new
             {
                 secret_id = _options.Nordigen.SecretId,
                 secret_key = _options.Nordigen.SecretKey
             };
-            request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");//CONTENT-TYPE header
-            var response = await client.SendAsync(request);
-            if (response.IsSuccessStatusCode)
+            request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+            var response = await _client.SendAsync(request, cancellationToken);
+            if (!response.IsSuccessStatusCode)
             {
-                var content = await response.Content.ReadAsStringAsync();
-                var document = JsonDocument.Parse(content);
-                var property = document.RootElement.GetProperty("access");
-                token = property.GetString();
+                throw await CreateUpstreamErrorExceptionAsync(response, "getting token", cancellationToken);
             }
 
-            if (string.IsNullOrWhiteSpace(token) || !response.IsSuccessStatusCode)
+            var content = await response.Content.ReadAsStringAsync();
+            using var document = JsonDocument.Parse(content);
+            var token = document.RootElement.GetProperty("access").GetString();
+            if (string.IsNullOrWhiteSpace(token))
             {
                 _logger.LogError("Failed to get token from Nordigen");
                 throw new ProblemException((int)HttpStatusCode.BadGateway, "Failed to get token from Nordigen");
             }
+
             return token;
         }
 
+        private async Task<HttpResponseMessage> SendAuthenticatedRequestAsync(
+            string token, string path, CancellationToken cancellationToken)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, path);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            return await _client.SendAsync(request, cancellationToken);
+        }
+
+        // Upstream errors surface the provider's own status and reason, not a generic 500.
+        private async Task<ProblemException> CreateUpstreamErrorExceptionAsync(
+            HttpResponseMessage response, string operation, CancellationToken cancellationToken)
+        {
+            var reason = response.ReasonPhrase ?? string.Empty;
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            // Bodies can be large or provider-internal: cap what reaches the log.
+            var bodyExcerpt = body.Length <= MaxLoggedErrorBodyLength
+                ? body
+                : body[..MaxLoggedErrorBodyLength] + "…";
+            _logger.LogError("Nordigen API error while {Operation}. Status Code: {StatusCode}, Reason Phrase: {ReasonPhrase}, Body: {Body}",
+                operation, (int)response.StatusCode, reason, bodyExcerpt);
+
+            return new ProblemException((int)response.StatusCode, $"Nordigen API Error: {reason}");
+        }
     }
 }

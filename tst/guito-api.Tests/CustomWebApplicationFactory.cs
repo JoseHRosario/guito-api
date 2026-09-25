@@ -31,6 +31,6 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
     {
         var descriptor = services.Single(d => d.ServiceType == typeof(TService));
         services.Remove(descriptor);
-        services.AddScoped(typeof(TService), _ => factory(_));
+        services.AddScoped(typeof(TService), _ => factory(_)!);
     }
 }

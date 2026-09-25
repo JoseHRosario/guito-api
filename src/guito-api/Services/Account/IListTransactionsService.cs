@@ -4,6 +4,7 @@ namespace GuitoApi.Services.Account
 {
     public interface IListTransactionsService
     {
-        public Task<TransactionList> ListAsync(DateTime? dateFrom = null, DateTime? dateTo = null);
+        public Task<TransactionList> ListAsync(DateTime? dateFrom = null, DateTime? dateTo = null,
+            CancellationToken cancellationToken = default);
     }
 }

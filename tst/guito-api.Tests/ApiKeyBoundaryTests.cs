@@ -178,6 +178,7 @@ public class ApiKeyBoundaryTests : IClassFixture<CustomWebApplicationFactory>
 
     private sealed class ThrowingSecretsProvider : ISecretsProvider
     {
-        public Task<SecretsPayload> GetAsync() => throw new InvalidOperationException("secrets unavailable");
+        public Task<SecretsPayload> GetAsync(CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("secrets unavailable");
     }
 }

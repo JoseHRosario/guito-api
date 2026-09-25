@@ -8,6 +8,6 @@ namespace GuitoApi.Services
     /// </summary>
     public interface ISecretsProvider
     {
-        Task<SecretsPayload> GetAsync();
+        Task<SecretsPayload> GetAsync(CancellationToken cancellationToken = default);
     }
 }

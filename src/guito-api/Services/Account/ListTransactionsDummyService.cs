@@ -1,11 +1,13 @@
-﻿using GuitoApi.DataTransferObjects.Output;
+﻿using System.Globalization;
 using System.Text.Json;
+using GuitoApi.DataTransferObjects.Output;
 
 namespace GuitoApi.Services.Account
 {
     public class ListTransactionsDummyService : IListTransactionsService
     {
-        public Task<TransactionList> ListAsync(DateTime? dateFrom, DateTime? dateTo)
+        public Task<TransactionList> ListAsync(DateTime? dateFrom, DateTime? dateTo,
+            CancellationToken cancellationToken = default)
         {
             var output = new TransactionList();
             var response = @"{
@@ -332,29 +334,32 @@ namespace GuitoApi.Services.Account
                 var transactionAmount = transaction
                     .GetProperty("transactionAmount")
                     .GetProperty("amount").GetString();
-                if (transactionAmount == null)
+                if (transactionAmount is null || !decimal.TryParse(transactionAmount, out var amount))
                     continue;
 
-                var amount = decimal.Parse(transactionAmount);
                 // We only want debits
                 if (amount > 0)
                     continue;
 
-#pragma warning disable CS8604 // Possible null reference argument.
-                var transactionDetail = new TransactionListDetail
+                output.Transactions.Add(new TransactionListDetail
                 {
                     Amount = amount * -1,
-                    Date = transaction.GetProperty("bookingDate").GetString() == null
-                        ? null
-                        : DateTime.Parse(transaction.GetProperty("bookingDate").GetString()),
+                    Date = ParseBookingDate(transaction),
                     Description = transaction.GetProperty("remittanceInformationUnstructured").GetString(),
                     Id = transaction.GetProperty("internalTransactionId").GetString()
-                };
-#pragma warning restore CS8604 // Possible null reference argument.
-                output.Transactions.Add(transactionDetail);
+                });
             }
             return Task.FromResult(output);
         }
 
+        // Same parse contract as the Nordigen implementation: invariant culture,
+        // unparseable dates become null instead of throwing.
+        private static DateTime? ParseBookingDate(JsonElement transaction)
+        {
+            var bookingDate = transaction.GetProperty("bookingDate").GetString();
+            return DateTime.TryParse(bookingDate, CultureInfo.InvariantCulture, DateTimeStyles.None, out var result)
+                ? result
+                : null;
+        }
     }
 }

@@ -21,92 +21,79 @@ namespace GuitoApi.Services.Expense
             _googlesheetsService = googlesheetsService;
         }
 
-        public async Task<ExpenseListLatest> ListLatestAsync(int count)
+        public async Task<ExpenseListLatest> ListLatestAsync(int count, CancellationToken cancellationToken = default)
         {
             var output = new ExpenseListLatest();
             SheetsService service = await _googlesheetsService.GetAsync();
 
             var rowIndexFromRange = GetRowIndexFromRange();
-            var lastRowIndex = await GetLatestRowIndexAsync(service);
+            var lastRowIndex = await GetLatestRowIndexAsync(service, cancellationToken);
             lastRowIndex = lastRowIndex < rowIndexFromRange ? rowIndexFromRange : lastRowIndex;
 
-            if (lastRowIndex != null)
-            {
-                output = await ListLatestExpensesAsync(service, count, lastRowIndex, rowIndexFromRange);
-            }
+            if (lastRowIndex is null)
+                return output;
 
-            return output;
+            return await ListLatestExpensesAsync(service, count, lastRowIndex, rowIndexFromRange, cancellationToken);
         }
 
-        private async Task<ExpenseListLatest> ListLatestExpensesAsync(SheetsService service, int count, int? lastRowIndex, int rowIndexFromRange)
+        private async Task<ExpenseListLatest> ListLatestExpensesAsync(SheetsService service, int count, int? lastRowIndex,
+            int rowIndexFromRange, CancellationToken cancellationToken)
         {
             var output = new ExpenseListLatest();
 
             var firstRowIndex = lastRowIndex - count + 1;
             firstRowIndex = firstRowIndex < rowIndexFromRange ? rowIndexFromRange : firstRowIndex;
+            // ExpensesLatestRange is a config-provided format template ("...!B{0}:H{1}").
             var range = string.Format(_options.Googlesheets.ExpensesLatestRange, firstRowIndex, lastRowIndex);
-            // Read values from the specified range
             SpreadsheetsResource.ValuesResource.GetRequest request =
                 service.Spreadsheets.Values.Get(_options.Googlesheets.SpreadsheetId, range);
 
-            ValueRange response = await request.ExecuteAsync();
-            IList<IList<object>> values = response.Values;
+            ValueRange response = await request.ExecuteAsync(cancellationToken);
+            var values = response.Values;
+            if (values is not { Count: > 0 })
+                return output;
 
-            // Print the read values
-            if (values != null && values.Count > 0)
+            for (var i = 0; i < values.Count; i++)
             {
-                for (int i = 0; i < values.Count; i++)
-                {
-                    if (string.IsNullOrWhiteSpace(values[i]?[0]?.ToString()))
-                        continue;
+                if (string.IsNullOrWhiteSpace(values[i]?[0]?.ToString()))
+                    continue;
 
-                    output.Expenses.Add(new ExpenseListLatestDetail
-                    {
-                        StoredOrder = i + 1,
-                        Date = ParseDate(values[i]?[0]),
-                        Amount = ParseDecimal(values[i]?[3]),
-                        Description = values[i]?[4]?.ToString(),
-                        Category = values[i]?[5]?.ToString(),
-                        CreatorEmail = values[i].Count > 6 ? values[i]?[6]?.ToString() : string.Empty
-                    });
-                }
+                output.Expenses.Add(new ExpenseListLatestDetail
+                {
+                    StoredOrder = i + 1,
+                    Date = ParseDate(values[i]?[0]),
+                    Amount = ParseDecimal(values[i]?[3]),
+                    Description = values[i]?[4]?.ToString(),
+                    Category = values[i]?[5]?.ToString(),
+                    CreatorEmail = values[i].Count > 6 ? values[i]?[6]?.ToString() : string.Empty
+                });
             }
+
             return output;
         }
 
-        private DateTime? ParseDate(object? value)
+        private static DateTime? ParseDate(object? value)
         {
-            if (value == null)
+            if (value is null)
                 return null;
 
-            if (DateTime.TryParse(value.ToString(), CultureInfo.InvariantCulture, out DateTime result))
-            {
-                return result;
-            }
-            return null;
+            return DateTime.TryParse(value.ToString(), CultureInfo.InvariantCulture, out var result)
+                ? result
+                : null;
         }
 
-        private decimal? ParseDecimal(object? value)
+        private static decimal? ParseDecimal(object? value)
         {
-            if (value == null)
+            if (value is null)
                 return null;
-#pragma warning disable CS8602
-            var valueString = value.ToString().Replace("€", "");
-#pragma warning restore CS8602
-            if (Decimal.TryParse(valueString, out decimal result))
-            {
-                return result;
-            }
-            return null;
+
+            var valueString = value.ToString()?.Replace("€", string.Empty);
+            return decimal.TryParse(valueString, out var result) ? result : null;
         }
 
-        /// <summary>
-        /// Append dummy row to get the latest row index
-        /// This values is returned by the API response
-        /// </summary>
-        /// <param name="service">Googl API Service</param>
-        /// <returns>row index</returns>
-        private async Task<int?> GetLatestRowIndexAsync(SheetsService service)
+        // Appends a dummy row to get the sheet's next row index back from the append
+        // response; the minus one maps the appended row to the last existing expense row.
+        private async Task<int?> GetLatestRowIndexAsync(SheetsService service, CancellationToken cancellationToken)
         {
             var valueRange = new ValueRange { Values = new List<IList<object>> { new List<object> { "" } } };
 
@@ -117,17 +104,17 @@ namespace GuitoApi.Services.Expense
                     _options.Googlesheets.ExpensesRange);
 
             appendRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
-            var appendResponse = await appendRequest.ExecuteAsync();
+            var appendResponse = await appendRequest.ExecuteAsync(cancellationToken);
 
-            // Update Expense Year and Month
-            // "ExpensesAux!B53:G53" = "53" - > Return the appended row index
+            // The append response's updated range ("...!B53:G53") carries the appended
+            // row index; minus one maps it to the last existing expense row.
             var match = Regex.Match(appendResponse.Updates.UpdatedRange, @"\d+$");
             return match.Success ? int.Parse(match.Value) - 1 : null;
         }
 
         private int GetRowIndexFromRange()
         {
-            // "ExpensesAux!B5" = "5" - > Return the row index
+            // The first data row: "ExpensesAux!B5" → row index 5.
             var match = Regex.Match(_options.Googlesheets.ExpensesRange, @"\d+$");
             return match.Success ? int.Parse(match.Value) : 0;
         }

@@ -22,49 +22,51 @@ namespace GuitoApi.Services
             _secretsProvider = secretsProvider;
         }
 
-        public async Task<SheetsService> GetAsync()
+        public async Task<SheetsService> GetAsync(CancellationToken cancellationToken = default)
         {
-            GoogleCredential credential;
-
-            if (_options.Googlesheets.CredentialLocation == CredentialLocationFilesystem)
+            GoogleCredential credential = _options.Googlesheets.CredentialLocation switch
             {
-                string credentialsFilePath = _options.Googlesheets.FilePath;
-                if (!File.Exists(credentialsFilePath))
-                {
-                    throw new ProblemException(
-                        message: $"Google service-account key not found at '{Path.GetFullPath(credentialsFilePath)}'. " +
-                                 "Place the key file (src/google-spreadsheets.json for local dev) or configure another credential location.");
-                }
+                CredentialLocationFilesystem => await CreateFilesystemCredentialAsync(),
+                CredentialLocationSecrets => await CreateSecretsCredentialAsync(),
+                _ => throw new ProblemException(
+                    message: $"Unsupported Google credential location '{_options.Googlesheets.CredentialLocation}'. " +
+                             $"Supported values: {CredentialLocationFilesystem}, {CredentialLocationSecrets}."),
+            };
 
-                await using (var stream = new FileStream(credentialsFilePath, FileMode.Open, FileAccess.Read))
-                {
-                    credential = GoogleCredential.FromStream(stream)
-                        .CreateScoped(SheetsService.Scope.Spreadsheets);
-                }
-            }
-            else if (_options.Googlesheets.CredentialLocation == CredentialLocationSecrets)
-            {
-                var payload = await _secretsProvider.GetAsync();
-                // payload owns the JsonDocument (cached in production): read raw text only,
-                // never dispose it here or the next cached call throws ObjectDisposedException.
-                var json = payload.GoogleServiceAccount.RootElement.GetRawText();
-                using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
-                credential = GoogleCredential.FromStream(stream)
-                    .CreateScoped(SheetsService.Scope.Spreadsheets);
-            }
-            else
+            return CreateSheetsService(credential);
+        }
+
+        private async Task<GoogleCredential> CreateFilesystemCredentialAsync()
+        {
+            var credentialsFilePath = _options.Googlesheets.FilePath;
+            if (!File.Exists(credentialsFilePath))
             {
                 throw new ProblemException(
-                    message: $"Unsupported Google credential location '{_options.Googlesheets.CredentialLocation}'. " +
-                             $"Supported values: {CredentialLocationFilesystem}, {CredentialLocationSecrets}.");
+                    message: $"Google service-account key not found at '{Path.GetFullPath(credentialsFilePath)}'. " +
+                             "Place the key file (src/google-spreadsheets.json for local dev) or configure another credential location.");
             }
 
-            // Create Google Sheets API service.
-            return new SheetsService(new BaseClientService.Initializer()
+            await using var stream = new FileStream(credentialsFilePath, FileMode.Open, FileAccess.Read);
+            return GoogleCredential.FromStream(stream)
+                .CreateScoped(SheetsService.Scope.Spreadsheets);
+        }
+
+        private async Task<GoogleCredential> CreateSecretsCredentialAsync()
+        {
+            var payload = await _secretsProvider.GetAsync();
+            // payload owns the JsonDocument (cached in production): read raw text only,
+            // never dispose it here or the next cached call throws ObjectDisposedException.
+            var json = payload.GoogleServiceAccount.RootElement.GetRawText();
+            using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+            return GoogleCredential.FromStream(stream)
+                .CreateScoped(SheetsService.Scope.Spreadsheets);
+        }
+
+        private static SheetsService CreateSheetsService(GoogleCredential credential) =>
+            new(new BaseClientService.Initializer
             {
                 HttpClientInitializer = credential,
                 ApplicationName = "Guito API",
             });
-        }
     }
 }

@@ -1,6 +1,7 @@
-﻿using GuitoApi.DataTransferObjects.Input;
-using GuitoApi.DataTransferObjects.Output;
+﻿using GuitoApi.DataTransferObjects.Output;
+using GuitoApi.DataTransferObjects.Input;
 using GuitoApi.Exceptions;
+using System.Net;
 
 namespace GuitoApi.Services.ArtificialIntelligence
 {
@@ -10,11 +11,10 @@ namespace GuitoApi.Services.ArtificialIntelligence
     /// </summary>
     public class ExtractMethodService : IExtractMethodService
     {
-        public Task<ExpenseExtracted> ExtractMethodAsync(ExpenseExtract input)
-        {
+        public Task<ExpenseExtracted> ExtractMethodAsync(ExpenseExtract input,
+            CancellationToken cancellationToken = default) =>
             throw new ProblemException(
-                (int)System.Net.HttpStatusCode.NotImplemented,
+                (int)HttpStatusCode.NotImplemented,
                 "Expense extraction is not implemented yet — the OpenRouter-based implementation is planned for revival phase 3.");
-        }
     }
 }

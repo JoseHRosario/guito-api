@@ -45,12 +45,11 @@ namespace GuitoApiAuthorizer.GoogleToken
             if (parts.Length != 3)
                 return Fail("malformed token");
 
-            JsonDocument? headerDocument = null;
-            JsonDocument? payloadDocument = null;
             try
             {
-                if (!TryDecodeJwt(parts, out headerDocument, out payloadDocument, out var signature))
-                    return Fail("malformed token");
+                using var headerDocument = JsonDocument.Parse(Base64UrlDecodeString(parts[0]));
+                using var payloadDocument = JsonDocument.Parse(Base64UrlDecodeString(parts[1]));
+                var signature = Base64UrlDecodeBytes(parts[2]);
 
                 if (!RequiresRs256(headerDocument.RootElement))
                     return Fail("unsupported alg");
@@ -70,11 +69,6 @@ namespace GuitoApiAuthorizer.GoogleToken
             catch (JsonException)
             {
                 return Fail("malformed token");
-            }
-            finally
-            {
-                headerDocument?.Dispose();
-                payloadDocument?.Dispose();
             }
         }
 
@@ -116,15 +110,6 @@ namespace GuitoApiAuthorizer.GoogleToken
 
             return new GoogleTokenResult(true, null,
                 new GoogleTokenClaims(email, audience, issuer, exp));
-        }
-
-        private static bool TryDecodeJwt(
-            string[] parts, out JsonDocument? headerDocument, out JsonDocument? payloadDocument, out byte[] signature)
-        {
-            headerDocument = JsonDocument.Parse(Base64UrlDecodeString(parts[0]));
-            payloadDocument = JsonDocument.Parse(Base64UrlDecodeString(parts[1]));
-            signature = Base64UrlDecodeBytes(parts[2]);
-            return true;
         }
 
         // `alg` is required and must be RS256 — absence fails closed.

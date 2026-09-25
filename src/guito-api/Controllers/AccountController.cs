@@ -17,9 +17,10 @@ namespace GuitoApi.Controllers
 
         [HttpGet("transactions")]
         [ResponseCache(Duration = 120, Location = ResponseCacheLocation.Any)]
-        public async Task<TransactionList> ListTransactionsAsync(DateTime? dateFrom, DateTime? dateTo)
+        public async Task<TransactionList> ListTransactionsAsync(DateTime? dateFrom, DateTime? dateTo,
+            CancellationToken cancellationToken)
         {
-            return await _listTransactionsService.ListAsync(dateFrom, dateTo);
+            return await _listTransactionsService.ListAsync(dateFrom, dateTo, cancellationToken);
         }
     }
 }

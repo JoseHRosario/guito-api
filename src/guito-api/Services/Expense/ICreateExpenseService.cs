@@ -4,6 +4,6 @@ namespace GuitoApi.Services.Expense
 {
     public interface ICreateExpenseService
     {
-        public Task CreateAsync(ExpenseCreate value);
+        public Task CreateAsync(ExpenseCreate value, CancellationToken cancellationToken = default);
     }
 }

@@ -14,10 +14,7 @@ namespace GuitoApi
     {
         private IConfiguration Configuration { get; }
 
-        public Startup(IConfiguration configuration)
-        {
-            Configuration = configuration;
-        }
+        public Startup(IConfiguration configuration) => Configuration = configuration;
 
         public void ConfigureServices(IServiceCollection services)
         {
@@ -27,7 +24,6 @@ namespace GuitoApi
                 .ReadFrom.Configuration(Configuration)
                 .CreateLogger();
 
-            // Add services to the container.
             services.AddControllers();
             services.AddProblemDetails();
             services.AddEndpointsApiExplorer();
@@ -56,17 +52,7 @@ namespace GuitoApi
 
             // Runtime secrets (issue #3): Secrets Manager in production, gitignored local file in dev.
             var secretsLocation = Configuration.GetValue<string>("AppConfiguration:Secrets:Location");
-            if (secretsLocation == "Aws")
-            {
-                var secretName = Configuration.GetValue<string>("AppConfiguration:Secrets:SecretName")
-                    ?? throw new InvalidOperationException("AppConfiguration:Secrets:SecretName is required when Secrets:Location is Aws");
-                services.AddSingleton<ISecretsProvider>(new AwsSecretsProvider(secretName));
-            }
-            else
-            {
-                var secretsFilePath = Configuration.GetValue<string>("AppConfiguration:Secrets:FilePath") ?? "secrets.local.json";
-                services.AddSingleton<ISecretsProvider>(new FileSecretsProvider(secretsFilePath));
-            }
+            services.AddSingleton<ISecretsProvider>(CreateSecretsProvider(secretsLocation));
 
             services.AddScoped<ICreateExpenseService, CreateExpenseGoogleApisSheetsService>();
             services.AddScoped<IMatchExpensesService, MatchExpensesService>();
@@ -84,6 +70,17 @@ namespace GuitoApi
             services.AddScoped<IExtractMethodService, ExtractMethodService>();
             services.AddScoped<IUserIdentityResolver, UserIdentityResolver>();
         }
+
+        private ISecretsProvider CreateSecretsProvider(string? secretsLocation) => secretsLocation switch
+        {
+            SecretsConfig.LocationAws => new AwsSecretsProvider(RequiredAwsSecretName()),
+            // Anything other than "Aws" is a local dev checkout: file-backed secrets.
+            _ => new FileSecretsProvider(Configuration.GetValue<string>("AppConfiguration:Secrets:FilePath") ?? "secrets.local.json"),
+        };
+
+        private string RequiredAwsSecretName() =>
+            Configuration.GetValue<string>("AppConfiguration:Secrets:SecretName")
+            ?? throw new InvalidOperationException("AppConfiguration:Secrets:SecretName is required when Secrets:Location is Aws");
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env, ILoggerFactory loggerFactory)
         {

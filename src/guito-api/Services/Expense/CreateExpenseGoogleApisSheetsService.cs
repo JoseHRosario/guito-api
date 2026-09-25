@@ -24,10 +24,9 @@ namespace GuitoApi.Services.Expense
             _userIdentityResolver = userIdentityResolver;
         }
 
-        public async Task CreateAsync(ExpenseCreate value)
+        public async Task CreateAsync(ExpenseCreate value, CancellationToken cancellationToken = default)
         {
             SheetsService service = await _googlesheetsService.GetAsync();
-            // Insert Expense data
             ValueRange valueRange = new ValueRange();
             valueRange.Values = new List<IList<object>> { new List<object>
             {
@@ -47,34 +46,31 @@ namespace GuitoApi.Services.Expense
                     _options.Googlesheets.ExpensesRange);
 
             appendRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
-            var appendResponse = await appendRequest.ExecuteAsync();
+            var appendResponse = await appendRequest.ExecuteAsync(cancellationToken);
 
-            // Update Expense Year and Month
-            // "ExpensesAux!B53:G53" = "53" - > Return the appended row index
-            Match match = Regex.Match(appendResponse.Updates.UpdatedRange, @"\d+$");
+            // The append response's updated range ("...!B53:G53") carries the appended row
+            // index; the Year/Month formula columns of that row still need filling in.
+            var match = Regex.Match(appendResponse.Updates.UpdatedRange, @"\d+$");
 
             if (match.Success)
             {
-                
                 valueRange.Values = new List<IList<object>> { new List<object>
                 {
-                    $"=YEAR(B{match.Value})", // Year
-                    $"=MONTH(B{match.Value})", // Month
+                    $"=YEAR(B{match.Value})",
+                    $"=MONTH(B{match.Value})",
                 } };
 
                 var updateRange = $"{_options.Googlesheets.ExpensesDateRange}{match.Value}";
-                SpreadsheetsResource.ValuesResource.UpdateRequest updateRequest = 
-                    service.Spreadsheets.Values.Update(valueRange, 
+                SpreadsheetsResource.ValuesResource.UpdateRequest updateRequest =
+                    service.Spreadsheets.Values.Update(valueRange,
                     _options.Googlesheets.SpreadsheetId,
                     updateRange);
                 updateRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
-                UpdateValuesResponse updateResponse = updateRequest.Execute();
+                await updateRequest.ExecuteAsync(cancellationToken);
             }
         }
 
-        private string NormalizeDescription(string description)
-        {
-            return CultureInfo.CurrentCulture.TextInfo.ToTitleCase(description.ToLower()).Trim();
-        }
+        private string NormalizeDescription(string description) =>
+            CultureInfo.CurrentCulture.TextInfo.ToTitleCase(description.ToLower()).Trim();
     }
 }
