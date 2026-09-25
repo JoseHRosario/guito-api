@@ -4,6 +4,6 @@ namespace GuitoApi.Services.Expense
 {
     public interface IListLatestExpensesService
     {
-        public Task<ExpenseListLatest> ListLatest(int count);
+        public Task<ExpenseListLatest> ListLatestAsync(int count);
     }
 }

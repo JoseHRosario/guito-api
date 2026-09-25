@@ -7,24 +7,28 @@ Personal expense-tracking API. Guito helps José control expenses and maximize s
 ## Architecture
 
 ```
-Google (OAuth PKCE)          CLI / AI agents (X-Api-Key)
+Google (ID token)            CLI / AI agents (X-Api-Key)
         │                              │
         ▼                              ▼
-   ┌──────────────────────────────────────────┐
-   │  API Gateway HTTP API                    │
-   │  guito-key-authorizer (REQUEST, X-Api-Key)│──▶ AWS Secrets Manager
-   │          │ (allowed)                     │
-   │          ▼                               │
-   │  Lambda — guito-api (.NET 10, arm64)     │──▶ AWS Secrets Manager
-   │          │                               │
-   └──────────┼───────────────────────────────┘
+   ┌───────────────────────────────────────────────────────────┐
+   │  API Gateway HTTP API  (identity source: Authorization)   │
+   │  guito-key-authorizer (REQUEST, one function)             │
+   │      dispatches on header:                                │
+   │        Bearer <jwt>  → Google ID-token validator  ────────│──▶ Google JWKS
+   │        raw Authorization → agent-key validator ────────────│──▶ AWS Secrets Manager
+   │          │ (allowed)                                      │
+   │          ▼                                                │
+   │  Lambda — guito-api (.NET 10, arm64)                      │──▶ AWS Secrets Manager
+   │          │ (GoogleIdTokenMiddleware / ApiKeyMiddleware)   │
+   └──────────┼────────────────────────────────────────────────┘
               ▼
      Google Sheets (datastore)          PSD2 provider (GoCardless / Enable Banking)
 ```
 
-- **Runtime**: .NET 10 on AWS Lambda (managed dotnet10 runtime, arm64, eu-west-1) behind API Gateway HTTP API; logs in CloudWatch. Two functions: `guito-api` (the app) and `guito-api-authorizer` (the X-Api-Key gate).
+- **Runtime**: .NET 10 on AWS Lambda (managed dotnet10 runtime, arm64, eu-west-1) behind API Gateway HTTP API; logs in CloudWatch. Two functions: `guito-api` (the app) and `guito-api-authorizer` (the edge auth gate).
 - **Datastore**: a Google Spreadsheet, accessed with a dedicated service account — no database, no migration.
-- **Auth**: dual scheme — Google ID tokens for the UI (OAuth PKCE, planned authorizer per #4) and a personal `X-Api-Key` for CLI/AI agents. The agent path is enforced twice, independently: an API Gateway REQUEST authorizer (`guito-api-authorizer`, IAM-policy Allow/Deny, fail-closed) at the edge, and `ApiKeyMiddleware` inside the API as defense-in-depth.
+- **Auth**: dual scheme — a personal `X-Api-Key` for CLI/AI agents and Google ID tokens for the UI (issue #13/#8). API Gateway allows one CUSTOM authorizer per route, so the `guito-key-authorizer` REQUEST authorizer is a single function dispatching on the `Authorization` header (its sole identity source): `Bearer <jwt>` → Google ID-token validation (RS256 against Google's JWKS, issuer/audience/expiry/allowlisted-email checks), raw value → agent-key validation. The two validators are independent — neither path falls back into the other. The same checks repeat inside the API (`ApiKeyMiddleware` / `GoogleIdTokenMiddleware`) as defense-in-depth, and each middleware is path-aware: agent requests carry the key in **both** `X-Api-Key` and `Authorization`; human requests carry the ID token in **both** `Authorization: Bearer <token>` and `x-google-idtoken` (see the sample requests in `src/guito-api/Rest/guito-api.http`). Human-path config (`GOOGLE_CLIENT_ID`, `GOOGLE_ALLOWED_EMAILS`) arrives via Lambda env vars set in `deploy/deploy.sh` §3b; unset → human path deny-closed.
+- **Human-token smoke**: the OAuth consent happens once (OAuth Playground, `openid email` scope); the refresh token lives in Secrets Manager `guito-api/human-auth`, and fresh ID tokens are minted unattended via the Google token endpoint — so the live positive smoke needs no human in the loop.
 - **Bank sync**: PSD2 transaction retrieval behind `IListTransactionsService` — GoCardless Bank Account Data first, Enable Banking free tier as fallback; consents are re-authenticated manually (~90 days).
 - **AI extraction**: endpoint stubbed (501) during the revival; a new implementation over OpenRouter is planned.
 

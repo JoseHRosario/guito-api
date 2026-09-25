@@ -21,24 +21,24 @@ namespace GuitoApi.Services.Expense
             _googlesheetsService = googlesheetsService;
         }
 
-        public async Task<ExpenseListLatest> ListLatest(int count)
+        public async Task<ExpenseListLatest> ListLatestAsync(int count)
         {
             var output = new ExpenseListLatest();
-            SheetsService service = await _googlesheetsService.Get();
+            SheetsService service = await _googlesheetsService.GetAsync();
 
             var rowIndexFromRange = GetRowIndexFromRange();
-            var lastRowIndex = await GetLatestRowIndex(service);
+            var lastRowIndex = await GetLatestRowIndexAsync(service);
             lastRowIndex = lastRowIndex < rowIndexFromRange ? rowIndexFromRange : lastRowIndex;
 
             if (lastRowIndex != null)
             {
-                output = await ListLatestExpenses(service, count, lastRowIndex, rowIndexFromRange);
+                output = await ListLatestExpensesAsync(service, count, lastRowIndex, rowIndexFromRange);
             }
 
             return output;
         }
 
-        private async Task<ExpenseListLatest> ListLatestExpenses(SheetsService service, int count, int? lastRowIndex, int rowIndexFromRange)
+        private async Task<ExpenseListLatest> ListLatestExpensesAsync(SheetsService service, int count, int? lastRowIndex, int rowIndexFromRange)
         {
             var output = new ExpenseListLatest();
 
@@ -106,7 +106,7 @@ namespace GuitoApi.Services.Expense
         /// </summary>
         /// <param name="service">Googl API Service</param>
         /// <returns>row index</returns>
-        private async Task<int?> GetLatestRowIndex(SheetsService service)
+        private async Task<int?> GetLatestRowIndexAsync(SheetsService service)
         {
             var valueRange = new ValueRange { Values = new List<IList<object>> { new List<object> { "" } } };
 

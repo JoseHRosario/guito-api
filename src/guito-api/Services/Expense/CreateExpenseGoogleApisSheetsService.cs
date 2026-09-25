@@ -24,9 +24,9 @@ namespace GuitoApi.Services.Expense
             _userIdentityResolver = userIdentityResolver;
         }
 
-        public async Task Create(ExpenseCreate value)
+        public async Task CreateAsync(ExpenseCreate value)
         {
-            SheetsService service = await _googlesheetsService.Get();
+            SheetsService service = await _googlesheetsService.GetAsync();
             // Insert Expense data
             ValueRange valueRange = new ValueRange();
             valueRange.Values = new List<IList<object>> { new List<object>

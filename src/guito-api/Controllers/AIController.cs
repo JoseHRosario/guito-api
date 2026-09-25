@@ -18,9 +18,9 @@ namespace GuitoApi.Controllers
         }
 
         [HttpPost("extract")]
-        public async Task<Output.ExpenseExtracted> Extract([FromBody] Input.ExpenseExtract input)
+        public async Task<Output.ExpenseExtracted> ExtractAsync([FromBody] Input.ExpenseExtract input)
         {
-            return await _extractMethodService.ExtractMethod(input);
+            return await _extractMethodService.ExtractMethodAsync(input);
         }
     }
 }

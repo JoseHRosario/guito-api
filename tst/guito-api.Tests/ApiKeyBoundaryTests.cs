@@ -36,7 +36,7 @@ public class ApiKeyBoundaryTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task Valid_value_is_accepted()
+    public async Task ApiKeyMiddleware_ShouldAllowEndpoint_WhenHeaderValueIsValid()
     {
         var client = ClientWith(gate: true, headerValue: StoredValue);
         var response = await client.GetAsync("/expense/latest/1");
@@ -44,7 +44,7 @@ public class ApiKeyBoundaryTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task Missing_value_is_unauthorized()
+    public async Task ApiKeyMiddleware_ShouldReturnUnauthorized_WhenHeaderValueIsMissing()
     {
         var client = ClientWith(gate: true);
         var response = await client.GetAsync("/expense/latest/1");
@@ -52,16 +52,44 @@ public class ApiKeyBoundaryTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task Unknown_value_is_unauthorized()
+    public async Task ApiKeyMiddleware_ShouldPassGoogleCredentialsThrough_WhenOnlyHumanPathHeadersArePresent()
     {
-        var unknown = "xxx" + StoredValue[3..];
-        var client = ClientWith(gate: true, headerValue: unknown);
+        // Human path (ADR-0003): a request presenting Google credentials is gated
+        // by GoogleIdTokenMiddleware, not by the agent-key gate. The agent gate must
+        // not demand an X-Api-Key from it — a Bearer request without an agent key
+        // fails in the Google middleware ("Missing IdentityToken"), never with
+        // "Missing API key".
+        var client = _factory.WithWebHostBuilder(b =>
+            b.ConfigureAppConfiguration((_, cfg) => cfg.AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["AppConfiguration:Authentication:ValidateApiKey"] = true.ToString(),
+                    ["AppConfiguration:Authentication:ValidateIdToken"] = true.ToString(),
+                }))).CreateClient();
+        client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", "Bearer some.jwt.value");
+
         var response = await client.GetAsync("/expense/latest/1");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("Missing API key", body);
     }
 
     [Fact]
-    public async Task Healthz_is_public()
+    public async Task ApiKeyMiddleware_ShouldReturnForbidden_WhenHeaderValueIsUnknown()
+    {
+        // Status convention: missing credentials → 401, rejected credentials → 403.
+        var unknown = "xxx" + StoredValue[3..];
+        var client = ClientWith(gate: true, headerValue: unknown);
+
+        var response = await client.GetAsync("/expense/latest/1");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Equal("Invalid API key", body); // produced by ApiKeyMiddleware, not another gate
+    }
+
+    [Fact]
+    public async Task ApiKeyMiddleware_ShouldAllowHealthz_WhenNoCredentialsArePresent()
     {
         var client = ClientWith(gate: true);
         var response = await client.GetAsync("/healthz");
@@ -69,7 +97,7 @@ public class ApiKeyBoundaryTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task Create_expense_with_valid_value_appends_to_spreadsheet()
+    public async Task CreateExpense_ShouldAppendRowToSpreadsheet_WhenApiKeyIsValid()
     {
         var client = ClientWith(gate: true, headerValue: StoredValue);
         var response = await client.PostAsJsonAsync("/expense", new ExpenseCreate
@@ -85,7 +113,7 @@ public class ApiKeyBoundaryTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task Disabled_gate_keeps_endpoints_open()
+    public async Task ApiKeyMiddleware_ShouldLeaveEndpointsOpen_WhenValidationIsDisabled()
     {
         var client = ClientWith(gate: false);
         var response = await client.GetAsync("/expense/latest/1");
@@ -93,7 +121,7 @@ public class ApiKeyBoundaryTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task Valid_agent_key_bypasses_google_idtoken_gate()
+    public async Task GoogleIdTokenMiddleware_ShouldSkipTokenCheck_WhenAgentKeyWasAccepted()
     {
         // Paths are independent (ADR-0003): a validated agent key must reach
         // the endpoint without a Google ID token, even when ValidateIdToken=true.
@@ -111,7 +139,7 @@ public class ApiKeyBoundaryTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task Healthz_is_public_even_with_google_gate_on()
+    public async Task GoogleIdTokenMiddleware_ShouldAllowHealthz_WhenNoTokenIsPresent()
     {
         var client = _factory.WithWebHostBuilder(b =>
             b.ConfigureAppConfiguration((_, cfg) => cfg.AddInMemoryCollection(
@@ -126,7 +154,7 @@ public class ApiKeyBoundaryTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task Secrets_failure_is_500_not_bypass()
+    public async Task ApiKeyMiddleware_ShouldReturn500_WhenSecretsCannotBeLoaded()
     {
         var client = _factory.WithWebHostBuilder(b =>
         {

@@ -16,9 +16,9 @@ namespace GuitoApi.Controllers
         }
 
         [HttpGet]
-        public async Task<CategoryList> List()
+        public async Task<CategoryList> ListAsync()
         {
-            return await _categoryService.List();
+            return await _categoryService.ListAsync();
         }
     }
 }

@@ -1,11 +1,18 @@
 @DateFrom = 2024-04-01
 @DateTo = 2024-04-12
 
+// Auth contracts (ADR-0003): AGENT requests carry the key in BOTH X-Api-Key
+// (in-app middleware) and Authorization (gateway identity source). HUMAN
+// requests carry the Google ID token in BOTH Authorization as "Bearer <token>"
+// (gateway identity source → Google validator at the edge) and
+// x-google-idtoken (in-app middleware). Paths never fall back into each other.
+
 ### AI Extract Method
 POST {{Api_HostAddress}}/AI/extract
 Accept: */*
 Content-Type: application/json
 X-Api-Key: {{Agent_ApiKey}}
+Authorization: {{Agent_ApiKey}}
 
 {
   "Language": "en-US",
@@ -17,18 +24,21 @@ GET {{Api_HostAddress}}/Expense/match/
 Accept: */*
 Content-Type: application/json
 X-Api-Key: {{Agent_ApiKey}}
+Authorization: {{Agent_ApiKey}}
 
 ### List Account Transactions
 GET {{Api_HostAddress}}/Account/transactions/?dateFrom={{DateFrom}}&dateTo={{DateTo}}
 Accept: */*
 Content-Type: application/json
 X-Api-Key: {{Agent_ApiKey}}
+Authorization: {{Agent_ApiKey}}
 
 ### Create Expense
 POST {{Api_HostAddress}}/Expense/
 Accept: */*
 Content-Type: application/json
 X-Api-Key: {{Agent_ApiKey}}
+Authorization: {{Agent_ApiKey}}
 
 {
   "date": "2024-03-19T12:15:42.953Z",
@@ -42,15 +52,35 @@ GET {{Api_HostAddress}}/Expense/latest/5
 Accept: */*
 Content-Type: application/json
 X-Api-Key: {{Agent_ApiKey}}
+Authorization: {{Agent_ApiKey}}
 
 ### List Categories
 GET {{Api_HostAddress}}/Category/
 Accept: */*
 Content-Type: application/json
 X-Api-Key: {{Agent_ApiKey}}
+Authorization: {{Agent_ApiKey}}
 
-### Health Check
+### Health Check (public — no auth needed)
 GET {{Api_HostAddress}}/healthz/
 Accept: */*
+
+### Human: List Latest Expenses (Google ID token in BOTH headers)
+GET {{Api_HostAddress}}/Expense/latest/5
+Accept: */*
+x-google-idtoken: {{Google_IdToken}}
+Authorization: Bearer {{Google_IdToken}}
+
+### Human: Create Expense (Google ID token in BOTH headers)
+POST {{Api_HostAddress}}/Expense/
+Accept: */*
 Content-Type: application/json
-X-Api-Key: {{Agent_ApiKey}}
+x-google-idtoken: {{Google_IdToken}}
+Authorization: Bearer {{Google_IdToken}}
+
+{
+  "date": "2024-03-19T12:15:42.953Z",
+  "amount": 10,
+  "description": "Dote",
+  "category": "Eating out"
+}

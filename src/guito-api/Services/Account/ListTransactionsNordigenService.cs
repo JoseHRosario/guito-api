@@ -31,22 +31,22 @@ namespace GuitoApi.Services.Account
             _client.BaseAddress = new Uri(_options.Nordigen.Endpoint);
         }
 
-        public async Task<TransactionList> List(DateTime? dateFrom, DateTime? dateTo)
+        public async Task<TransactionList> ListAsync(DateTime? dateFrom, DateTime? dateTo)
         {
             var output = new TransactionList();
-            var token = await GetToken();
+            var token = await GetTokenAsync();
             if (token == null)
                 return output;
 
-            var accountId = await GetAccountId(token);
+            var accountId = await GetAccountIdAsync(token);
             if (accountId == null)
                 return output;
 
-            output = await GetTransactions(token, accountId, dateFrom, dateTo);
+            output = await GetTransactionsAsync(token, accountId, dateFrom, dateTo);
             return output;
         }
 
-        private async Task<TransactionList> GetTransactions(string token, string accountId, DateTime? dateFrom, DateTime? dateTo)
+        private async Task<TransactionList> GetTransactionsAsync(string token, string accountId, DateTime? dateFrom, DateTime? dateTo)
         {
             var output = new TransactionList();
             var client = _client;
@@ -108,11 +108,11 @@ namespace GuitoApi.Services.Account
             return date.Value.ToString("yyyy-MM-dd");
         }
 
-        private async Task<string?> GetAccountId(string token)
+        private async Task<string?> GetAccountIdAsync(string token)
         {
             string? accountId = null;
             var client = _client;
-            var requisitionId = await GetRequisitionId();
+            var requisitionId = await GetRequisitionIdAsync();
             var path = $"requisitions/{requisitionId}/";
             var request = new HttpRequestMessage(HttpMethod.Get, path);
             request.Headers.Add("Authorization", $"Bearer {token}");
@@ -127,7 +127,7 @@ namespace GuitoApi.Services.Account
                     var accountGuid = account.GetString();
                     if (accountGuid == null)
                         continue;
-                    var iban = await GetAccountIban(token, accountGuid);
+                    var iban = await GetAccountIbanAsync(token, accountGuid);
                     if (iban == _options.Nordigen.Iban)
                     {
                         accountId = accountGuid;
@@ -144,10 +144,10 @@ namespace GuitoApi.Services.Account
             return accountId;
         }
 
-        private async Task<string?> GetRequisitionId()
+        private async Task<string?> GetRequisitionIdAsync()
         {
             string? requisitionId = null;
-            SheetsService service = await _googlesheetsService.Get();
+            SheetsService service = await _googlesheetsService.GetAsync();
 
             // Read values from the specified range
             SpreadsheetsResource.ValuesResource.GetRequest request =
@@ -163,7 +163,7 @@ namespace GuitoApi.Services.Account
             return requisitionId;
         }
 
-        private async Task<string?> GetAccountIban(string token, string accountId)
+        private async Task<string?> GetAccountIbanAsync(string token, string accountId)
         {
             string? iban = null;
             var client = _client;
@@ -188,7 +188,7 @@ namespace GuitoApi.Services.Account
         }
 
 
-        private async Task<string?> GetToken()
+        private async Task<string?> GetTokenAsync()
         {
             string? token = null;
             var client = _client;

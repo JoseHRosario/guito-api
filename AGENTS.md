@@ -8,7 +8,7 @@ Guidance for AI coding agents working in this repo. Keep it small and current �
 
 ## What this project is
 
-Guito: personal expense-tracking API (.NET 10, AWS Lambda + API Gateway HTTP API) doing CRUD on a Google Spreadsheet. Glossary in [CONTEXT.md](CONTEXT.md); decisions in [docs/adr/](docs/adr/); current work plan in [docs/guito-revival.md](docs/guito-revival.md); active spec in [issue #1](https://github.com/JoseHRosario/guito-api/issues/1).
+Guito: personal expense-tracking API (.NET 10, AWS Lambda + API Gateway HTTP API) doing CRUD on a Google Spreadsheet. Glossary in [CONTEXT.md](CONTEXT.md); decisions in [docs/adr/](docs/adr/); coding conventions in [docs/CONVENTIONS.md](docs/CONVENTIONS.md) (read before committing — its rules are enforced on every PR); current work plan in [docs/guito-revival.md](docs/guito-revival.md); active spec in [issue #1](https://github.com/JoseHRosario/guito-api/issues/1).
 
 ## Layout
 
@@ -64,15 +64,15 @@ Request path: **Controller → Service → Data access**. Each layer has one job
 
 ### Auth (`src/guito-api/Middleware/`)
 - **Two independent paths — never merge or weaken them (ADR-0003):**
-  - **Agent path**: the API Gateway REQUEST authorizer (`guito-key-authorizer` → `src/guito-api-authorizer`) validates `X-Api-Key` at the edge and returns an IAM Allow/Deny policy, fail-closed, TTL 0. `ApiKeyMiddleware` (`src/guito-api/Middleware/`) repeats the check inside the API as defense-in-depth: valid key sets `HttpContext.Items[ApiKeyMiddleware.AgentAuthedKey]`, which makes `GoogleIdTokenMiddleware` skip only the Google-token check. Run order in `Startup`: `ApiKeyMiddleware` → `GoogleIdTokenMiddleware`.
-  - **Human path**: `GoogleIdTokenMiddleware` validates the `x-google-idtoken` header against `AppConfiguration:Authentication` (allowed logins + audience). A dedicated Google authorizer function is planned (#4). **Today the deployed surface accepts only the agent path**: with `ValidateApiKey: true` (Production), `ApiKeyMiddleware` rejects every non-`/healthz` request without a valid key — human requests through the gateway need that relaxed as part of #4.
-  - `/healthz` is public in both gates; its single definition is `ApiKeyMiddleware.PublicPathKey`.
+  - **Agent path**: the API Gateway REQUEST authorizer (`guito-key-authorizer` → `src/guito-api-authorizer`) validates the agent key from the raw `Authorization` value at the edge and returns an IAM Allow/Deny policy, fail-closed, TTL 0. `ApiKeyMiddleware` (`src/guito-api/Middleware/`) repeats the check inside the API as defense-in-depth: valid key sets `HttpContext.Items[ApiKeyMiddleware.AgentAuthedKey]`, which makes `GoogleIdTokenMiddleware` skip only the Google-token check. Run order in `Startup`: `ApiKeyMiddleware` → `GoogleIdTokenMiddleware`.
+  - **Human path (issue #13)**: the gateway identity source is a single header, `Authorization`. The edge authorizer dispatches: `Authorization: Bearer <jwt>` → `GoogleTokenValidator` (`src/guito-api-authorizer/GoogleToken/`) verifies the RS256 signature against Google's JWKS, then checks issuer, audience (`GOOGLE_CLIENT_ID` env), expiry, and the allowed-email allowlist (`GOOGLE_ALLOWED_EMAILS` env). A raw `Authorization` value → agent-key path. `GoogleIdTokenMiddleware` (`src/guito-api/Middleware/`) repeats the token check inside the API as defense-in-depth, configured via `AppConfiguration:Authentication` (set in production through `AppConfiguration__Authentication__*` Lambda env vars). Both env sets come from `deploy/deploy.sh` section 3b; unset → human path is deny-closed, agent key path unaffected. **UI contract (issue #8): send the Google ID token as `Authorization: Bearer <idtoken>`.** Agents keep sending `X-Api-Key` and now also `Authorization: <key>` — API Gateway invokes a REQUEST authorizer only when ALL identity sources are present, so multiple source headers would 401 single-header requests (hit live, 2026-09-24).
+    - API Gateway allows one CUSTOM authorizer per route, so the edge is a single function with two independent validators dispatching on its sole identity source, `Authorization` (raw value → agent logic, `Bearer <jwt>` → Google logic, nothing → Deny). Other headers (`X-Api-Key`, `x-google-idtoken`) are never forwarded to REQUEST authorizers and must not be dispatched on at the edge. Independence is per-validator and per in-app middleware, not per function; never let one path fall back into the other.
+    - `/healthz` is public in both gates; its single definition is `ApiKeyMiddleware.PublicPathKey`.
 - Both paths read the same secret `guito-api/prod`. The contract between the sides is the secret's JSON shape (`ApiKeys` array, SA key object); the API binds it as `SecretsPayload` (`src/guito-api/Configuration/Secrets.cs`), the authorizer parses the raw `ApiKeys` property — no shared type. Changing the payload shape requires deploying both functions.
 
 ### Authorizer (`src/guito-api-authorizer/`)
 - Separate Lambda project/function, invoked by API Gateway before any route. Deploys independently from `src/guito-api/` (separate GitHub Actions job/zip).
-- Keys come from `SecretsManagerKeysLoader` (same secret, 5-min cache); any load failure → Deny. Key comparison is constant-time (`FixedTimeEquals`).
-- Returns IAM-policy responses (not simple responses) — the authorizer is wired with `EnableSimpleResponses=false`.
+- Two validator directories, mirroring each other: `AgentKey/` (agent key: `IKeysLoader`/`SecretsManagerKeysLoader`, `AgentKeyValidator` fixed-time compare, any load failure → Deny) and `GoogleToken/` (RS256/JWKS + iss/aud/exp/allowlist). `Function.cs` only dispatches on the `Authorization` header and turns validator results into IAM policies (`EnableSimpleResponses=false`).
 - Keep it small: no Sheets, no business logic, no API dependencies. Shared crypto/key logic between API and authorizer is duplicated on purpose (separate assemblies); note it if you change one.
 
 ### Testing (`tst/guito-api.Tests/`)

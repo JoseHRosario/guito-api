@@ -9,12 +9,16 @@ namespace GuitoApi.Middleware
 {
     /// <summary>
     /// Agent key path (ADR-0003): validates the X-Api-Key header against the
-    /// keys stored in the runtime secret. Independent of the Google token path.
+    /// keys stored in the runtime secret. Independent of the Google token path:
+    /// requests presenting Google credentials are NOT gated here — they pass
+    /// through and GoogleIdTokenMiddleware enforces the human path downstream.
     /// </summary>
     public class ApiKeyMiddleware
     {
         public const string ApiKeyHeaderKey = "X-Api-Key";
         private const string PublicPath = "/healthz";
+        private const string GoogleTokenHeaderName = GoogleIdTokenMiddleware.IdTokenHeaderKey;
+        private const string BearerPrefix = "Bearer ";
 
         /// <summary>Public path exempt from the auth gates (owned by ApiKeyMiddleware).</summary>
         public const string PublicPathKey = PublicPath;
@@ -46,11 +50,20 @@ namespace GuitoApi.Middleware
                     return;
                 }
 
+                // Human path (ADR-0003): credentials for the Google gate are present —
+                // let GoogleIdTokenMiddleware enforce them; demanding an agent key here
+                // would make the human path unreachable.
+                if (HasGoogleCredentials(httpContext))
+                {
+                    await _next(httpContext);
+                    return;
+                }
+
                 var apiKey = httpContext.Request.Headers[ApiKeyHeaderKey].ToString();
                 if (string.IsNullOrEmpty(apiKey))
                 {
                     _logger.LogWarning("Missing API key. Returning: {Status}", HttpStatusCode.Unauthorized);
-                    await WriteErrorToResponse(httpContext, HttpStatusCode.Unauthorized, "Missing API key");
+                    await AuthErrorResponseWriter.WriteAsync(httpContext, HttpStatusCode.Unauthorized, "Missing API key");
                     return;
                 }
 
@@ -59,8 +72,8 @@ namespace GuitoApi.Middleware
                 var payload = await secretsProvider.GetAsync();
                 if (!IsKnownKey(payload.ApiKeys, apiKey))
                 {
-                    _logger.LogWarning("Invalid API key. Returning: {Status}", HttpStatusCode.Unauthorized);
-                    await WriteErrorToResponse(httpContext, HttpStatusCode.Unauthorized, "Invalid API key");
+                    _logger.LogWarning("Invalid API key. Returning: {Status}", HttpStatusCode.Forbidden);
+                    await AuthErrorResponseWriter.WriteAsync(httpContext, HttpStatusCode.Forbidden, "Invalid API key");
                     return;
                 }
 
@@ -69,6 +82,12 @@ namespace GuitoApi.Middleware
                 httpContext.Items[AgentAuthedKey] = true;
             }
             await _next(httpContext);
+        }
+
+        private static bool HasGoogleCredentials(HttpContext httpContext)
+        {
+            return !string.IsNullOrEmpty(httpContext.Request.Headers[GoogleTokenHeaderName].ToString()) ||
+                   httpContext.Request.Headers["Authorization"].ToString().StartsWith(BearerPrefix, StringComparison.Ordinal);
         }
 
         private static bool IsKnownKey(IEnumerable<string> knownKeys, string apiKey)
@@ -89,12 +108,6 @@ namespace GuitoApi.Middleware
             // length leak is harmless, the branch is on length only.
             return expectedBytes.Length == actualBytes.Length &&
                    CryptographicOperations.FixedTimeEquals(expectedBytes, actualBytes);
-        }
-
-        private Task WriteErrorToResponse(HttpContext context, HttpStatusCode statusCode, string errorMessage)
-        {
-            context.Response.StatusCode = (int)statusCode;
-            return context.Response.WriteAsync(errorMessage);
         }
     }
 }

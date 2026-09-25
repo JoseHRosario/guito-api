@@ -15,7 +15,7 @@ public class FakeSheetsHttpHandler : HttpMessageHandler
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var pathAndQuery = Uri.UnescapeDataString(request.RequestUri!.PathAndQuery);
-        var content = request.Content is null ? "" : await ReadBody(request.Content, cancellationToken);
+        var content = request.Content is null ? "" : await ReadBodyAsync(request.Content, cancellationToken);
 
         if (pathAndQuery.Contains(":append", StringComparison.OrdinalIgnoreCase))
         {
@@ -76,7 +76,7 @@ public class FakeSheetsHttpHandler : HttpMessageHandler
                 """);
     }
 
-    private static async Task<string> ReadBody(HttpContent httpContent, CancellationToken cancellationToken)
+    private static async Task<string> ReadBodyAsync(HttpContent httpContent, CancellationToken cancellationToken)
     {
         var bytes = await httpContent.ReadAsByteArrayAsync(cancellationToken);
         // The Google client gzips POST bodies (GZipEnabled defaults to true)
