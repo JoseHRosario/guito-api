@@ -66,10 +66,11 @@ public class StagingAuthContractTests
     }
 
     [Fact]
-    public async Task ExpenseEndpoint_ShouldReturnForbiddenFromEdgeAuthorizer_WhenProductionKeyIsSent()
+    public async Task ExpenseEndpoint_ShouldReturnForbiddenFromEdgeAuthorizer_WhenOtherEnvironmentKeyIsSent()
     {
-        // Arrange — the PROD agent key against the staging stack must be denied by
-        // the edge authorizer (it only knows the staging key), never accepted.
+        // Arrange — the OTHER environment's agent key against the target stack
+        // must be denied by the edge authorizer (it only knows the target's
+        // key), never accepted — in either direction (staging↔prod).
         using var client = StagingEndpointFixture.CreateAgentClient(StagingEndpointFixture.OtherKey);
 
         // Act

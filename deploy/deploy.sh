@@ -118,14 +118,20 @@ create_or_update () { # name handler memory timeout zip [extra env...]
   # configuration update issued immediately races it (ResourceConflictException
   # on CI's fresh runner). Wait it out, then retry a few times as belt and braces.
   aws --region "$REGION" lambda wait function-updated-v2 --function-name "$name" || true
+  local last_err=""
   for attempt in 1 2 3 4 5; do
-    if aws --region "$REGION" lambda update-function-configuration --function-name "$name" \
-      --handler "$handler" >/dev/null 2>&1; then
+    if err=$(aws --region "$REGION" lambda update-function-configuration --function-name "$name" \
+      --handler "$handler" 2>&1 >/dev/null); then
+      last_err=""
       break
     fi
+    last_err="$err"
     echo "update-function-configuration conflict on $name (attempt $attempt) — retrying…"
     sleep $((attempt * 5))
   done
+  # Exhausted retries with the handler still unsynced would leave the next deploy
+  # targeting a stale/missing handler — that is a FAILURE, not a warning.
+  [ -z "$last_err" ] || { echo "FATAL: update-function-configuration failed for $name after retries: $last_err" >&2; exit 1; }
   aws --region "$REGION" lambda wait function-updated-v2 --function-name "$name"
 }
 
