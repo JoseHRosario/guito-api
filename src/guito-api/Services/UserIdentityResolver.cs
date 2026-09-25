@@ -5,32 +5,31 @@ namespace GuitoApi.Services
 {
     public class UserIdentityResolver : IUserIdentityResolver
     {
+        // These fallback values predate the conventions sweep and stay: they are what
+        // already got written into the Expenses sheet creator column for agent-path
+        // requests (no human email claim present), so changing them alters sheet data.
+        private const string FallbackUserName = "Jon Doe";
+        private const string FallbackUserEmail = "JonDoe@Madafaka.com";
+
         private readonly IHttpContextAccessor _httpContextAccessor;
 
-        public UserIdentityResolver(IHttpContextAccessor httpContextAccessor)
-        {
+        public UserIdentityResolver(IHttpContextAccessor httpContextAccessor) =>
             _httpContextAccessor = httpContextAccessor;
-        }
 
-        public string GetEmail()
-        {
-            UserIdentity userIdentity = ResolveUserIdentity();
-            return userIdentity.Email;
-        }
+        public string GetEmail() => ResolveUserIdentity().Email;
 
         public UserIdentity ResolveUserIdentity()
         {
-            if (_httpContextAccessor.HttpContext == null)
-                throw new Exception("Something is wrong. HttpContext is not available");
+            if (_httpContextAccessor.HttpContext is null)
+                throw new InvalidOperationException("HttpContext is not available");
 
             var userClaims = _httpContextAccessor.HttpContext.User.Claims.ToList();
 
-            var userIdentity = new UserIdentity
+            return new UserIdentity
             {
-                Name = userClaims.FirstOrDefault(x => x.Type.Equals(ClaimTypes.Name))?.Value ?? "Jon Doe",
-                Email = userClaims.FirstOrDefault(x => x.Type.Equals(ClaimTypes.Email))?.Value ?? "JonDoe@Madafaka.com"
+                Name = userClaims.FirstOrDefault(x => x.Type == ClaimTypes.Name)?.Value ?? FallbackUserName,
+                Email = userClaims.FirstOrDefault(x => x.Type == ClaimTypes.Email)?.Value ?? FallbackUserEmail
             };
-            return userIdentity;
         }
     }
 }

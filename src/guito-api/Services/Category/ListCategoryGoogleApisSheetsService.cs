@@ -33,22 +33,20 @@ namespace GuitoApi.Services.Category
                 service.Spreadsheets.Values.Get(_options.Googlesheets.SpreadsheetId, _options.Googlesheets.CategoriesRange);
 
             ValueRange response = await request.ExecuteAsync();
-            IList<IList<object>> values = response.Values;
+            var values = response.Values;
+            if (values is not { Count: > 0 })
+                return output;
 
-            // Print the read values
-            if (values != null && values.Count > 0)
+            foreach (var row in values)
             {
-                foreach (var row in values)
-                {
-                    if (string.IsNullOrWhiteSpace(row?[0]?.ToString()))
-                        continue;
+                var categoryName = row[0]?.ToString();
+                if (string.IsNullOrWhiteSpace(categoryName))
+                    continue;
 
-#pragma warning disable CS8601 // Possible null reference assignment.
-                    output.Categories.Add(new CategoryListDetail { Name = row[0].ToString() });
-#pragma warning restore CS8601 // Possible null reference assignment.
-                }
-                output.Categories = output.Categories.OrderBy(c => c.Name).ToList();
+                output.Categories.Add(new CategoryListDetail { Name = categoryName });
             }
+            output.Categories = output.Categories.OrderBy(c => c.Name).ToList();
+
             return output;
         }
     }

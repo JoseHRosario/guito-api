@@ -9,6 +9,8 @@ namespace GuitoApi.Services.Expense
         private readonly IListTransactionsService _listTransactionsService;
         private readonly IListLatestExpensesService _listLatestExpensesService;
         private const decimal Deviation = 0.5m;
+        // Sentinel that no real amount can match: unknown (null) amounts never pair up.
+        private const decimal NeverMatchAmount = 999999999m;
 
         public MatchExpensesService(IListTransactionsService listTransactionsService,
             IListLatestExpensesService listLatestExpensesService)
@@ -43,7 +45,7 @@ namespace GuitoApi.Services.Expense
                     Description = transaction.Description
                 };
 
-                if (matchingExpense != null)
+                if (matchingExpense is not null)
                 {
                     match.Expense = new ExpenseMatchDetail
                     {
@@ -79,20 +81,10 @@ namespace GuitoApi.Services.Expense
             return output;
         }
 
-        private decimal GetAmountLowerLimit(decimal? amount)
-        {
-            if (amount == null)
-                return 999999999;
+        private static decimal GetAmountLowerLimit(decimal? amount) =>
+            amount is null ? NeverMatchAmount : amount.Value - Deviation;
 
-            return amount.Value - Deviation;
-        }
-
-        private decimal GetAmountUpperLimit(decimal? amount)
-        {
-            if (amount == null)
-                return -999999999;
-
-            return amount.Value + Deviation;
-        }
+        private static decimal GetAmountUpperLimit(decimal? amount) =>
+            amount is null ? -NeverMatchAmount : amount.Value + Deviation;
     }
 }

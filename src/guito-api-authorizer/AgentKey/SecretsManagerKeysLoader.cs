@@ -20,11 +20,10 @@ namespace GuitoApiAuthorizer.AgentKey
             if (_cached is not null && DateTimeOffset.UtcNow - _cachedAt < CacheTtl)
                 return _cached;
 
-            using var client = new AmazonSecretsManagerClient(new AmazonSecretsManagerConfig()); // region from AWS_REGION env var
-            var response = await client.GetSecretValueAsync(new GetSecretValueRequest
-            {
-                SecretId = secretName,
-            }, cancellationToken);
+            // region comes from the AWS_REGION env var on the Lambda function.
+            using var client = new AmazonSecretsManagerClient(new AmazonSecretsManagerConfig());
+            var response = await client.GetSecretValueAsync(
+                new GetSecretValueRequest { SecretId = secretName }, cancellationToken);
 
             using var document = JsonDocument.Parse(response.SecretString);
             var keys = document.RootElement

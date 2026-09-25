@@ -1,8 +1,8 @@
-﻿using Google.Apis.Auth;
-using Microsoft.Extensions.Options;
-using System.Net;
-using GuitoApi.Configuration;
+﻿using System.Net;
 using System.Security.Claims;
+using Google.Apis.Auth;
+using GuitoApi.Configuration;
+using Microsoft.Extensions.Options;
 
 namespace GuitoApi.Middleware
 {
@@ -45,12 +45,12 @@ namespace GuitoApi.Middleware
 
                     if (string.IsNullOrEmpty(identityToken))
                     {
-                        _logger.LogWarning($"Missing identityToken from http header. Returning:  {HttpStatusCode.Unauthorized}");
+                        _logger.LogWarning("Missing identityToken from http header. Returning: {Status}", HttpStatusCode.Unauthorized);
                         await AuthErrorResponseWriter.WriteAsync(httpContext, HttpStatusCode.Unauthorized, "Missing IdentityToken");
                         return;
                     }
 
-                    GoogleJsonWebSignature.Payload payload = await GoogleJsonWebSignature.ValidateAsync(identityToken);
+                    var payload = await GoogleJsonWebSignature.ValidateAsync(identityToken);
                     if (!IsValidToken(payload))
                     {
                         _logger.LogWarning("IdentityToken failed validation rules for email: {email}", payload.Email);

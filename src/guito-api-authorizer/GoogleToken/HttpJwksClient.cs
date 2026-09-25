@@ -36,11 +36,16 @@ namespace GuitoApiAuthorizer.GoogleToken
             using var document = JsonDocument.Parse(json);
             return document.RootElement.GetProperty("keys").EnumerateArray()
                 .Select(k => new JsonWebKey(
-                    k.GetProperty("kid").GetString() ?? throw new InvalidOperationException("JWK missing kid"),
-                    k.GetProperty("n").GetString() ?? throw new InvalidOperationException("JWK missing n"),
-                    k.GetProperty("e").GetString() ?? throw new InvalidOperationException("JWK missing e")))
+                    RequiredString(k, "kid"),
+                    RequiredString(k, "n"),
+                    RequiredString(k, "e")))
                 .ToList();
         }
+
+        private static string RequiredString(JsonElement element, string propertyName) =>
+            element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String
+                ? property.GetString() ?? throw new InvalidOperationException($"JWK missing {propertyName}")
+                : throw new InvalidOperationException($"JWK missing {propertyName}");
 
         private static TimeSpan GetCacheTtl(TimeSpan? maxAge) =>
             maxAge is { } age && age > TimeSpan.Zero ? age : DefaultTtl;

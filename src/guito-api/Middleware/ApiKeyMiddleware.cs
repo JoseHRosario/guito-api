@@ -1,9 +1,9 @@
+using System.Net;
 using System.Security.Cryptography;
 using System.Text;
+using GuitoApi.Configuration;
 using GuitoApi.Services;
 using Microsoft.Extensions.Options;
-using System.Net;
-using GuitoApi.Configuration;
 
 namespace GuitoApi.Middleware
 {

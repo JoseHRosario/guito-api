@@ -53,7 +53,7 @@ namespace GuitoApiAuthorizer
                 return Deny(methodArn, "anonymous", "no Authorization header");
 
             return authorization.StartsWith(BearerPrefix, StringComparison.OrdinalIgnoreCase)
-                ? await AuthorizeGoogleAsync(authorization.Substring(BearerPrefix.Length), methodArn, context)
+                ? await AuthorizeGoogleAsync(authorization[BearerPrefix.Length..], methodArn, context)
                 : await AuthorizeAgentAsync(authorization, methodArn, context);
         }
 
@@ -109,7 +109,7 @@ namespace GuitoApiAuthorizer
             Policy(methodArn, "Allow", principal, null);
 
         private static APIGatewayCustomAuthorizerV2IamResponse Deny(
-            string methodArn, string principal, string reason) =>
+            string methodArn, string principal, string? reason) =>
             Policy(methodArn, "Deny", principal, reason);
 
         private static APIGatewayCustomAuthorizerV2IamResponse Policy(

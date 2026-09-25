@@ -9,7 +9,7 @@ public class FakeSecretsProvider : ISecretsProvider
     public SecretsPayload Payload { get; set; } = new()
     {
         ApiKeys = ["test-agent-key"],
-        };
+    };
 
     public Task<SecretsPayload> GetAsync() => Task.FromResult(Payload);
 }

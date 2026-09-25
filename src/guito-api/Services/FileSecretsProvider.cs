@@ -12,10 +12,7 @@ namespace GuitoApi.Services
     {
         private readonly string _filePath;
 
-        public FileSecretsProvider(string filePath)
-        {
-            _filePath = filePath;
-        }
+        public FileSecretsProvider(string filePath) => _filePath = filePath;
 
         public async Task<SecretsPayload> GetAsync()
         {
