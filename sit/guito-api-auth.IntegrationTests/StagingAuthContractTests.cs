@@ -1,17 +1,11 @@
 using System.Net;
-using System.Net.Http.Json;
-using System.Text.Json;
+using GuitoApi.IntegrationTests.Common;
 
-namespace GuitoApi.IntegrationTests;
+namespace GuitoApi.IntegrationTests.Auth;
 
 /// <summary>
-/// Speaks real HTTPS to the DEPLOYED staging stack (issue #22): proves the deploy
-/// contract end-to-end across both auth gates — public /healthz, edge-authorizer
-/// rejections, and a positive agent-key Expense round-trip against the live
-/// Google spreadsheet backing staging.
-///
-/// Layer attribution (required by the issue's runner criterion) comes from the
-/// response bodies:
+/// Auth contract of the DEPLOYED staging stack (issue #22), with layer attribution
+/// from the response bodies — each rejection names the layer that produced it:
 ///   • 401 {"message":"Unauthorized"} → the gateway rejected the request before
 ///     any authorizer ran: its single identity source (the Authorization header)
 ///     was absent;
@@ -23,10 +17,8 @@ namespace GuitoApi.IntegrationTests;
 ///     rejected the key — a different failure from an edge deny.
 /// </summary>
 [Trait(StagingEndpointFixture.CategoryTrait, StagingEndpointFixture.CategoryValue)]
-public class StagingDeployContractTests
+public class StagingAuthContractTests
 {
-    private static readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
-
     [Fact]
     public async Task Healthz_ShouldReturnOk_WhenCalledWithoutCredentials()
     {
@@ -94,41 +86,6 @@ public class StagingDeployContractTests
         Assert.DoesNotContain("Invalid API key", body);
     }
 
-    [Fact]
-    public async Task ExpenseRoundTrip_ShouldCreateThenListLatest_WhenStagingAgentKeyIsValid()
-    {
-        // Arrange — a unique per-run marker (digits survive ToTitleCase unchanged) so
-        // repeated runs each match exactly their own row in the live sheet.
-        using var client = StagingEndpointFixture.CreateAgentClient(StagingEndpointFixture.AgentKey);
-        var marker = $"integration-test {DateTime.UtcNow:yyyyMMddHHmmss}";
-        var expense = new
-        {
-            Date = DateTime.UtcNow,
-            Amount = 0.01m,
-            Description = marker,
-            Category = "Integration Tests",
-        };
-
-        // Act
-        var createResponse = await client.PostAsync("/expense", StagingEndpointFixture.ToJsonContent(expense));
-        var listResponse = await client.GetAsync("/Expense/latest/5");
-
-        // Assert — both calls succeed, and the listed payload round-trips through
-        // the live Google spreadsheet. The description comes back TitleCased
-        // ("Integration-Test ..."); the sheet stores the date day-precision.
-        Assert.Equal(HttpStatusCode.OK, createResponse.StatusCode);
-        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
-
-        var latest = await listResponse.Content.ReadFromJsonAsync<ExpenseListLatest>(_jsonOptions);
-        Assert.NotNull(latest);
-        var expenses = latest!.Expenses ?? throw new InvalidOperationException("list payload had no Expenses array");
-        var seen = Assert.Single(expenses, e =>
-            e.Amount == expense.Amount &&
-            e.Category == expense.Category &&
-            e.Description?.Contains(marker["integration-test ".Length..], StringComparison.Ordinal) == true &&
-            e.Date >= expense.Date.Date);
-    }
-
     /// <summary>
     /// Deliberately omits the raw Authorization value — API Gateway's only identity
     /// source — while sending an (irrelevant) X-Api-Key, so the rejection happens at
@@ -153,18 +110,5 @@ public class StagingDeployContractTests
         var client = StagingEndpointFixture.CreateAnonymousClient();
         client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", StagingEndpointFixture.AgentKey);
         return client;
-    }
-
-    private sealed class ExpenseListLatest
-    {
-        public List<ExpenseListLatestDetail>? Expenses { get; set; }
-    }
-
-    private sealed class ExpenseListLatestDetail
-    {
-        public DateTime? Date { get; set; }
-        public decimal? Amount { get; set; }
-        public string? Description { get; set; }
-        public string? Category { get; set; }
     }
 }

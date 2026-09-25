@@ -10,7 +10,10 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PROJECT="sit/guito-api.IntegrationTests/guito-api.IntegrationTests.csproj"
+PROJECTS=(
+  "sit/guito-api-auth.IntegrationTests/guito-api-auth.IntegrationTests.csproj"
+  "sit/guito-api.IntegrationTests/guito-api.IntegrationTests.csproj"
+)
 REGION=eu-west-1
 API_NAME=guito-api-staging
 STAGING_SECRET=guito-api/staging
@@ -47,8 +50,17 @@ GUITO_PROD_AGENT_KEY=$(secret_key "$PROD_SECRET")
 
 echo "Staging endpoint: $GUITO_STAGING_BASE_URL"
 
-# --- Run the suite (keys passed as env vars; never written anywhere) ---------
+# --- Run both suites (keys passed as env vars; never written anywhere) -------
+# One resolution, both domain suites: auth contract, then business round-trip.
+# Common (guito-api.IntegrationTests.Common) is shared plumbing, never run directly.
 cd "$REPO_ROOT"
-dotnet test "$PROJECT" \
-  --filter "Category=Integration" \
-  --logger "console;verbosity=normal"
+FAILED=0
+for PROJECT in "${PROJECTS[@]}"; do
+  echo "=== $PROJECT ==="
+  if ! dotnet test "$PROJECT" \
+    --filter "Category=Integration" \
+    --logger "console;verbosity=normal"; then
+    FAILED=1
+  fi
+done
+exit "$FAILED"

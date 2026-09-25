@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.Json;
 
-namespace GuitoApi.IntegrationTests;
+namespace GuitoApi.IntegrationTests.Common;
 
 /// <summary>
 /// Live staging configuration, populated by scripts/run-staging-tests.sh from AWS

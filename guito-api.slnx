@@ -1,6 +1,8 @@
 <Solution>
   <Folder Name="/sit/">
+    <Project Path="sit/guito-api-auth.IntegrationTests/guito-api-auth.IntegrationTests.csproj" />
     <Project Path="sit/guito-api.IntegrationTests/guito-api.IntegrationTests.csproj" />
+    <Project Path="sit/guito-api.IntegrationTests.Common/guito-api.IntegrationTests.Common.csproj" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/guito-api/guito-api.csproj" />

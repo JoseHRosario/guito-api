@@ -19,10 +19,10 @@
   </ItemGroup>
 
   <!--
-    Runs against the deployed staging stack only: scripts/run-staging-tests.sh
-    resolves the staging endpoint and both agent keys from AWS Secrets Manager
-    before invoking dotnet test filtered to Category=Integration. Every test
-    class here carries [Trait("Category", "Integration")].
+    Auth-contract SIT suite against the DEPLOYED staging stack: anonymous /healthz,
+    edge/gateway and in-app rejections with layer attribution from the response
+    bodies. Run only via scripts/run-staging-tests.sh, filtered to
+    Category=Integration — never plain dotnet test.
   -->
 
 </Project>
