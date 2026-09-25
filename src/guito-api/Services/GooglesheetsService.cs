@@ -22,7 +22,7 @@ namespace GuitoApi.Services
             _secretsProvider = secretsProvider;
         }
 
-        public async Task<SheetsService> GetAsync()
+        public async Task<SheetsService> GetAsync(CancellationToken cancellationToken = default)
         {
             GoogleCredential credential = _options.Googlesheets.CredentialLocation switch
             {

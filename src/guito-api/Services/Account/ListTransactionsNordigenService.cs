@@ -14,6 +14,8 @@ namespace GuitoApi.Services.Account
 {
     public class ListTransactionsNordigenService : IListTransactionsService
     {
+        private const int MaxLoggedErrorBodyLength = 500;
+
         private readonly AppConfigurationOptions _options;
         private readonly ILogger<ListTransactionsNordigenService> _logger;
         private readonly IGooglesheetsService _googlesheetsService;
@@ -33,22 +35,26 @@ namespace GuitoApi.Services.Account
             _client.BaseAddress = new Uri(_options.Nordigen.Endpoint);
         }
 
-        public async Task<TransactionList> ListAsync(DateTime? dateFrom, DateTime? dateTo)
+        public async Task<TransactionList> ListAsync(DateTime? dateFrom, DateTime? dateTo,
+            CancellationToken cancellationToken = default)
         {
-            var token = await GetTokenAsync();
-            var accountId = await GetAccountIdAsync(token);
+            var token = await GetTokenAsync(cancellationToken);
+            var accountId = await GetAccountIdAsync(token, cancellationToken);
 
-            return await GetTransactionsAsync(token, accountId, dateFrom, dateTo);
+            return await GetTransactionsAsync(token, accountId, dateFrom, dateTo, cancellationToken);
         }
 
         private async Task<TransactionList> GetTransactionsAsync(
-            string token, string accountId, DateTime? dateFrom, DateTime? dateTo)
+            string token, string accountId, DateTime? dateFrom, DateTime? dateTo,
+            CancellationToken cancellationToken)
         {
             var output = new TransactionList();
-            var response = await SendAuthenticatedRequestAsync(token, $"accounts/{accountId}/transactions/?date_from={GetDateFrom(dateFrom)}&date_to={GetDateTo(dateTo)}");
+            var response = await SendAuthenticatedRequestAsync(token,
+                $"accounts/{accountId}/transactions/?date_from={GetDateFrom(dateFrom)}&date_to={GetDateTo(dateTo)}",
+                cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
-                throw await CreateUpstreamErrorExceptionAsync(response, "getting transactions");
+                throw await CreateUpstreamErrorExceptionAsync(response, "getting transactions", cancellationToken);
             }
 
             var content = await response.Content.ReadAsStringAsync();
@@ -103,13 +109,13 @@ namespace GuitoApi.Services.Account
 
         private static string FormatDate(DateTime date) => date.ToString("yyyy-MM-dd");
 
-        private async Task<string> GetAccountIdAsync(string token)
+        private async Task<string> GetAccountIdAsync(string token, CancellationToken cancellationToken)
         {
-            var requisitionId = await GetRequisitionIdAsync();
-            var response = await SendAuthenticatedRequestAsync(token, $"requisitions/{requisitionId}/");
+            var requisitionId = await GetRequisitionIdAsync(cancellationToken);
+            var response = await SendAuthenticatedRequestAsync(token, $"requisitions/{requisitionId}/", cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
-                throw await CreateUpstreamErrorExceptionAsync(response, "getting account id");
+                throw await CreateUpstreamErrorExceptionAsync(response, "getting account id", cancellationToken);
             }
 
             var content = await response.Content.ReadAsStringAsync();
@@ -121,7 +127,7 @@ namespace GuitoApi.Services.Account
                 if (accountGuid is null)
                     continue;
 
-                var iban = await GetAccountIbanAsync(token, accountGuid);
+                var iban = await GetAccountIbanAsync(token, accountGuid, cancellationToken);
                 if (iban == _options.Nordigen.Iban)
                     return accountGuid;
             }
@@ -130,13 +136,13 @@ namespace GuitoApi.Services.Account
             throw new ProblemException((int)HttpStatusCode.BadGateway, "Failed to get account id from Nordigen");
         }
 
-        private async Task<string?> GetRequisitionIdAsync()
+        private async Task<string?> GetRequisitionIdAsync(CancellationToken cancellationToken)
         {
             SheetsService service = await _googlesheetsService.GetAsync();
             SpreadsheetsResource.ValuesResource.GetRequest request =
                 service.Spreadsheets.Values.Get(_options.Googlesheets.SpreadsheetId, _options.Googlesheets.RequisitionRange);
 
-            ValueRange response = await request.ExecuteAsync();
+            ValueRange response = await request.ExecuteAsync(cancellationToken);
             var values = response.Values;
             if (values is not { Count: > 0 })
                 return null;
@@ -145,12 +151,13 @@ namespace GuitoApi.Services.Account
             return firstRow?.FirstOrDefault()?.ToString();
         }
 
-        private async Task<string> GetAccountIbanAsync(string token, string accountId)
+        private async Task<string> GetAccountIbanAsync(string token, string accountId,
+            CancellationToken cancellationToken)
         {
-            var response = await SendAuthenticatedRequestAsync(token, $"accounts/{accountId}/");
+            var response = await SendAuthenticatedRequestAsync(token, $"accounts/{accountId}/", cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
-                throw await CreateUpstreamErrorExceptionAsync(response, "getting account iban");
+                throw await CreateUpstreamErrorExceptionAsync(response, "getting account iban", cancellationToken);
             }
 
             var content = await response.Content.ReadAsStringAsync();
@@ -165,7 +172,7 @@ namespace GuitoApi.Services.Account
             return iban;
         }
 
-        private async Task<string> GetTokenAsync()
+        private async Task<string> GetTokenAsync(CancellationToken cancellationToken)
         {
             using var request = new HttpRequestMessage(HttpMethod.Post, "token/new/");
             var payload = new
@@ -174,10 +181,10 @@ namespace GuitoApi.Services.Account
                 secret_key = _options.Nordigen.SecretKey
             };
             request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-            var response = await _client.SendAsync(request);
+            var response = await _client.SendAsync(request, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
-                throw await CreateUpstreamErrorExceptionAsync(response, "getting token");
+                throw await CreateUpstreamErrorExceptionAsync(response, "getting token", cancellationToken);
             }
 
             var content = await response.Content.ReadAsStringAsync();
@@ -192,21 +199,26 @@ namespace GuitoApi.Services.Account
             return token;
         }
 
-        private async Task<HttpResponseMessage> SendAuthenticatedRequestAsync(string token, string path)
+        private async Task<HttpResponseMessage> SendAuthenticatedRequestAsync(
+            string token, string path, CancellationToken cancellationToken)
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, path);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-            return await _client.SendAsync(request);
+            return await _client.SendAsync(request, cancellationToken);
         }
 
         // Upstream errors surface the provider's own status and reason, not a generic 500.
         private async Task<ProblemException> CreateUpstreamErrorExceptionAsync(
-            HttpResponseMessage response, string operation)
+            HttpResponseMessage response, string operation, CancellationToken cancellationToken)
         {
             var reason = response.ReasonPhrase ?? string.Empty;
-            var body = await response.Content.ReadAsStringAsync();
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            // Bodies can be large or provider-internal: cap what reaches the log.
+            var bodyExcerpt = body.Length <= MaxLoggedErrorBodyLength
+                ? body
+                : body[..MaxLoggedErrorBodyLength] + "…";
             _logger.LogError("Nordigen API error while {Operation}. Status Code: {StatusCode}, Reason Phrase: {ReasonPhrase}, Body: {Body}",
-                operation, (int)response.StatusCode, reason, body);
+                operation, (int)response.StatusCode, reason, bodyExcerpt);
 
             return new ProblemException((int)response.StatusCode, $"Nordigen API Error: {reason}");
         }

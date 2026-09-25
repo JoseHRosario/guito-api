@@ -16,9 +16,9 @@ namespace GuitoApi.Controllers
         }
 
         [HttpGet]
-        public async Task<CategoryList> ListAsync()
+        public async Task<CategoryList> ListAsync(CancellationToken cancellationToken)
         {
-            return await _categoryService.ListAsync();
+            return await _categoryService.ListAsync(cancellationToken);
         }
     }
 }

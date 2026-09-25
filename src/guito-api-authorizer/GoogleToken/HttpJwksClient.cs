@@ -44,7 +44,7 @@ namespace GuitoApiAuthorizer.GoogleToken
 
         private static string RequiredString(JsonElement element, string propertyName) =>
             element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String
-                ? property.GetString() ?? throw new InvalidOperationException($"JWK missing {propertyName}")
+                ? property.GetString()!
                 : throw new InvalidOperationException($"JWK missing {propertyName}");
 
         private static TimeSpan GetCacheTtl(TimeSpan? maxAge) =>

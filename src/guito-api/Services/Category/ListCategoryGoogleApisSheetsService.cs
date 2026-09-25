@@ -23,7 +23,7 @@ namespace GuitoApi.Services.Category
             _logger = logger;
         }
 
-        public async Task<CategoryList> ListAsync()
+        public async Task<CategoryList> ListAsync(CancellationToken cancellationToken = default)
         {
             var output = new CategoryList();
             SheetsService service = await _googlesheetsService.GetAsync();
@@ -32,7 +32,7 @@ namespace GuitoApi.Services.Category
             SpreadsheetsResource.ValuesResource.GetRequest request =
                 service.Spreadsheets.Values.Get(_options.Googlesheets.SpreadsheetId, _options.Googlesheets.CategoriesRange);
 
-            ValueRange response = await request.ExecuteAsync();
+            ValueRange response = await request.ExecuteAsync(cancellationToken);
             var values = response.Values;
             if (values is not { Count: > 0 })
                 return output;

@@ -11,7 +11,8 @@ namespace GuitoApi.Services.ArtificialIntelligence
     /// </summary>
     public class ExtractMethodService : IExtractMethodService
     {
-        public Task<ExpenseExtracted> ExtractMethodAsync(ExpenseExtract input) =>
+        public Task<ExpenseExtracted> ExtractMethodAsync(ExpenseExtract input,
+            CancellationToken cancellationToken = default) =>
             throw new ProblemException(
                 (int)HttpStatusCode.NotImplemented,
                 "Expense extraction is not implemented yet — the OpenRouter-based implementation is planned for revival phase 3.");

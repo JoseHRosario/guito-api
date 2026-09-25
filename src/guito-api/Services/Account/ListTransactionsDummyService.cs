@@ -1,11 +1,13 @@
-﻿using GuitoApi.DataTransferObjects.Output;
+﻿using System.Globalization;
 using System.Text.Json;
+using GuitoApi.DataTransferObjects.Output;
 
 namespace GuitoApi.Services.Account
 {
     public class ListTransactionsDummyService : IListTransactionsService
     {
-        public Task<TransactionList> ListAsync(DateTime? dateFrom, DateTime? dateTo)
+        public Task<TransactionList> ListAsync(DateTime? dateFrom, DateTime? dateTo,
+            CancellationToken cancellationToken = default)
         {
             var output = new TransactionList();
             var response = @"{
@@ -350,10 +352,14 @@ namespace GuitoApi.Services.Account
             return Task.FromResult(output);
         }
 
+        // Same parse contract as the Nordigen implementation: invariant culture,
+        // unparseable dates become null instead of throwing.
         private static DateTime? ParseBookingDate(JsonElement transaction)
         {
             var bookingDate = transaction.GetProperty("bookingDate").GetString();
-            return bookingDate is null ? null : DateTime.Parse(bookingDate);
+            return DateTime.TryParse(bookingDate, CultureInfo.InvariantCulture, DateTimeStyles.None, out var result)
+                ? result
+                : null;
         }
     }
 }

@@ -26,7 +26,7 @@ namespace GuitoApiAuthorizer.AgentKey
                 return Fail($"could not load agent keys: {ex.Message}");
             }
 
-            if (keys.All(k => !FixedTimeEquals(k, provided)))
+            if (!keys.Any(k => FixedTimeEquals(k, provided)))
                 return Fail("unknown X-Api-Key");
 
             return new AgentKeyResult(true, null);

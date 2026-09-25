@@ -5,6 +5,7 @@ namespace GuitoApi.Services.ArtificialIntelligence
 {
     public interface IExtractMethodService
     {
-        public Task<ExpenseExtracted> ExtractMethodAsync(ExpenseExtract input);
+        public Task<ExpenseExtracted> ExtractMethodAsync(ExpenseExtract input,
+            CancellationToken cancellationToken = default);
     }
 }

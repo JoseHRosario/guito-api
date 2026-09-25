@@ -11,5 +11,6 @@ public class FakeSecretsProvider : ISecretsProvider
         ApiKeys = ["test-agent-key"],
     };
 
-    public Task<SecretsPayload> GetAsync() => Task.FromResult(Payload);
+    public Task<SecretsPayload> GetAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(Payload);
 }

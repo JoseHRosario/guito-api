@@ -4,6 +4,6 @@ namespace GuitoApi.Services.Category
 {
     public interface IListCategoryService
     {
-        public Task<CategoryList> ListAsync();
+        public Task<CategoryList> ListAsync(CancellationToken cancellationToken = default);
     }
 }

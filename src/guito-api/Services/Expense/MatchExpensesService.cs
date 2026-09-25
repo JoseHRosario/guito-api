@@ -19,11 +19,11 @@ namespace GuitoApi.Services.Expense
             _listLatestExpensesService = listLatestExpensesService;
         }
 
-        public async Task<ExpenseMatchList> MatchExpensesAsync()
+        public async Task<ExpenseMatchList> MatchExpensesAsync(CancellationToken cancellationToken = default)
         {
             var output = new ExpenseMatchList();
-            var transactionsTask = _listTransactionsService.ListAsync();
-            var expensesTask = _listLatestExpensesService.ListLatestAsync(10);
+            var transactionsTask = _listTransactionsService.ListAsync(cancellationToken: cancellationToken);
+            var expensesTask = _listLatestExpensesService.ListLatestAsync(10, cancellationToken);
             await Task.WhenAll(transactionsTask, expensesTask);
             var transactions = transactionsTask.Result.Transactions.OrderByDescending(x => x.Date);
             var expenses = expensesTask.Result.Expenses.OrderByDescending(x => x.Date);

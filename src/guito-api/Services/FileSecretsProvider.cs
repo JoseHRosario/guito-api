@@ -14,7 +14,7 @@ namespace GuitoApi.Services
 
         public FileSecretsProvider(string filePath) => _filePath = filePath;
 
-        public async Task<SecretsPayload> GetAsync()
+        public async Task<SecretsPayload> GetAsync(CancellationToken cancellationToken = default)
         {
             if (!File.Exists(_filePath))
             {
@@ -23,7 +23,7 @@ namespace GuitoApi.Services
                              "Create it (src/secrets.local.json for local dev) or configure another secrets location.");
             }
 
-            var json = await File.ReadAllTextAsync(_filePath);
+            var json = await File.ReadAllTextAsync(_filePath, cancellationToken);
             return JsonSerializer.Deserialize<SecretsPayload>(
                 json,
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true })

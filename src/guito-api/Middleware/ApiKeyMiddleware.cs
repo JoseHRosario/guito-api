@@ -69,7 +69,7 @@ namespace GuitoApi.Middleware
 
                 // Resolve per-request: ISecretsProvider may be scoped (tests) or singleton (prod).
                 var secretsProvider = httpContext.RequestServices.GetRequiredService<ISecretsProvider>();
-                var payload = await secretsProvider.GetAsync();
+                var payload = await secretsProvider.GetAsync(httpContext.RequestAborted);
                 if (!IsKnownKey(payload.ApiKeys, apiKey))
                 {
                     _logger.LogWarning("Invalid API key. Returning: {Status}", HttpStatusCode.Forbidden);

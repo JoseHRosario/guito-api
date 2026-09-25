@@ -4,6 +4,6 @@ namespace GuitoApi.Services
 {
     public interface IGooglesheetsService
     {
-        public Task<SheetsService> GetAsync();
+        public Task<SheetsService> GetAsync(CancellationToken cancellationToken = default);
     }
 }

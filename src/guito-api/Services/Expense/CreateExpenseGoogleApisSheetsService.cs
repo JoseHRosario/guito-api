@@ -24,7 +24,7 @@ namespace GuitoApi.Services.Expense
             _userIdentityResolver = userIdentityResolver;
         }
 
-        public async Task CreateAsync(ExpenseCreate value)
+        public async Task CreateAsync(ExpenseCreate value, CancellationToken cancellationToken = default)
         {
             SheetsService service = await _googlesheetsService.GetAsync();
             ValueRange valueRange = new ValueRange();
@@ -46,7 +46,7 @@ namespace GuitoApi.Services.Expense
                     _options.Googlesheets.ExpensesRange);
 
             appendRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
-            var appendResponse = await appendRequest.ExecuteAsync();
+            var appendResponse = await appendRequest.ExecuteAsync(cancellationToken);
 
             // The append response's updated range ("...!B53:G53") carries the appended row
             // index; the Year/Month formula columns of that row still need filling in.
@@ -66,7 +66,7 @@ namespace GuitoApi.Services.Expense
                     _options.Googlesheets.SpreadsheetId,
                     updateRange);
                 updateRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
-                await updateRequest.ExecuteAsync();
+                await updateRequest.ExecuteAsync(cancellationToken);
             }
         }
 
