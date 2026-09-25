@@ -1,0 +1,86 @@
+# T5 (issue #6): CI/CD for the Guito API.
+#   • test           — hermetic unit suite on every push and PR (required check).
+#   • deploy-staging — feature-branch push (or manual dispatch) deploys staging
+#                      and smokes it with the sit auth-contract + business suites.
+#   • deploy-production — push to master (or manual dispatch) deploys production
+#                      and smokes it the same way.
+# AWS authentication is OIDC only (role guito-api-deploy, trust pinned to
+# repo:JoseHRosario/guito-api) — no long-lived AWS keys anywhere.
+name: ci-cd
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy (manual runs only)'
+        type: choice
+        options: [staging, production]
+        default: staging
+
+permissions:
+  id-token: write   # OIDC federation with AWS (guito-api-deploy role)
+  contents: read
+
+concurrency:
+  group: ci-cd-${{ github.event_name == 'workflow_dispatch' && inputs.environment || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: dotnet test (hermetic unit suite)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Run unit tests (no Integration category — those run post-deploy)
+        run: dotnet test --filter "Category!=Integration"
+
+  deploy-staging:
+    name: deploy + smoke (staging)
+    needs: test
+    if: >-
+      github.event_name == 'workflow_dispatch' && inputs.environment == 'staging' ||
+      github.event_name == 'push' && github.ref_name != 'master'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Assume AWS deploy role (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::497087877832:role/guito-api-deploy
+          aws-region: eu-west-1
+      - name: Deploy API + authorizer (staging)
+        run: ENV=staging ./deploy/deploy.sh
+      - name: Smoke — auth contract (Google token + agent key) and business round-trip
+        run: ./scripts/run-staging-tests.sh staging
+
+  deploy-production:
+    name: deploy + smoke (production)
+    needs: test
+    if: >-
+      github.event_name == 'workflow_dispatch' && inputs.environment == 'production' ||
+      github.event_name == 'push' && github.ref_name == 'master'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Assume AWS deploy role (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::497087877832:role/guito-api-deploy
+          aws-region: eu-west-1
+      - name: Deploy API + authorizer (production)
+        run: ENV=production ./deploy/deploy.sh
+      - name: Smoke — auth contract (Google token + agent key) and business round-trip
+        run: ./scripts/run-staging-tests.sh production

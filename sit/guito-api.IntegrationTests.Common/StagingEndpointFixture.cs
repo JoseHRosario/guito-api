@@ -4,30 +4,31 @@ using System.Text.Json;
 namespace GuitoApi.IntegrationTests.Common;
 
 /// <summary>
-/// Live staging configuration, populated by scripts/run-staging-tests.sh from AWS
-/// Secrets Manager (role MinervaAIAgent) before dotnet test starts. This process
-/// never reads AWS itself: the runner is the only component that touches secrets,
-/// so no credential logic is duplicated in the test code and keys exist only as
-/// process environment variables for the duration of one run.
+/// Live configuration of the TARGET environment (staging by default, or
+/// production), populated by scripts/run-staging-tests.sh from AWS Secrets
+/// Manager before dotnet test starts. This process never reads AWS itself:
+/// the runner is the only component that touches secrets, so no credential
+/// logic is duplicated in the test code and keys exist only as process
+/// environment variables for the duration of one run.
 /// </summary>
 public static class StagingEndpointFixture
 {
     public const string CategoryTrait = "Category";
     public const string CategoryValue = "Integration";
 
-    private static readonly Lazy<string> _baseUrl = new(RequiredEnvironment("GUITO_STAGING_BASE_URL"));
-    private static readonly Lazy<string> _agentKey = new(RequiredEnvironment("GUITO_STAGING_AGENT_KEY"));
-    private static readonly Lazy<string> _prodKey = new(RequiredEnvironment("GUITO_PROD_AGENT_KEY"));
-    private static readonly Lazy<string> _googleIdToken = new(RequiredEnvironment("GUITO_STAGING_GOOGLE_ID_TOKEN"));
+    private static readonly Lazy<string> _baseUrl = new(RequiredEnvironment("GUITO_TARGET_BASE_URL"));
+    private static readonly Lazy<string> _agentKey = new(RequiredEnvironment("GUITO_TARGET_AGENT_KEY"));
+    private static readonly Lazy<string> _otherKey = new(RequiredEnvironment("GUITO_OTHER_AGENT_KEY"));
+    private static readonly Lazy<string> _googleIdToken = new(RequiredEnvironment("GUITO_TARGET_GOOGLE_ID_TOKEN"));
 
-    /// <summary>Root of the deployed staging stack, e.g. https://abc123.execute-api.eu-west-1.amazonaws.com.</summary>
+    /// <summary>Root of the deployed TARGET environment stack (staging default, or production), e.g. https://abc123.execute-api.eu-west-1.amazonaws.com.</summary>
     public static string BaseUrl => _baseUrl.Value.TrimEnd('/');
 
-    /// <summary>Agent key from secret guito-api/staging (ApiKeys[0]) — the positive-path credential.</summary>
+    /// <summary>Agent key from the TARGET environment's secret (ApiKeys[0]) — the positive-path credential.</summary>
     public static string AgentKey => _agentKey.Value;
 
-    /// <summary>Agent key from secret guito-api/prod (ApiKeys[0]) — must be rejected by staging.</summary>
-    public static string ProdKey => _prodKey.Value;
+    /// <summary>Agent key from the OTHER environment's secret (ApiKeys[0]) — must be rejected by the target.</summary>
+    public static string OtherKey => _otherKey.Value;
 
     /// <summary>
     /// Fresh Google ID token minted by scripts/run-staging-tests.sh (refresh-token

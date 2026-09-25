@@ -70,7 +70,7 @@ public class StagingAuthContractTests
     {
         // Arrange — the PROD agent key against the staging stack must be denied by
         // the edge authorizer (it only knows the staging key), never accepted.
-        using var client = StagingEndpointFixture.CreateAgentClient(StagingEndpointFixture.ProdKey);
+        using var client = StagingEndpointFixture.CreateAgentClient(StagingEndpointFixture.OtherKey);
 
         // Act
         var response = await client.GetAsync("/Expense/latest/5");
