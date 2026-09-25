@@ -63,7 +63,7 @@ jobs:
       - name: Deploy API + authorizer (staging)
         run: ENV=staging ./deploy/deploy.sh
       - name: Smoke — auth contract (Google token + agent key) and business round-trip
-        run: ./scripts/run-staging-tests.sh staging
+        run: ./scripts/run-deployed-tests.sh staging
 
   deploy-production:
     name: deploy + smoke (production)
@@ -86,4 +86,4 @@ jobs:
       - name: Deploy API + authorizer (production)
         run: ENV=production ./deploy/deploy.sh
       - name: Smoke — auth contract (Google token + agent key) and business round-trip
-        run: ./scripts/run-staging-tests.sh production
+        run: ./scripts/run-deployed-tests.sh production

@@ -10,8 +10,8 @@
   <!--
     Shared plumbing for the SIT suites (guito-api.IntegrationTests and
     guito-api-auth.IntegrationTests): live staging configuration and client
-    factories. Not a test project — run-staging-tests.sh never invokes it
-    directly. The fixture reads env vars exported by scripts/run-staging-tests.sh
+    factories. Not a test project — run-deployed-tests.sh never invokes it
+    directly. The fixture reads env vars exported by scripts/run-deployed-tests.sh
     (base URL + agent keys from Secrets Manager); this process never touches AWS.
   -->
 

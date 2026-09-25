@@ -10,8 +10,8 @@ namespace GuitoApi.IntegrationTests;
 /// Expense create → list-latest round-trip against the live Google spreadsheet
 /// backing staging, with a per-run unique marker.
 /// </summary>
-[Trait(StagingEndpointFixture.CategoryTrait, StagingEndpointFixture.CategoryValue)]
-public class StagingExpenseRoundTripTests
+[Trait(DeployedEndpointFixture.CategoryTrait, DeployedEndpointFixture.CategoryValue)]
+public class DeployedExpenseRoundTripTests
 {
     private static readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -20,7 +20,7 @@ public class StagingExpenseRoundTripTests
     {
         // Arrange — a unique per-run marker (digits survive ToTitleCase unchanged) so
         // repeated runs each match exactly their own row in the live sheet.
-        using var client = StagingEndpointFixture.CreateAgentClient(StagingEndpointFixture.AgentKey);
+        using var client = DeployedEndpointFixture.CreateAgentClient(DeployedEndpointFixture.AgentKey);
         var marker = $"integration-test {DateTime.UtcNow:yyyyMMddHHmmss}";
         var expense = new
         {
@@ -31,7 +31,7 @@ public class StagingExpenseRoundTripTests
         };
 
         // Act
-        var createResponse = await client.PostAsync("/expense", StagingEndpointFixture.ToJsonContent(expense));
+        var createResponse = await client.PostAsync("/expense", DeployedEndpointFixture.ToJsonContent(expense));
         var listResponse = await client.GetAsync("/Expense/latest/5");
 
         // Assert — both calls succeed, and the listed payload round-trips through

@@ -16,14 +16,14 @@ namespace GuitoApi.IntegrationTests.Auth;
 ///   • 403 "Invalid API key"          → the edge passed, the in-app middleware
 ///     rejected the key — a different failure from an edge deny.
 /// </summary>
-[Trait(StagingEndpointFixture.CategoryTrait, StagingEndpointFixture.CategoryValue)]
-public class StagingAuthContractTests
+[Trait(DeployedEndpointFixture.CategoryTrait, DeployedEndpointFixture.CategoryValue)]
+public class DeployedAuthContractTests
 {
     [Fact]
     public async Task Healthz_ShouldReturnOk_WhenCalledWithoutCredentials()
     {
         // Arrange
-        using var client = StagingEndpointFixture.CreateAnonymousClient();
+        using var client = DeployedEndpointFixture.CreateAnonymousClient();
 
         // Act
         var response = await client.GetAsync("/healthz");
@@ -71,7 +71,7 @@ public class StagingAuthContractTests
         // Arrange — the OTHER environment's agent key against the target stack
         // must be denied by the edge authorizer (it only knows the target's
         // key), never accepted — in either direction (staging↔prod).
-        using var client = StagingEndpointFixture.CreateAgentClient(StagingEndpointFixture.OtherKey);
+        using var client = DeployedEndpointFixture.CreateAgentClient(DeployedEndpointFixture.OtherKey);
 
         // Act
         var response = await client.GetAsync("/Expense/latest/5");
@@ -95,7 +95,7 @@ public class StagingAuthContractTests
     /// </summary>
     private static HttpClient StagingEndpointClientWithoutAuthorizationHeader()
     {
-        var client = StagingEndpointFixture.CreateAnonymousClient();
+        var client = DeployedEndpointFixture.CreateAnonymousClient();
         client.DefaultRequestHeaders.Add("X-Api-Key", "irrelevant-missing-authorization-header");
         return client;
     }
@@ -112,7 +112,7 @@ public class StagingAuthContractTests
     public async Task ExpenseEndpoint_ShouldReturnOk_WhenValidGoogleIdTokenIsPresentInBothHeaders()
     {
         // Arrange
-        using var client = StagingEndpointFixture.CreateGoogleClient(StagingEndpointFixture.GoogleIdToken);
+        using var client = DeployedEndpointFixture.CreateGoogleClient(DeployedEndpointFixture.GoogleIdToken);
 
         // Act
         var response = await client.GetAsync("/Expense/latest/5");
@@ -133,7 +133,7 @@ public class StagingAuthContractTests
     public async Task ExpenseEndpoint_ShouldReturnForbiddenFromEdgeAuthorizer_WhenBearerValueIsNotAValidGoogleToken()
     {
         // Arrange
-        using var client = StagingEndpointFixture.CreateAnonymousClient();
+        using var client = DeployedEndpointFixture.CreateAnonymousClient();
         client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", "Bearer not-a-real-google-id-token");
 
         // Act
@@ -155,8 +155,8 @@ public class StagingAuthContractTests
     /// </summary>
     private static HttpClient StagingEndpointClientWithoutXApiKey()
     {
-        var client = StagingEndpointFixture.CreateAnonymousClient();
-        client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", StagingEndpointFixture.AgentKey);
+        var client = DeployedEndpointFixture.CreateAnonymousClient();
+        client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", DeployedEndpointFixture.AgentKey);
         return client;
     }
 }

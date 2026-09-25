@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # T8.2 (issue #22) / T5 (issue #6): run the deployed-endpoint integration test
 # suite against the LIVE stack of a target environment.
-#   Usage: scripts/run-staging-tests.sh [staging|production]   (default: staging)
+#   Usage: scripts/run-deployed-tests.sh [staging|production]   (default: staging)
 #
 # The suite needs four values this script resolves from AWS (Secrets Manager /
 # API Gateway / Lambda) at run time; no key or token is ever stored in the repo

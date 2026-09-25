@@ -5,13 +5,13 @@ namespace GuitoApi.IntegrationTests.Common;
 
 /// <summary>
 /// Live configuration of the TARGET environment (staging by default, or
-/// production), populated by scripts/run-staging-tests.sh from AWS Secrets
+/// production), populated by scripts/run-deployed-tests.sh from AWS Secrets
 /// Manager before dotnet test starts. This process never reads AWS itself:
 /// the runner is the only component that touches secrets, so no credential
 /// logic is duplicated in the test code and keys exist only as process
 /// environment variables for the duration of one run.
 /// </summary>
-public static class StagingEndpointFixture
+public static class DeployedEndpointFixture
 {
     public const string CategoryTrait = "Category";
     public const string CategoryValue = "Integration";
@@ -31,7 +31,7 @@ public static class StagingEndpointFixture
     public static string OtherKey => _otherKey.Value;
 
     /// <summary>
-    /// Fresh Google ID token minted by scripts/run-staging-tests.sh (refresh-token
+    /// Fresh Google ID token minted by scripts/run-deployed-tests.sh (refresh-token
     /// exchange against secret guito-api/human-auth) — the positive-path human credential.
     /// </summary>
     public static string GoogleIdToken => _googleIdToken.Value;
@@ -80,5 +80,5 @@ public static class StagingEndpointFixture
     private static string RequiredEnvironment(string name) =>
         Environment.GetEnvironmentVariable(name)
         ?? throw new InvalidOperationException(
-            $"Environment variable {name} is not set — run scripts/run-staging-tests.sh instead of invoking dotnet test directly.");
+            $"Environment variable {name} is not set — run scripts/run-deployed-tests.sh instead of invoking dotnet test directly.");
 }
