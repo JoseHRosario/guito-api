@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.2" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.13.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <!--
+    Deliberately NOT referenced by guito-api.slnx (issue #22): the default
+    `dotnet test` at the repo root (local and CI) runs zero integration tests.
+    Run this suite with scripts/run-staging-tests.sh, which resolves the staging
+    endpoint and both agent keys from AWS Secrets Manager before invoking
+    dotnet test filtered to Category=Integration. Every test class here carries
+    [Trait("Category", "Integration")].
+  -->
+
+</Project>
