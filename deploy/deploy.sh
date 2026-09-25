@@ -5,16 +5,63 @@
 set -euo pipefail
 
 REGION=eu-west-1
-SECRET_NAME=guito-api/prod
+ACCOUNT_ID=$(aws --region "$REGION" sts get-caller-identity --query Account --output text)
 ROLE=guito-api-lambda-role
-API_NAME=guito-api
+
+# ENV=production|staging (T8/issue #20). Default staging: a routine deploy is the
+# low-risk target and can never hit production by accident; prod is explicit.
+ENV=${ENV:-staging}
+case "$ENV" in
+  production) SUFFIX="";              ASPNETCORE_ENV=Production; SECRET_NAME=guito-api/prod ;;
+  staging)    SUFFIX="-staging";      ASPNETCORE_ENV=Staging;    SECRET_NAME=guito-api/staging ;;
+  *) echo "ENV must be 'production' or 'staging' (got '$ENV')" >&2; exit 1 ;;
+esac
+API_NAME=guito-api$SUFFIX
+AUTH_NAME=guito-api-authorizer$SUFFIX
+
+# Staging auth parity (T8.1): same OAuth client + allowed emails as production,
+# read from the PROD authorizer config when not exported — a staging env must
+# exercise the identical human-auth surface, never an invented one.
+if [ "$ENV" = staging ]; then
+  if [ -z "${GOOGLE_CLIENT_ID:-}" ]; then
+    GOOGLE_CLIENT_ID=$(aws --region "$REGION" lambda get-function-configuration \
+      --function-name guito-api-authorizer \
+      --query 'Environment.Variables.GOOGLE_CLIENT_ID' --output text)
+    [ "$GOOGLE_CLIENT_ID" = "None" ] && GOOGLE_CLIENT_ID=""
+  fi
+  if [ -z "${GOOGLE_ALLOWED_EMAILS:-}" ]; then
+    GOOGLE_ALLOWED_EMAILS=$(aws --region "$REGION" lambda get-function-configuration \
+      --function-name guito-api-authorizer \
+      --query 'Environment.Variables.GOOGLE_ALLOWED_EMAILS' --output text)
+    [ "$GOOGLE_ALLOWED_EMAILS" = "None" ] && GOOGLE_ALLOWED_EMAILS=""
+  fi
+  # Parity is a hard requirement (T8.1): staging human auth must equal prod's.
+  if [ -z "$GOOGLE_CLIENT_ID" ] || [ -z "$GOOGLE_ALLOWED_EMAILS" ]; then
+    echo "FATAL: cannot read GOOGLE_CLIENT_ID/GOOGLE_ALLOWED_EMAILS from prod authorizer guito-api-authorizer — configure prod first, or export both vars to override." >&2
+    exit 1
+  fi
+fi
 
 # --- 0. Secrets (create only if missing; never echo values) -------------------
+DEV_KEY_FILE="$(cd "$(dirname "$0")/.." && pwd)/src/guito-api/google-spreadsheets-dev.json"
 if ! aws --region "$REGION" secretsmanager describe-secret --secret-id "$SECRET_NAME" >/dev/null 2>&1; then
   NEW_KEY=$(openssl rand -base64 32)
-  PAYLOAD=$(python3 -c "import json,sys; print(json.dumps({'ApiKeys':[sys.argv[1]]}))" "$NEW_KEY")
-  aws --region "$REGION" secretsmanager create-secret --name "$SECRET_NAME" --secret-string "$PAYLOAD" >/dev/null
-  echo "Created secret $SECRET_NAME (agent key inside; SA key + sheet id must be merged in manually)."
+  # Staging: fresh agent key + the dev/staging service-account key (the same SA
+  # local dev uses on the dev/staging spreadsheet) in one JSON payload, matching
+  # SecretsPayload {GoogleServiceAccount, ApiKeys}. Fails rather than
+  # half-provisioning a staging secret the stack cannot use.
+  if [ "$ENV" = staging ]; then
+    [ -f "$DEV_KEY_FILE" ] || { echo "FATAL: $DEV_KEY_FILE not found — it is gitignored; create it on this machine before a first staging deploy." >&2; exit 1; }
+    PAYLOAD=$(python3 -c \
+      "import json,sys; sa=json.load(open(sys.argv[2])); print(json.dumps({'GoogleServiceAccount':sa,'ApiKeys':[sys.argv[1]]}))" \
+      "$NEW_KEY" "$DEV_KEY_FILE")
+    aws --region "$REGION" secretsmanager create-secret --name "$SECRET_NAME" --secret-string "$PAYLOAD" >/dev/null
+    echo "Created secret $SECRET_NAME (fresh agent key + dev/staging SA key)."
+  else
+    PAYLOAD=$(python3 -c "import json,sys; print(json.dumps({'ApiKeys':[sys.argv[1]]}))" "$NEW_KEY")
+    aws --region "$REGION" secretsmanager create-secret --name "$SECRET_NAME" --secret-string "$PAYLOAD" >/dev/null
+    echo "Created secret $SECRET_NAME (agent key inside; SA key + sheet id must be merged in manually)."
+  fi
 fi
 
 # --- 1. IAM role + policies ---------------------------------------------------
@@ -28,7 +75,7 @@ EOF
 aws --region "$REGION" iam attach-role-policy --role-name "$ROLE" \
   --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole >/dev/null
 aws --region "$REGION" iam put-role-policy --role-name "$ROLE" --policy-name guito-api-secret-read \
-  --policy-document "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"secretsmanager:GetSecretValue\",\"Resource\":\"arn:aws:secretsmanager:$REGION:*:secret:$SECRET_NAME-*\"}]}" >/dev/null
+  --policy-document "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"secretsmanager:GetSecretValue\",\"Resource\":[\"arn:aws:secretsmanager:$REGION:*:secret:guito-api/prod-*\",\"arn:aws:secretsmanager:$REGION:*:secret:guito-api/staging-*\"]}]}" >/dev/null
 
 # --- 2. Package (arm64 — matches the deployed functions; ARCH=x64 to override) ---
 ARCH=${ARCH:-arm64}
@@ -42,7 +89,7 @@ create_or_update () { # name handler memory timeout zip [extra env...]
   local name=$1 handler=$2 memory=$3 timeout=$4 zip=$5; shift 5
   if ! aws --region "$REGION" lambda get-function --function-name "$name" >/dev/null 2>&1; then
     aws --region "$REGION" lambda create-function --function-name "$name" \
-      --role "arn:aws:iam::*:role/$ROLE" --runtime dotnet10 --architectures "$ARCH" \
+      --role "arn:aws:iam::$ACCOUNT_ID:role/$ROLE" --runtime dotnet10 --architectures "$ARCH" \
       --handler "$handler" --zip-file "fileb://$zip" --memory-size "$memory" --timeout "$timeout" \
       --tags Project=Guito "$@" >/dev/null
   else
@@ -57,24 +104,48 @@ create_or_update () { # name handler memory timeout zip [extra env...]
 }
 
 create_or_update "$API_NAME" 'guito-api::GuitoApi.LambdaEntryPoint::FunctionHandlerAsync' 512 30 /tmp/guito-api.zip
-create_or_update "$API_NAME-authorizer" 'guito-api-authorizer::GuitoApiAuthorizer.Function::FunctionHandlerAsync' 128 10 /tmp/guito-authorizer.zip
+create_or_update "$AUTH_NAME" 'guito-api-authorizer::GuitoApiAuthorizer.Function::FunctionHandlerAsync' 128 10 /tmp/guito-authorizer.zip
 
-# --- 3b. Google human-auth config (issue #13) ----------------------------------
-# Provide GOOGLE_CLIENT_ID / GOOGLE_ALLOWED_EMAILS in the shell environment.
-# Until set, the authorizer's human path stays deny-closed and the API rejects
-# human requests (empty allowlist) — the agent X-Api-Key path is unaffected.
-if [ -n "${GOOGLE_CLIENT_ID:-}" ] && [ -n "${GOOGLE_ALLOWED_EMAILS:-}" ]; then
-  aws --region "$REGION" lambda update-function-configuration --function-name "$API_NAME-authorizer" \
-    --environment "Variables={SECRETS_SECRET_NAME=$SECRET_NAME,GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID,GOOGLE_ALLOWED_EMAILS=$GOOGLE_ALLOWED_EMAILS}" >/dev/null
-  # In-app defense-in-depth layer mirrors the same policy for the API function.
-  API_EMAILS_JSON=$(python3 -c "import json,sys; print(json.dumps([e.strip() for e in sys.argv[1].split(',')]))" "$GOOGLE_ALLOWED_EMAILS")
-  aws --region "$REGION" lambda update-function-configuration --function-name "$API_NAME" \
-    --environment "Variables={AppConfiguration__Authentication__OAuthAudience=$GOOGLE_CLIENT_ID,AppConfiguration__Authentication__AllowedLogins=$API_EMAILS_JSON,ASPNETCORE_ENVIRONMENT=Production}" >/dev/null
-  aws --region "$REGION" lambda wait function-updated-v2 --function-name "$API_NAME-authorizer"
-  aws --region "$REGION" lambda wait function-updated-v2 --function-name "$API_NAME"
-else
+# --- 3b. Function environment variables (secrets + Google human-auth config) --
+# Env updates REPLACE all variables, so values are MERGED into the current
+# configuration: a plain redeploy never wipes policy set by a previous run,
+# and ASPNETCORE_ENVIRONMENT is always enforced for the target environment.
+# Provide GOOGLE_CLIENT_ID / GOOGLE_ALLOWED_EMAILS in the shell environment to
+# open the human auth path; until then it stays deny-closed (agent path unaffected).
+apply_env () { # function-name vars-json-file
+  local cur
+  cur=$(aws --region "$REGION" lambda get-function-configuration --function-name "$1" \
+    --query 'Environment.Variables' --output json)
+  python3 -c "import json,sys; d=json.loads(sys.argv[1]) or {}; d.update(json.load(open(sys.argv[2]))); print(json.dumps({'Variables': d}))" \
+    "$cur" "$2" > "/tmp/guito-env-$1.json"
+  aws --region "$REGION" lambda update-function-configuration --function-name "$1" \
+    --environment "file:///tmp/guito-env-$1.json" >/dev/null
+  aws --region "$REGION" lambda wait function-updated-v2 --function-name "$1"
+}
+
+export SECRET_NAME GOOGLE_CLIENT_ID GOOGLE_ALLOWED_EMAILS ASPNETCORE_ENV
+# Authorizer: secret name always; Google policy when provided.
+python3 -c "
+import json, os
+v = {'SECRETS_SECRET_NAME': os.environ['SECRET_NAME']}
+for k in ('GOOGLE_CLIENT_ID', 'GOOGLE_ALLOWED_EMAILS'):
+    if os.environ.get(k): v[k] = os.environ[k]
+print(json.dumps(v))" > /tmp/guito-auth-env.json
+# API: environment value always; human-path policy (OAuth audience + JSON-array
+# allowlist) when provided.
+python3 -c "
+import json, os
+v = {'ASPNETCORE_ENVIRONMENT': os.environ['ASPNETCORE_ENV']}
+if os.environ.get('GOOGLE_CLIENT_ID'):
+    v['AppConfiguration__Authentication__OAuthAudience'] = os.environ['GOOGLE_CLIENT_ID']
+if os.environ.get('GOOGLE_ALLOWED_EMAILS'):
+    v['AppConfiguration__Authentication__AllowedLogins'] = json.dumps(
+        [e.strip() for e in os.environ['GOOGLE_ALLOWED_EMAILS'].split(',')])
+print(json.dumps(v))" > /tmp/guito-api-env.json
+apply_env "$AUTH_NAME" /tmp/guito-auth-env.json
+apply_env "$API_NAME" /tmp/guito-api-env.json
+[ -n "${GOOGLE_CLIENT_ID:-}" ] && [ -n "${GOOGLE_ALLOWED_EMAILS:-}" ] || \
   echo "NOTE: GOOGLE_CLIENT_ID/GOOGLE_ALLOWED_EMAILS not set — human auth path deployed deny-closed (agent key path unaffected)."
-fi
 
 # --- 3. HTTP API --------------------------------------------------------------
 API_ID=$(aws --region "$REGION" apigatewayv2 get-apis --query "Items[?Name=='$API_NAME'].ApiId" --output text)
@@ -83,7 +154,7 @@ if [ -z "$API_ID" ]; then
 fi
 
 FN_ARN=$(aws --region "$REGION" lambda get-function --function-name "$API_NAME" --query Configuration.FunctionArn --output text)
-AUTH_ARN=$(aws --region "$REGION" lambda get-function --function-name "$API_NAME-authorizer" --query Configuration.FunctionArn --output text)
+AUTH_ARN=$(aws --region "$REGION" lambda get-function --function-name "$AUTH_NAME" --query Configuration.FunctionArn --output text)
 
 AUTH_ID=$(aws --region "$REGION" apigatewayv2 get-authorizers --api-id "$API_ID" --query "Items[?Name=='guito-key-authorizer'].AuthorizerId" --output text)
 [ -n "$AUTH_ID" ] || AUTH_ID=$(aws --region "$REGION" apigatewayv2 create-authorizer --api-id "$API_ID" --name guito-key-authorizer \
@@ -98,6 +169,7 @@ if [ -n "$AUTH_ID" ]; then
 fi
 
 INT_ID=$(aws --region "$REGION" apigatewayv2 get-integrations --api-id "$API_ID" --query 'Items[0].IntegrationId' --output text)
+[ "$INT_ID" = "None" ] && INT_ID=""
 [ -n "$INT_ID" ] || INT_ID=$(aws --region "$REGION" apigatewayv2 create-integration --api-id "$API_ID" \
   --integration-type AWS_PROXY --integration-uri "arn:aws:apigateway:$REGION:lambda:path/2015-03-31/functions/$FN_ARN/invocations" \
   --payload-format-version 2.0 --query IntegrationId --output text)
@@ -119,16 +191,16 @@ aws --region "$REGION" apigatewayv2 create-route --api-id "$API_ID" --route-key 
 
 aws --region "$REGION" lambda add-permission --function-name "$API_NAME" --statement-id apigw-invoke \
   --action lambda:InvokeFunction --principal apigateway.amazonaws.com \
-  --source-arn "arn:aws:execute-api:$REGION:*:$API_ID/*/*" >/dev/null 2>&1 || true
-aws --region "$REGION" lambda add-permission --function-name "$API_NAME-authorizer" --statement-id apigw-invoke \
+  --source-arn "arn:aws:execute-api:$REGION:$ACCOUNT_ID:$API_ID/*/*" >/dev/null 2>&1 || true
+aws --region "$REGION" lambda add-permission --function-name "$AUTH_NAME" --statement-id apigw-invoke \
   --action lambda:InvokeFunction --principal apigateway.amazonaws.com \
-  --source-arn "arn:aws:execute-api:$REGION:*:$API_ID/authorizers/$AUTH_ID" >/dev/null 2>&1 || true
+  --source-arn "arn:aws:execute-api:$REGION:$ACCOUNT_ID:$API_ID/authorizers/$AUTH_ID" >/dev/null 2>&1 || true
 
 # Stage with access logs
 aws --region "$REGION" apigatewayv2 create-stage --api-id "$API_ID" --stage-name '$default' --auto-deploy >/dev/null 2>&1 || true
-aws --region "$REGION" logs create-log-group --log-group-name /aws/apigateway/guito-api-access >/dev/null 2>&1 || true
-aws --region "$REGION" logs put-retention-policy --log-group-name /aws/apigateway/guito-api-access --retention-in-days 14 2>/dev/null || true
-ACCESS_LOG_ARN=$(aws --region "$REGION" logs describe-log-groups --log-group-name-prefix /aws/apigateway/guito-api-access \
+aws --region "$REGION" logs create-log-group --log-group-name /aws/apigateway/$API_NAME-access >/dev/null 2>&1 || true
+aws --region "$REGION" logs put-retention-policy --log-group-name /aws/apigateway/$API_NAME-access --retention-in-days 14 2>/dev/null || true
+ACCESS_LOG_ARN=$(aws --region "$REGION" logs describe-log-groups --log-group-name-prefix /aws/apigateway/$API_NAME-access \
   --query 'logGroups[0].arn' --output text)
 aws --region "$REGION" apigatewayv2 update-stage --api-id "$API_ID" --stage-name '$default' \
   --access-log-settings '{"DestinationArn":"'"$ACCESS_LOG_ARN"'","Format":"{\"requestId\":\"$context.requestId\",\"ip\":\"$context.identity.sourceIp\",\"httpMethod\":\"$context.httpMethod\",\"path\":\"$context.path\",\"status\":\"$context.status\",\"authorizerError\":\"$context.authorizer.error\",\"integrationError\":\"$context.integration.error\"}"}' >/dev/null
