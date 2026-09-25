@@ -100,6 +100,53 @@ public class StagingAuthContractTests
     }
 
     /// <summary>
+    /// Human path, positive case (ADR-0003): a REAL Google ID token minted by the
+    /// runner, carried in BOTH headers — Authorization "Bearer &lt;token&gt;" (gateway
+    /// identity source → edge GoogleTokenValidator Allow) and x-google-idtoken
+    /// (in-app GoogleIdTokenMiddleware). Proves the human path end-to-end: the edge
+    /// authorizer validates against Google's live JWKS and the app accepts its own
+    /// middleware credential.
+    /// </summary>
+    [Fact]
+    public async Task ExpenseEndpoint_ShouldReturnOk_WhenValidGoogleIdTokenIsPresentInBothHeaders()
+    {
+        // Arrange
+        using var client = StagingEndpointFixture.CreateGoogleClient(StagingEndpointFixture.GoogleIdToken);
+
+        // Act
+        var response = await client.GetAsync("/Expense/latest/5");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    /// <summary>
+    /// Human path, negative case: a garbage Bearer value dispatches to the EDGE
+    /// Google validator (Authorization starts with "Bearer "), which denies it —
+    /// surfacing as the gateway's 403 {"message":"Forbidden"}. If the body instead
+    /// named the agent middlewares ("Missing API key"/"Invalid API key"), the
+    /// dispatcher would have routed a Bearer request into the agent path — a broken
+    /// identity-source contract, not a token-validation failure.
+    /// </summary>
+    [Fact]
+    public async Task ExpenseEndpoint_ShouldReturnForbiddenFromEdgeAuthorizer_WhenBearerValueIsNotAValidGoogleToken()
+    {
+        // Arrange
+        using var client = StagingEndpointFixture.CreateAnonymousClient();
+        client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", "Bearer not-a-real-google-id-token");
+
+        // Act
+        var response = await client.GetAsync("/Expense/latest/5");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Forbidden", body);
+        Assert.DoesNotContain("Invalid API key", body);
+        Assert.DoesNotContain("Missing API key", body);
+    }
+
+    /// <summary>
     /// Deliberately omits X-Api-Key while presenting the valid staging key as the
     /// raw Authorization value: the edge authorizer accepts it, and the request
     /// reaches the app, whose ApiKeyMiddleware rejects it with 401 "Missing API key"

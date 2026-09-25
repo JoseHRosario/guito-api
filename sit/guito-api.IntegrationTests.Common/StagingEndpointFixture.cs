@@ -18,6 +18,7 @@ public static class StagingEndpointFixture
     private static readonly Lazy<string> _baseUrl = new(RequiredEnvironment("GUITO_STAGING_BASE_URL"));
     private static readonly Lazy<string> _agentKey = new(RequiredEnvironment("GUITO_STAGING_AGENT_KEY"));
     private static readonly Lazy<string> _prodKey = new(RequiredEnvironment("GUITO_PROD_AGENT_KEY"));
+    private static readonly Lazy<string> _googleIdToken = new(RequiredEnvironment("GUITO_STAGING_GOOGLE_ID_TOKEN"));
 
     /// <summary>Root of the deployed staging stack, e.g. https://abc123.execute-api.eu-west-1.amazonaws.com.</summary>
     public static string BaseUrl => _baseUrl.Value.TrimEnd('/');
@@ -27,6 +28,12 @@ public static class StagingEndpointFixture
 
     /// <summary>Agent key from secret guito-api/prod (ApiKeys[0]) — must be rejected by staging.</summary>
     public static string ProdKey => _prodKey.Value;
+
+    /// <summary>
+    /// Fresh Google ID token minted by scripts/run-staging-tests.sh (refresh-token
+    /// exchange against secret guito-api/human-auth) — the positive-path human credential.
+    /// </summary>
+    public static string GoogleIdToken => _googleIdToken.Value;
 
     /// <summary>A plain client with no credentials attached.</summary>
     public static HttpClient CreateAnonymousClient()
@@ -48,6 +55,20 @@ public static class StagingEndpointFixture
         var client = CreateAnonymousClient();
         client.DefaultRequestHeaders.Add("X-Api-Key", apiKey);
         client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", apiKey);
+        return client;
+    }
+
+    /// <summary>
+    /// A client carrying the human-path contract a real request needs: the Google ID
+    /// token in BOTH <c>Authorization: Bearer &lt;token&gt;</c> (the gateway's single
+    /// identity source → edge Google validator) and <c>x-google-idtoken</c> for the
+    /// in-app GoogleIdTokenMiddleware (ADR-0003: paths never fall back into each other).
+    /// </summary>
+    public static HttpClient CreateGoogleClient(string idToken)
+    {
+        var client = CreateAnonymousClient();
+        client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", $"Bearer {idToken}");
+        client.DefaultRequestHeaders.Add("x-google-idtoken", idToken);
         return client;
     }
 
