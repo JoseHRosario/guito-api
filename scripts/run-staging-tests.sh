@@ -34,6 +34,12 @@ if [ -z "$GUITO_STAGING_BASE_URL" ] || [ "$GUITO_STAGING_BASE_URL" = "None" ]; t
   echo "FATAL: no API Gateway named $API_NAME in $REGION — deploy staging first (ENV is staging by default in deploy/deploy.sh)." >&2
   exit 1
 fi
+# ApiEndpoint is typically scheme-less (e.g. "abc123.execute-api.eu-west-1.amazonaws.com");
+# the test fixture constructs new Uri(BaseUrl), which throws without a scheme.
+case "$GUITO_STAGING_BASE_URL" in
+  https://*|http://*) ;;
+  *) GUITO_STAGING_BASE_URL="https://$GUITO_STAGING_BASE_URL" ;;
+esac
 
 # --- Resolve both agent keys from Secrets Manager ----------------------------
 secret_key() {
