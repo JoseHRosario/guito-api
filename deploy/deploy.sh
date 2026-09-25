@@ -114,10 +114,25 @@ create_or_update () { # name handler memory timeout zip [extra env...]
       --zip-file "fileb://$zip" >/dev/null
   fi
   aws --region "$REGION" lambda wait function-active-v2 --function-name "$name"
-  # keep the handler in sync with code changes (e.g. method renames); after the wait
-  # so it never conflicts with the code update in flight
-  aws --region "$REGION" lambda update-function-configuration --function-name "$name" \
-    --handler "$handler" >/dev/null
+  # A code update leaves LastUpdateStatus InProgress for a while longer; a
+  # configuration update issued immediately races it (ResourceConflictException
+  # on CI's fresh runner). Wait it out, then retry a few times as belt and braces.
+  aws --region "$REGION" lambda wait function-updated-v2 --function-name "$name" || true
+  local last_err=""
+  for attempt in 1 2 3 4 5; do
+    if err=$(aws --region "$REGION" lambda update-function-configuration --function-name "$name" \
+      --handler "$handler" 2>&1 >/dev/null); then
+      last_err=""
+      break
+    fi
+    last_err="$err"
+    echo "update-function-configuration conflict on $name (attempt $attempt) — retrying…"
+    sleep $((attempt * 5))
+  done
+  # Exhausted retries with the handler still unsynced would leave the next deploy
+  # targeting a stale/missing handler — that is a FAILURE, not a warning.
+  [ -z "$last_err" ] || { echo "FATAL: update-function-configuration failed for $name after retries: $last_err" >&2; exit 1; }
+  aws --region "$REGION" lambda wait function-updated-v2 --function-name "$name"
 }
 
 create_or_update "$API_NAME" 'guito-api::GuitoApi.LambdaEntryPoint::FunctionHandlerAsync' 512 30 /tmp/guito-api.zip

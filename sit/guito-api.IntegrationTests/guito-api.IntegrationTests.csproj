@@ -19,7 +19,7 @@
   </ItemGroup>
 
   <!--
-    Runs against the deployed staging stack only: scripts/run-staging-tests.sh
+    Runs against the deployed stack only (staging default, or production): scripts/run-deployed-tests.sh
     resolves the staging endpoint and both agent keys from AWS Secrets Manager
     before invoking dotnet test filtered to Category=Integration. Every test
     class here carries [Trait("Category", "Integration")].
