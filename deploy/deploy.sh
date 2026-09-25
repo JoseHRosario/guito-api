@@ -43,7 +43,17 @@ if [ "$ENV" = staging ]; then
 fi
 
 # --- 0. Secrets (create only if missing; never echo values) -------------------
-DEV_KEY_FILE="$(cd "$(dirname "$0")/.." && pwd)/src/guito-api/google-spreadsheets-dev.json"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+DEV_KEY_FILE="$REPO_ROOT/src/guito-api/google-spreadsheets-dev.json"
+PROD_SA_FILE="$REPO_ROOT/src/guito-api/google-spreadsheets.json"
+# Per-environment SA identity (ADR-0008): the seeded secret must carry the SA of
+# THAT environment's spreadsheet — prod seed uses the prod SA key file. Cheap
+# wrong-file guard: the dev file at the prod path would silently reproduce the
+# T8.3 wrong-SA 500 (auth green, business requests PERMISSION_DENIED).
+prod_sa_ok () { # <file> — true unless it carries the dev SA
+  [ -f "$1" ] || return 1
+  [ "$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['client_email'])" "$1")" != "svc-google-sheets-dev@kerumirembora.iam.gserviceaccount.com" ]
+}
 if ! aws --region "$REGION" secretsmanager describe-secret --secret-id "$SECRET_NAME" >/dev/null 2>&1; then
   NEW_KEY=$(openssl rand -base64 32)
   # Staging: fresh agent key + the dev/staging service-account key (the same SA
@@ -58,9 +68,16 @@ if ! aws --region "$REGION" secretsmanager describe-secret --secret-id "$SECRET_
     aws --region "$REGION" secretsmanager create-secret --name "$SECRET_NAME" --secret-string "$PAYLOAD" >/dev/null
     echo "Created secret $SECRET_NAME (fresh agent key + dev/staging SA key)."
   else
-    PAYLOAD=$(python3 -c "import json,sys; print(json.dumps({'ApiKeys':[sys.argv[1]]}))" "$NEW_KEY")
-    aws --region "$REGION" secretsmanager create-secret --name "$SECRET_NAME" --secret-string "$PAYLOAD" >/dev/null
-    echo "Created secret $SECRET_NAME (agent key inside; SA key + sheet id must be merged in manually)."
+    if prod_sa_ok "$PROD_SA_FILE"; then
+      PAYLOAD=$(python3 -c \
+        "import json,sys; sa=json.load(open(sys.argv[2])); print(json.dumps({'GoogleServiceAccount':sa,'ApiKeys':[sys.argv[1]]}))" \
+        "$NEW_KEY" "$PROD_SA_FILE")
+      aws --region "$REGION" secretsmanager create-secret --name "$SECRET_NAME" --secret-string "$PAYLOAD" >/dev/null
+      echo "Created secret $SECRET_NAME (fresh agent key + prod SA key)."
+    else
+      echo "FATAL: $PROD_SA_FILE not found (or it carries the dev SA) — it is gitignored; create the prod SA key file on this machine before a first production deploy (ADR-0008: the prod secret must carry the prod SA)." >&2
+      exit 1
+    fi
   fi
 fi
 

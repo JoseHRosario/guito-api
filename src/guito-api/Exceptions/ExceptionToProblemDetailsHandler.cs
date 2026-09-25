@@ -25,9 +25,16 @@ namespace GuitoApi.Exceptions
             if (isUnexpectedError)
             {
                 // Server-side log keeps the detail; the client response stays masked.
-                _logger.LogError(exception, "Unhandled exception for {Method} {Path} (trace {TraceId})",
+                // The full details go into the MESSAGE itself, not just the exception
+                // parameter: AWS Lambda's structured log formatter emits only the
+                // rendered message, so a bare exception param is lost in CloudWatch
+                // (seen live on T8.3 — a prod 500 was undiagnosable from logs alone).
+                // Server-side only; the client response stays masked. NOTE: this
+                // relies on exception details not carrying secrets — if an exception
+                // source ever wraps bearer tokens/credentials, sanitize at the source.
+                _logger.LogError(exception, "Unhandled exception for {Method} {Path} (trace {TraceId}): {ExceptionDetails}",
                     httpContext.Request.Method, httpContext.Request.Path,
-                    httpContext.TraceIdentifier);
+                    httpContext.TraceIdentifier, exception.ToString());
             }
 
             httpContext.Response.StatusCode = statusCode;
