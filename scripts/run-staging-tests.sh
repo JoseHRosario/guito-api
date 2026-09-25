@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# T8.2 (issue #22): run the deployed-endpoint integration test suite against the
+# LIVE staging stack. The suite needs three values this script resolves:
+#   • GUITO_STAGING_BASE_URL  — ApiEndpoint of API Gateway guito-api-staging
+#   • GUITO_STAGING_AGENT_KEY — ApiKeys[0] of secret guito-api/staging
+#   • GUITO_PROD_AGENT_KEY    — ApiKeys[0] of secret guito-api/prod (the negative case)
+# All three are fetched from AWS Secrets Manager / API Gateway at run time under
+# the MinervaAIAgent assumed role; no key is ever stored in the repo or echoed.
+# Usage: scripts/run-staging-tests.sh   (aws cli authenticated; dotnet SDK on PATH)
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PROJECTS=(
+  "sit/guito-api-auth.IntegrationTests/guito-api-auth.IntegrationTests.csproj"
+  "sit/guito-api.IntegrationTests/guito-api.IntegrationTests.csproj"
+)
+REGION=eu-west-1
+API_NAME=guito-api-staging
+STAGING_SECRET=guito-api/staging
+PROD_SECRET=guito-api/prod
+
+export PATH="$HOME/.dotnet:$PATH"
+export DOTNET_ROOT="${DOTNET_ROOT:-$HOME/.dotnet}"
+
+command -v aws >/dev/null || { echo "FATAL: aws cli not found" >&2; exit 1; }
+command -v dotnet >/dev/null || { echo "FATAL: dotnet not found (expected $HOME/.dotnet)" >&2; exit 1; }
+
+# --- Resolve staging base URL from API Gateway -------------------------------
+# All three values are exported: the test process reads them as environment vars.
+export GUITO_STAGING_BASE_URL
+GUITO_STAGING_BASE_URL=$(aws --region "$REGION" apigatewayv2 get-apis \
+  --query "Items[?Name=='$API_NAME'].ApiEndpoint" --output text)
+if [ -z "$GUITO_STAGING_BASE_URL" ] || [ "$GUITO_STAGING_BASE_URL" = "None" ]; then
+  echo "FATAL: no API Gateway named $API_NAME in $REGION — deploy staging first (ENV is staging by default in deploy/deploy.sh)." >&2
+  exit 1
+fi
+# ApiEndpoint is typically scheme-less (e.g. "abc123.execute-api.eu-west-1.amazonaws.com");
+# the test fixture constructs new Uri(BaseUrl), which throws without a scheme.
+case "$GUITO_STAGING_BASE_URL" in
+  https://*|http://*) ;;
+  *) GUITO_STAGING_BASE_URL="https://$GUITO_STAGING_BASE_URL" ;;
+esac
+
+# --- Resolve both agent keys from Secrets Manager ----------------------------
+secret_key() {
+  aws --region "$REGION" secretsmanager get-secret-value --secret-id "$1" \
+    --query SecretString --output text \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["ApiKeys"][0])'
+}
+export GUITO_STAGING_AGENT_KEY
+export GUITO_PROD_AGENT_KEY
+GUITO_STAGING_AGENT_KEY=$(secret_key "$STAGING_SECRET")
+GUITO_PROD_AGENT_KEY=$(secret_key "$PROD_SECRET")
+[ -n "$GUITO_STAGING_AGENT_KEY" ] || { echo "FATAL: $STAGING_SECRET has no ApiKeys[0]" >&2; exit 1; }
+[ -n "$GUITO_PROD_AGENT_KEY" ] || { echo "FATAL: $PROD_SECRET has no ApiKeys[0]" >&2; exit 1; }
+
+echo "Staging endpoint: $GUITO_STAGING_BASE_URL"
+
+# --- Run both suites (keys passed as env vars; never written anywhere) -------
+# One resolution, both domain suites: auth contract, then business round-trip.
+# Common (guito-api.IntegrationTests.Common) is shared plumbing, never run directly.
+cd "$REPO_ROOT"
+FAILED=0
+for PROJECT in "${PROJECTS[@]}"; do
+  echo "=== $PROJECT ==="
+  if ! dotnet test "$PROJECT" \
+    --filter "Category=Integration" \
+    --logger "console;verbosity=normal"; then
+    FAILED=1
+  fi
+done
+exit "$FAILED"
