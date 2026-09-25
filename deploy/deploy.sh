@@ -114,10 +114,19 @@ create_or_update () { # name handler memory timeout zip [extra env...]
       --zip-file "fileb://$zip" >/dev/null
   fi
   aws --region "$REGION" lambda wait function-active-v2 --function-name "$name"
-  # keep the handler in sync with code changes (e.g. method renames); after the wait
-  # so it never conflicts with the code update in flight
-  aws --region "$REGION" lambda update-function-configuration --function-name "$name" \
-    --handler "$handler" >/dev/null
+  # A code update leaves LastUpdateStatus InProgress for a while longer; a
+  # configuration update issued immediately races it (ResourceConflictException
+  # on CI's fresh runner). Wait it out, then retry a few times as belt and braces.
+  aws --region "$REGION" lambda wait function-updated-v2 --function-name "$name" || true
+  for attempt in 1 2 3 4 5; do
+    if aws --region "$REGION" lambda update-function-configuration --function-name "$name" \
+      --handler "$handler" >/dev/null 2>&1; then
+      break
+    fi
+    echo "update-function-configuration conflict on $name (attempt $attempt) — retrying…"
+    sleep $((attempt * 5))
+  done
+  aws --region "$REGION" lambda wait function-updated-v2 --function-name "$name"
 }
 
 create_or_update "$API_NAME" 'guito-api::GuitoApi.LambdaEntryPoint::FunctionHandlerAsync' 512 30 /tmp/guito-api.zip
