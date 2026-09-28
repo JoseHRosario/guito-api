@@ -12,17 +12,17 @@ namespace GuitoApi.Controllers
         private readonly ICreateExpenseService _createExpenseService;
         private readonly IListLatestExpensesService _listLatestExpensesService;
         private readonly IMatchExpensesService _matchExpensesService;
-        private readonly IUpdateExpenseRowService _updateExpenseRowService;
+        private readonly IDeleteExpenseRowService _deleteExpenseRowService;
 
         public ExpenseController(ICreateExpenseService createExpenseService, 
             IListLatestExpensesService listLatestExpensesService, 
             IMatchExpensesService matchExpensesService,
-            IUpdateExpenseRowService updateExpenseRowService)
+            IDeleteExpenseRowService deleteExpenseRowService)
         {
             _createExpenseService = createExpenseService;
             _listLatestExpensesService = listLatestExpensesService;
             _matchExpensesService = matchExpensesService;
-            _updateExpenseRowService = updateExpenseRowService;
+            _deleteExpenseRowService = deleteExpenseRowService;
         }
 
         [HttpPost]
@@ -46,12 +46,12 @@ namespace GuitoApi.Controllers
 
         // ADR-0009: deletion is scoped to the Smoke Test tab by the route itself. It
         // deletes one row by opaque Expense Id (today the sheet row index) — see
-        // IUpdateExpenseRowService. Not a general DELETE /Expense — that is rejected
+        // IDeleteExpenseRowService. Not a general DELETE /Expense — that is rejected
         // until guito-ui needs delete/edit as a product feature.
         [HttpDelete("/Smoke/{id}")]
         public async Task DeleteSmokeAsync(int id, CancellationToken cancellationToken)
         {
-            await _updateExpenseRowService.DeleteAsync(id, cancellationToken);
+            await _deleteExpenseRowService.DeleteAsync(id, cancellationToken);
         }
     }
 }

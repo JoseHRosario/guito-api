@@ -6,7 +6,7 @@ namespace GuitoApi.Services.Expense
     /// ranges from the configured smoke tab, never from the request scope header,
     /// so the delete route cannot be pointed at a real tab.
     /// </summary>
-    public interface IUpdateExpenseRowService
+    public interface IDeleteExpenseRowService
     {
         Task DeleteAsync(int id, CancellationToken cancellationToken = default);
     }

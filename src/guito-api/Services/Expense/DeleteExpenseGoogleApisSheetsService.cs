@@ -15,7 +15,7 @@ namespace GuitoApi.Services.Expense
     /// row back before deleting the dimension) and returns 404 when the id is
     /// already gone, making it idempotent on retry.
     /// </summary>
-    public class DeleteExpenseGoogleApisSheetsService : IUpdateExpenseRowService
+    public class DeleteExpenseGoogleApisSheetsService : IDeleteExpenseRowService
     {
         private readonly AppConfigurationOptions _options;
         private readonly IGooglesheetsService _googlesheetsService;

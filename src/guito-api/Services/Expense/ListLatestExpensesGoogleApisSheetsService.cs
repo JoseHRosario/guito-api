@@ -2,6 +2,7 @@
 using Google.Apis.Sheets.v4.Data;
 using GuitoApi.Configuration;
 using GuitoApi.DataTransferObjects.Output;
+using GuitoApi.Exceptions;
 using Microsoft.Extensions.Options;
 using System.Globalization;
 using System.Text.RegularExpressions;
@@ -113,6 +114,9 @@ namespace GuitoApi.Services.Expense
         private static (string TabTitle, int FirstDataRow, string DateColumn) ParseAnchor(string range)
         {
             var match = Regex.Match(range, @"^(?<tab>.*)!([A-Z]+)(?<row>\d+)$");
+            if (!match.Success)
+                throw new ProblemException(500, $"Invalid expense range anchor '{range}'");
+
             return (match.Groups["tab"].Value, int.Parse(match.Groups["row"].Value), match.Groups[1].Value);
         }
     }
