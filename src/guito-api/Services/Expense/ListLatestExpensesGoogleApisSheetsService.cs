@@ -12,39 +12,42 @@ namespace GuitoApi.Services.Expense
     {
         private readonly AppConfigurationOptions _options;
         private readonly IGooglesheetsService _googlesheetsService;
+        private readonly ISheetScopeResolver _sheetScopeResolver;
 
         public ListLatestExpensesGoogleApisSheetsService(
             IOptions<AppConfigurationOptions> options,
-            IGooglesheetsService googlesheetsService)
+            IGooglesheetsService googlesheetsService,
+            ISheetScopeResolver sheetScopeResolver)
         {
             _options = options.Value;
             _googlesheetsService = googlesheetsService;
+            _sheetScopeResolver = sheetScopeResolver;
         }
 
         public async Task<ExpenseListLatest> ListLatestAsync(int count, CancellationToken cancellationToken = default)
         {
             var output = new ExpenseListLatest();
-            SheetsService service = await _googlesheetsService.GetAsync();
+            SheetsService service = await _googlesheetsService.GetAsync(cancellationToken);
 
-            var rowIndexFromRange = GetRowIndexFromRange();
+            var (_, firstDataRow, _) = ParseAnchor(_sheetScopeResolver.ExpensesRange);
             var lastRowIndex = await GetLatestRowIndexAsync(service, cancellationToken);
-            lastRowIndex = lastRowIndex < rowIndexFromRange ? rowIndexFromRange : lastRowIndex;
+            lastRowIndex = lastRowIndex < firstDataRow ? firstDataRow : lastRowIndex;
 
             if (lastRowIndex is null)
                 return output;
 
-            return await ListLatestExpensesAsync(service, count, lastRowIndex, rowIndexFromRange, cancellationToken);
+            return await ListLatestExpensesAsync(service, count, lastRowIndex.Value, firstDataRow, cancellationToken);
         }
 
-        private async Task<ExpenseListLatest> ListLatestExpensesAsync(SheetsService service, int count, int? lastRowIndex,
-            int rowIndexFromRange, CancellationToken cancellationToken)
+        private async Task<ExpenseListLatest> ListLatestExpensesAsync(SheetsService service, int count, int lastRowIndex,
+            int firstDataRow, CancellationToken cancellationToken)
         {
             var output = new ExpenseListLatest();
 
             var firstRowIndex = lastRowIndex - count + 1;
-            firstRowIndex = firstRowIndex < rowIndexFromRange ? rowIndexFromRange : firstRowIndex;
+            firstRowIndex = firstRowIndex < firstDataRow ? firstDataRow : firstRowIndex;
             // ExpensesLatestRange is a config-provided format template ("...!B{0}:H{1}").
-            var range = string.Format(_options.Googlesheets.ExpensesLatestRange, firstRowIndex, lastRowIndex);
+            var range = string.Format(_sheetScopeResolver.ExpensesLatestRange, firstRowIndex, lastRowIndex);
             SpreadsheetsResource.ValuesResource.GetRequest request =
                 service.Spreadsheets.Values.Get(_options.Googlesheets.SpreadsheetId, range);
 
@@ -91,32 +94,26 @@ namespace GuitoApi.Services.Expense
             return decimal.TryParse(valueString, out var result) ? result : null;
         }
 
-        // Appends a dummy row to get the sheet's next row index back from the append
-        // response; the minus one maps the appended row to the last existing expense row.
+        // Pure read of the date column (ADR 0009): finds the last data row by reading
+        // the first column of the scoped range from its anchor downward. Replaces the
+        // old append-a-dummy-row probe, which mutated the datastore on every read.
         private async Task<int?> GetLatestRowIndexAsync(SheetsService service, CancellationToken cancellationToken)
         {
-            var valueRange = new ValueRange { Values = new List<IList<object>> { new List<object> { "" } } };
+            var (tabTitle, firstDataRow, dateColumn) = ParseAnchor(_sheetScopeResolver.ExpensesRange);
+            var range = $"{tabTitle}!{dateColumn}{firstDataRow}:{dateColumn}";
+            SpreadsheetsResource.ValuesResource.GetRequest request =
+                service.Spreadsheets.Values.Get(_options.Googlesheets.SpreadsheetId, range);
 
-            SpreadsheetsResource.ValuesResource.AppendRequest appendRequest =
-                service.Spreadsheets.Values.Append(
-                    valueRange,
-                    _options.Googlesheets.SpreadsheetId,
-                    _options.Googlesheets.ExpensesRange);
-
-            appendRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
-            var appendResponse = await appendRequest.ExecuteAsync(cancellationToken);
-
-            // The append response's updated range ("...!B53:G53") carries the appended
-            // row index; minus one maps it to the last existing expense row.
-            var match = Regex.Match(appendResponse.Updates.UpdatedRange, @"\d+$");
-            return match.Success ? int.Parse(match.Value) - 1 : null;
+            ValueRange response = await request.ExecuteAsync(cancellationToken);
+            return response.Values is { Count: > 0 }
+                ? firstDataRow + response.Values.Count - 1
+                : null;
         }
 
-        private int GetRowIndexFromRange()
+        private static (string TabTitle, int FirstDataRow, string DateColumn) ParseAnchor(string range)
         {
-            // The first data row: "ExpensesAux!B5" → row index 5.
-            var match = Regex.Match(_options.Googlesheets.ExpensesRange, @"\d+$");
-            return match.Success ? int.Parse(match.Value) : 0;
+            var match = Regex.Match(range, @"^(?<tab>.*)!([A-Z]+)(?<row>\d+)$");
+            return (match.Groups["tab"].Value, int.Parse(match.Groups["row"].Value), match.Groups[1].Value);
         }
     }
 }
