@@ -136,7 +136,7 @@ create_or_update () { # name handler memory timeout zip [extra env...]
 }
 
 create_or_update "$API_NAME" 'guito-api::GuitoApi.LambdaEntryPoint::FunctionHandlerAsync' 512 30 /tmp/guito-api.zip
-create_or_update "$AUTH_NAME" 'guito-api-authorizer::GuitoApiAuthorizer.Function::FunctionHandlerAsync' 128 10 /tmp/guito-authorizer.zip
+create_or_update "$AUTH_NAME" 'guito-api-authorizer::GuitoApiAuthorizer.Function::FunctionHandlerAsync' 128 30 /tmp/guito-authorizer.zip
 
 # --- 3b. Function environment variables (secrets + Google human-auth config) --
 # Env updates REPLACE all variables, so values are MERGED into the current

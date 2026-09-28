@@ -91,3 +91,39 @@ Authorization: Bearer {{Google_IdToken}}
   "description": "Dote",
   "category": "Eating out"
 }
+// Smoke scope (ADR-0009): any authenticated caller may add "X-Sheet-Scope: smoke"
+// to redirect writes AND list reads to the environment's Smoke Test tab. The
+// integration suite uses it so deployed smokes never touch real tabs. POST
+// /Expense returns the opaque Expense Id; DELETE /Smoke/{id} removes that row
+// (read-before-delete, 404 when gone) and is scoped to the smoke tab by the
+// route itself — it needs no X-Sheet-Scope header.
+
+### Smoke: Create Expense (writes to the Smoke Test tab, returns Expense Id)
+POST {{Api_HostAddress}}/Expense/
+Accept: */*
+Content-Type: application/json
+X-Api-Key: {{Agent_ApiKey}}
+Authorization: {{Agent_ApiKey}}
+X-Sheet-Scope: smoke
+
+{
+  "date": "2024-03-19T12:15:42.953Z",
+  "amount": 0.01,
+  "description": "integration test",
+  "category": "Integration Tests"
+}
+
+### Smoke: List Latest Expenses (reads the Smoke Test tab)
+GET {{Api_HostAddress}}/Expense/latest/5
+Accept: */*
+Content-Type: application/json
+X-Api-Key: {{Agent_ApiKey}}
+Authorization: {{Agent_ApiKey}}
+X-Sheet-Scope: smoke
+
+### Smoke: Delete Expense row by Id (Route-scoped to the Smoke Test tab; 404 when gone)
+DELETE {{Api_HostAddress}}/Smoke/5
+Accept: */*
+Content-Type: application/json
+X-Api-Key: {{Agent_ApiKey}}
+Authorization: {{Agent_ApiKey}}
