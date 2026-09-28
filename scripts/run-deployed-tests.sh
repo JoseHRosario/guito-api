@@ -110,6 +110,21 @@ echo "Google ID token minted for human-path tests."
 # One resolution, both domain suites: auth contract, then business round-trip.
 # Common (guito-api.IntegrationTests.Common) is shared plumbing, never run directly.
 cd "$REPO_ROOT"
+
+# --- Warm the edge authorizer off the test path ------------------------------
+# The FIRST agent-key request to a freshly-deployed authorizer pays a ~10s cold
+# Secrets Manager fetch that API Gateway won't wait for, so the first auth-contract
+# assertion 500s (the "500-where-401/403-expected" cold-start symptom; recurring
+# because every deploy cold-starts the authorizer). Fire one authed request now:
+# the ~10s fetch happens here, the secret caches for its 5-min TTL, and the real
+# tests hit the warm path. The response code is irrelevant — a 500 here warms the
+# authorizer exactly as a 200 does.
+WARM_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 \
+  -H "Authorization: $GUITO_TARGET_AGENT_KEY" \
+  -H "X-Api-Key: $GUITO_TARGET_AGENT_KEY" \
+  "$GUITO_TARGET_BASE_URL/Expense/latest/5" || echo "warmup-failed")
+echo "authorizer warm-up request returned HTTP $WARM_CODE (warmed)."
+
 FAILED=0
 for PROJECT in "${PROJECTS[@]}"; do
   echo "=== $PROJECT ==="
