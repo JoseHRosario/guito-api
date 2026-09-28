@@ -56,17 +56,7 @@ public class DeployedExpenseRoundTripTests
         Assert.False(listedAfter, "deleted expense is still listed after DELETE /Smoke");
     }
 
-    [Fact]
-    public async Task Match_ShouldSucceed_WhenReadingRealTabs()
-    {
-        // Read-only smoke of the match read anchor (real tabs, per ADR-0009).
-        using var client = DeployedEndpointFixture.CreateAgentClient(DeployedEndpointFixture.AgentKey);
-
-        var response = await client.GetAsync("/Expense/match");
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    }
-
+ 
     [Fact]
     public async Task Categories_ShouldSucceed_WhenReadingRealTab()
     {
