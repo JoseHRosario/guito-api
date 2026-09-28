@@ -17,6 +17,9 @@ Personal expense-tracking system (API + webapp) used to control expenses and max
 - **Staging** — the deployed test environment: a full parallel AWS stack (`guito-api-staging` Lambda pair, its own API Gateway and `guito-api/staging` secret; see ADR 0007). Runs with full auth parity with prod but shares the dev/staging spreadsheet — the only non-prod sheet allowed for local dev. Target of the default deploy (`deploy/deploy.sh` with no `ENV`) and home of deployed-endpoint integration tests.
 - **Production** — the live environment: `guito-api` Lambda pair, `guito-api/prod-*` secret, its own spreadsheet with real financial data. Requires the explicit `ENV=production` deploy flag. Local dev must never target the prod sheet or secret.
 - **SecretsPayload** — the JSON shape of each environment's Secrets Manager secret (`guito-api/prod`, `guito-api/staging`): `{ GoogleServiceAccount, ApiKeys }`. The Google service account inside must be the SA of that environment's own spreadsheet — prod carries the prod SA, staging the dev/staging SA (see ADR 0008).
+- **Guito design file** — José's duplicate of the "Simple Design System (Community)" Figma file, key `UoIK5MnIqDrgfHqMmBZoYk` (owner José). The Community original is read-only source and never edited. App designs live on its dedicated **Guito App** page. See ADR 0010.
+- **Design loop** — the UI workflow: Hermes drafts a screen on the Guito App page via the Figma MCP → José validates/edits in Figma → approval becomes the implement source. Design changes happen in Figma, never as code-side drift.
+- **Token sync (MCP)** — the process writing `design/tokens.json` in guito-ui from the design file's 'Design Tokens' variables, read via the Figma MCP (see ADR 0010). The REST/pull path is impossible on José's plan: `file_variables:read` is Enterprise-only.
 
 ## Repos
 
