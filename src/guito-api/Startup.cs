@@ -31,6 +31,7 @@ namespace GuitoApi
             services.AddSwaggerGen();
             services.AddCors(o =>
             {
+                var allowedOrigins = Configuration.GetSection("AppConfiguration:Cors:AllowedOrigins").Get<string[]>() ?? [];
                 o.AddPolicy("AllowAll", builder =>
                 {
                     builder.AllowAnyOrigin()
@@ -39,7 +40,10 @@ namespace GuitoApi
                 });
                 o.AddPolicy("AllowOnlyWebApp", builder =>
                 {
-                    builder.WithOrigins("https://guito-web-app.vercel.app")
+                    // Browser origins from config (CORS section); the deployed UI's
+                    // real origin (CloudFront) must be here or every browser call
+                    // — token exchange included — is CORS-blocked.
+                    builder.WithOrigins(allowedOrigins)
                            .AllowAnyMethod()
                            .AllowAnyHeader();
                 });

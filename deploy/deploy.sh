@@ -189,6 +189,13 @@ fi
 FN_ARN=$(aws --region "$REGION" lambda get-function --function-name "$API_NAME" --query Configuration.FunctionArn --output text)
 AUTH_ARN=$(aws --region "$REGION" lambda get-function --function-name "$AUTH_NAME" --query Configuration.FunctionArn --output text)
 
+# Issue #52: API Gateway answers the browser's CORS PREFLIGHT itself (no route
+# reaches the Lambda), so edge-level CORS is required — the app's UseCors never
+# sees an OPTIONS. AllowOrigins * is safe here: every non-exchange route stays
+# auth-gated at the authorizer; the exchange is unauthenticated by design.
+aws --region "$REGION" apigatewayv2 update-api --api-id "$API_ID" \
+  --cors-configuration '{"AllowOrigins":["*"],"AllowMethods":["GET","POST","OPTIONS"],"AllowHeaders":["content-type","x-api-key","authorization","x-google-idtoken"],"MaxAge":86400}' >/dev/null 2>&1 || true
+
 AUTH_ID=$(aws --region "$REGION" apigatewayv2 get-authorizers --api-id "$API_ID" --query "Items[?Name=='guito-key-authorizer'].AuthorizerId" --output text)
 [ -n "$AUTH_ID" ] || AUTH_ID=$(aws --region "$REGION" apigatewayv2 create-authorizer --api-id "$API_ID" --name guito-key-authorizer \
   --authorizer-type REQUEST --authorizer-uri "arn:aws:apigateway:$REGION:lambda:path/2015-03-31/functions/$AUTH_ARN/invocations" \

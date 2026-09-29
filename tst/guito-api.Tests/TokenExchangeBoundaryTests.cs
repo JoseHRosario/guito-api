@@ -97,6 +97,24 @@ public class TokenExchangeBoundaryTests : IClassFixture<CustomWebApplicationFact
     }
 
     [Fact]
+    public async Task CorsMiddleware_ShouldAnswerPreflight_WhenBrowserExchangesTokensCrossOrigin()
+    {
+        // The browser's fetch to /Auth/token is cross-origin from the UI; its
+        // OPTIONS preflight must come back with an Access-Control-Allow-Origin
+        // header or the browser blocks the exchange before it starts.
+        var client = ClientWithGatesOn(out var fake);
+        var request = new HttpRequestMessage(HttpMethod.Options, "/Auth/token");
+        request.Headers.Add("Origin", "https://dna69cy69n7jb.cloudfront.net");
+        request.Headers.Add("Access-Control-Request-Method", "POST");
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.True(response.Headers.Contains("Access-Control-Allow-Origin"),
+            "preflight must carry Access-Control-Allow-Origin or the browser blocks the exchange");
+    }
+
+    [Fact]
     public async Task AuthController_ShouldReturnRfc6749ErrorBody_WhenGoogleRejectsTheCode()
     {
         // guito-ui parses {error, error_description} from the exchange response
