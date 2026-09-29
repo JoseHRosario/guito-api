@@ -5,6 +5,8 @@ using GuitoApi.Services;
 using GuitoApi.Services.Account;
 using GuitoApi.Services.ArtificialIntelligence;
 using GuitoApi.Services.Category;
+using GuitoApi.Services;
+using GuitoApi.Services.Auth;
 using GuitoApi.Services.Expense;
 using Serilog;
 
@@ -54,6 +56,11 @@ namespace GuitoApi
             var secretsLocation = Configuration.GetValue<string>("AppConfiguration:Secrets:Location");
             services.AddSingleton<ISecretsProvider>(CreateSecretsProvider(secretsLocation));
 
+            // Google human-auth client secret (issue #52): same location pattern as the runtime secrets.
+            services.AddSingleton<IHumanAuthSecretProvider>(CreateHumanAuthSecretProvider(secretsLocation));
+            services.AddScoped<ITokenExchangeService, GoogleTokenExchangeService>();
+            services.AddHttpClient(nameof(GoogleTokenExchangeService));
+
             services.AddScoped<ICreateExpenseService, CreateExpenseGoogleApisSheetsService>();
             services.AddScoped<IMatchExpensesService, MatchExpensesService>();
             services.AddScoped<IListLatestExpensesService, ListLatestExpensesGoogleApisSheetsService>();
@@ -78,6 +85,14 @@ namespace GuitoApi
             SecretsConfig.LocationAws => new AwsSecretsProvider(RequiredAwsSecretName()),
             // Anything other than "Aws" is a local dev checkout: file-backed secrets.
             _ => new FileSecretsProvider(Configuration.GetValue<string>("AppConfiguration:Secrets:FilePath") ?? "secrets.local.json"),
+        };
+
+        private IHumanAuthSecretProvider CreateHumanAuthSecretProvider(string? secretsLocation) => secretsLocation switch
+        {
+            SecretsConfig.LocationAws => new AwsHumanAuthSecretProvider(
+                Configuration.GetValue<string>("AppConfiguration:Secrets:HumanAuthSecretName") ?? "guito-api/human-auth"),
+            _ => new FileHumanAuthSecretProvider(
+                Configuration.GetValue<string>("AppConfiguration:Secrets:HumanAuthFilePath") ?? "human-auth.local.json"),
         };
 
         private string RequiredAwsSecretName() =>

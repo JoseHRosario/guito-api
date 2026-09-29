@@ -36,6 +36,7 @@ namespace GuitoApi.Middleware
             // already passed the agent key gate does not need a Google token (paths
             // stay independent — ADR-0003: this only skips the token check).
             if (httpContext.Request.Path.StartsWithSegments(ApiKeyMiddleware.PublicPathKey) ||
+                httpContext.Request.Path.StartsWithSegments(ApiKeyMiddleware.PublicTokenExchangePathKey) ||
                 httpContext.Items.ContainsKey(ApiKeyMiddleware.AgentAuthedKey))
             {
                 await _next(httpContext);
