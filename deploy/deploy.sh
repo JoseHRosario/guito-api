@@ -92,7 +92,10 @@ EOF
 aws --region "$REGION" iam attach-role-policy --role-name "$ROLE" \
   --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole >/dev/null
 aws --region "$REGION" iam put-role-policy --role-name "$ROLE" --policy-name guito-api-secret-read \
-  --policy-document "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"secretsmanager:GetSecretValue\",\"Resource\":[\"arn:aws:secretsmanager:$REGION:*:secret:guito-api/prod-*\",\"arn:aws:secretsmanager:$REGION:*:secret:guito-api/staging-*\"]}]}" >/dev/null
+  --policy-document "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"secretsmanager:GetSecretValue\",\"Resource\":[\"arn:aws:secretsmanager:$REGION:*:secret:guito-api/*\"]}]}" >/dev/null
+# Prefix wildcard covers the whole guito-api family including the shared
+# human-auth secret (issue #52) — never interpolate a per-env SECRET_NAME here
+# (a staging run would overwrite prod-scoped policies with env-specific ARNs).
 
 # --- 2. Package (arm64 — matches the deployed functions; ARCH=x64 to override) ---
 ARCH=${ARCH:-arm64}
