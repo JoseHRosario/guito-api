@@ -92,7 +92,10 @@ EOF
 aws --region "$REGION" iam attach-role-policy --role-name "$ROLE" \
   --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole >/dev/null
 aws --region "$REGION" iam put-role-policy --role-name "$ROLE" --policy-name guito-api-secret-read \
-  --policy-document "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"secretsmanager:GetSecretValue\",\"Resource\":[\"arn:aws:secretsmanager:$REGION:*:secret:guito-api/prod-*\",\"arn:aws:secretsmanager:$REGION:*:secret:guito-api/staging-*\"]}]}" >/dev/null
+  --policy-document "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"secretsmanager:GetSecretValue\",\"Resource\":[\"arn:aws:secretsmanager:$REGION:*:secret:guito-api/*\"]}]}" >/dev/null
+# Prefix wildcard covers the whole guito-api family including the shared
+# human-auth secret (issue #52) — never interpolate a per-env SECRET_NAME here
+# (a staging run would overwrite prod-scoped policies with env-specific ARNs).
 
 # --- 2. Package (arm64 — matches the deployed functions; ARCH=x64 to override) ---
 ARCH=${ARCH:-arm64}
@@ -188,6 +191,13 @@ fi
 
 FN_ARN=$(aws --region "$REGION" lambda get-function --function-name "$API_NAME" --query Configuration.FunctionArn --output text)
 AUTH_ARN=$(aws --region "$REGION" lambda get-function --function-name "$AUTH_NAME" --query Configuration.FunctionArn --output text)
+
+# Issue #52: API Gateway answers the browser's CORS PREFLIGHT itself (no route
+# reaches the Lambda), so edge-level CORS is required — the app's UseCors never
+# sees an OPTIONS. AllowOrigins * is safe here: every non-exchange route stays
+# auth-gated at the authorizer; the exchange is unauthenticated by design.
+aws --region "$REGION" apigatewayv2 update-api --api-id "$API_ID" \
+  --cors-configuration '{"AllowOrigins":["*"],"AllowMethods":["GET","POST","OPTIONS"],"AllowHeaders":["content-type","x-api-key","authorization","x-google-idtoken"],"MaxAge":86400}' >/dev/null 2>&1 || true
 
 AUTH_ID=$(aws --region "$REGION" apigatewayv2 get-authorizers --api-id "$API_ID" --query "Items[?Name=='guito-key-authorizer'].AuthorizerId" --output text)
 [ -n "$AUTH_ID" ] || AUTH_ID=$(aws --region "$REGION" apigatewayv2 create-authorizer --api-id "$API_ID" --name guito-key-authorizer \
