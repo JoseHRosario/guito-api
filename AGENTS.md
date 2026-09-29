@@ -41,7 +41,7 @@ Lambda packaging happens in CI (Amazon.Lambda.Tools). Do not add local Lambda em
 - **Sheets schema is frozen.** Never change spreadsheet layout, column order, or header names — the UI and existing data depend on them.
 - **Auth paths are separate.** Human (Google ID token) and agent (`X-Api-Key`) authorization are distinct authorizers; never merge or weaken them.
 - **The extraction endpoint is intentionally a 501 stub** until the OpenRouter implementation lands — do not "fix" it.
-- **Workflow**: feature branch → PR → reviewed and merged by José. Never push directly to `master`.
+- **Workflow**: feature branch → PR → reviewed and merged by José. One feature branch per issue, named `feature/<issue#>-<slug>` (issue number first); the PR body **must end with `Closes #N`** so GitHub closes the issue on merge into `master`. Feature issues use the Feature issue template. Never push directly to `master`.
 - **Commit attribution**: agent commits are authored as `Meireles <josehrosario@gmail.com>` (or amend with `--author`); José's commits stay under his name.
 - **AWS operations** assume the role `arn:aws:iam::497087877832:role/MinervaAIAgent` — never use the user identity directly.
 
