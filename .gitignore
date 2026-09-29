@@ -401,3 +401,4 @@ FodyWeavers.xsd
 *.sln.iml
 # REST Client secret env (API keys)
 http-client.private.env.json
+human-auth.local.json

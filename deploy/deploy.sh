@@ -170,6 +170,7 @@ import json, os
 v = {'ASPNETCORE_ENVIRONMENT': os.environ['ASPNETCORE_ENV']}
 if os.environ.get('GOOGLE_CLIENT_ID'):
     v['AppConfiguration__Authentication__OAuthAudience'] = os.environ['GOOGLE_CLIENT_ID']
+    v['AppConfiguration__Authentication__GoogleClientId'] = os.environ['GOOGLE_CLIENT_ID']
 if os.environ.get('GOOGLE_ALLOWED_EMAILS'):
     v['AppConfiguration__Authentication__AllowedLogins'] = json.dumps(
         [e.strip() for e in os.environ['GOOGLE_ALLOWED_EMAILS'].split(',')])
@@ -220,6 +221,9 @@ aws --region "$REGION" apigatewayv2 create-route --api-id "$API_ID" --route-key 
   --authorization-type CUSTOM --authorizer-id "$AUTH_ID" --target "integrations/$INT_ID" >/dev/null 2>&1 || true
 aws --region "$REGION" apigatewayv2 create-route --api-id "$API_ID" --route-key 'ANY /healthz' \
   --authorization-type NONE --target "integrations/$INT_ID" >/dev/null 2>&1 || true
+# Issue #52: the token exchange is unauthenticated by design — public route like /healthz.
+aws --region "$REGION" apigatewayv2 create-route --api-id "$API_ID" --route-key 'ANY /Auth/token' \
+  --authorization-type NONE --target "integrations/$INT_ID" >/dev/null 2>&1 || true
 
 aws --region "$REGION" lambda add-permission --function-name "$API_NAME" --statement-id apigw-invoke \
   --action lambda:InvokeFunction --principal apigateway.amazonaws.com \
@@ -239,4 +243,4 @@ aws --region "$REGION" apigatewayv2 update-stage --api-id "$API_ID" --stage-name
 aws --region "$REGION" apigatewayv2 create-deployment --api-id "$API_ID" --stage-name '$default' >/dev/null
 
 echo "Deployed. Endpoint: $(aws --region "$REGION" apigatewayv2 get-api --api-id "$API_ID" --query ApiEndpoint --output text)"
-echo "Smoke test: /healthz → 200; no credentials → 401/403; wrong key → 403; valid key (from secret) → 200; garbage x-google-idtoken → 403; valid Google ID token (GOOGLE_CLIENT_ID configured) → 200."
+echo "Smoke test: /healthz → 200; no credentials → 401/403; wrong key → 403; valid key (from secret) → 200; garbage x-google-idtoken → 403; valid Google ID token (GOOGLE_CLIENT_ID configured) → 200; POST /Auth/token → 200/400."

@@ -33,6 +33,26 @@ public class DeployedAuthContractTests
     }
 
     [Fact]
+    public async Task TokenExchangeEndpoint_ShouldReachTheApp_WhenCalledAnonymously()
+    {
+        // Arrange — the exchange is unauthenticated by design (issue #52): the code
+        // is the credential. An empty body is rejected by [Required], so the app
+        // answers with its own 400; a gateway 401/403 here would instead mean the
+        // public route (ANY /Auth/token) is missing from the deployed API.
+        using var client = DeployedEndpointFixture.CreateAnonymousClient();
+
+        // Act
+        var response = await client.PostAsync("/Auth/token",
+            new StringContent("""{"code":"","codeVerifier":"x","redirectUri":"x"}""", System.Text.Encoding.UTF8, "application/json"));
+
+        // Assert — must NOT be a gateway 401/403 (route exemption) and must NOT be
+        // 500 from the authorizer cold start; 400 is the app's [Required] verdict.
+        Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
     public async Task ExpenseEndpoint_ShouldReturnUnauthorizedFromGateway_WhenNoCredentialsArePresent()
     {
         // Arrange

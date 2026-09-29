@@ -17,6 +17,8 @@ namespace GuitoApi.Middleware
     {
         public const string ApiKeyHeaderKey = "X-Api-Key";
         private const string PublicPath = "/healthz";
+        /// <summary>Second public path (issue #52): the token exchange is unauthenticated by design — the code is the credential.</summary>
+        public const string PublicTokenExchangePathKey = "/Auth/token";
         private const string GoogleTokenHeaderName = GoogleIdTokenMiddleware.IdTokenHeaderKey;
         private const string BearerPrefix = "Bearer ";
 
@@ -44,7 +46,8 @@ namespace GuitoApi.Middleware
         {
             if (_options.Authentication.ValidateApiKey)
             {
-                if (httpContext.Request.Path.StartsWithSegments(PublicPath))
+                if (httpContext.Request.Path.StartsWithSegments(PublicPath) ||
+                    httpContext.Request.Path.StartsWithSegments(PublicTokenExchangePathKey))
                 {
                     await _next(httpContext);
                     return;
