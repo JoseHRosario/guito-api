@@ -73,7 +73,7 @@ public class GoogleTokenExchangeServiceTests
     }
 
     [Fact]
-    public async Task ExchangeAsync_ShouldReturnBadRequest_WhenGoogleRejectsTheCode()
+    public async Task ExchangeAsync_ShouldThrowRfc6749Error_WhenGoogleRejectsTheCode()
     {
         // Status convention: use the upstream status when the response carries one —
         // Google 400 (invalid_grant etc.) surfaces as 400 with the provider error.
@@ -81,12 +81,11 @@ public class GoogleTokenExchangeServiceTests
         _http.NextBody = """{"error":"invalid_grant","error_description":"code was already redeemed"}""";
         var service = CreateService();
 
-        var exception = await Assert.ThrowsAnyAsync<ProblemException>(() => service.ExchangeAsync(ValidRequest()));
+        var exception = await Assert.ThrowsAnyAsync<GoogleTokenExchangeException>(() => service.ExchangeAsync(ValidRequest()));
 
         Assert.Equal(400, exception.HttpStatusCode);
-        Assert.Contains("invalid_grant", exception.Message);
-        // The error body carries no credentials — the description is safe to surface.
-        Assert.Contains("code was already redeemed", exception.Message);
+        Assert.Equal("invalid_grant", exception.Error);
+        Assert.Equal("code was already redeemed", exception.ErrorDescription);
     }
 
     [Fact]
@@ -97,7 +96,7 @@ public class GoogleTokenExchangeServiceTests
         _http.NextBody = "server error";
         var service = CreateService();
 
-        var exception = await Assert.ThrowsAnyAsync<ProblemException>(() => service.ExchangeAsync(ValidRequest()));
+        var exception = await Assert.ThrowsAnyAsync<GoogleTokenExchangeException>(() => service.ExchangeAsync(ValidRequest()));
 
         Assert.Equal(502, exception.HttpStatusCode);
     }

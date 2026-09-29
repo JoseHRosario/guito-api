@@ -68,9 +68,14 @@ namespace GuitoApi.Services.Auth
             // to surface so the UI can diagnose.
             if (!response.IsSuccessStatusCode)
             {
+                // Status convention: use the upstream status when the response carries
+                // one (Google 4xx → same status); provider failures → 502. The error
+                // body carries no credentials — its error/error_description surface
+                // as the RFC 6749 JSON the UI already parses.
                 var upstream = (int)response.StatusCode;
-                var message = DescribeGoogleError(body);
-                throw new ProblemException(upstream is >= 400 and < 500 ? upstream : 502, message);
+                var (error, description) = ParseGoogleError(body);
+                throw new GoogleTokenExchangeException(
+                    upstream is >= 400 and < 500 ? upstream : 502, error, description);
             }
 
             return JsonSerializer.Deserialize<TokenExchangeResponse>(
@@ -83,7 +88,7 @@ namespace GuitoApi.Services.Auth
                 ?? throw new ProblemException(502, "Google token response is invalid");
         }
 
-        private static string DescribeGoogleError(string body)
+        private static (string? Error, string? Description) ParseGoogleError(string body)
         {
             try
             {
@@ -94,13 +99,11 @@ namespace GuitoApi.Services.Auth
                 var description = json.RootElement.TryGetProperty("error_description", out var descriptionElement)
                     ? descriptionElement.GetString()
                     : null;
-                return string.IsNullOrEmpty(description)
-                    ? $"Google token exchange failed: {error ?? "unknown error"}"
-                    : $"Google token exchange failed: {error}: {description}";
+                return (error, description);
             }
             catch (JsonException)
             {
-                return "Google token exchange failed";
+                return (null, null);
             }
         }
     }

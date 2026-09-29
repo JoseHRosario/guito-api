@@ -1,5 +1,6 @@
 using GuitoApi.DataTransferObjects.Input;
 using GuitoApi.DataTransferObjects.Output;
+using GuitoApi.Exceptions;
 using GuitoApi.Services.Auth;
 using Microsoft.AspNetCore.Mvc;
 
@@ -23,9 +24,21 @@ namespace GuitoApi.Controllers
         }
 
         [HttpPost("token")]
-        public async Task<TokenExchangeResponse> TokenAsync(TokenExchangeRequest request, CancellationToken cancellationToken)
+        public async Task<IActionResult> TokenAsync(TokenExchangeRequest request, CancellationToken cancellationToken)
         {
-            return await _tokenExchangeService.ExchangeAsync(request, cancellationToken);
+            try
+            {
+                return Ok(await _tokenExchangeService.ExchangeAsync(request, cancellationToken));
+            }
+            catch (GoogleTokenExchangeException e)
+            {
+                // RFC 6749 error shape (guito-ui tokenFailureMessage parses it); carries no credentials.
+                return StatusCode((int)e.HttpStatusCode, new GoogleTokenErrorResponse
+                {
+                    Error = e.Error,
+                    ErrorDescription = e.ErrorDescription,
+                });
+            }
         }
     }
 }

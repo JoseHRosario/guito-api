@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using GuitoApi.Exceptions;
 using GuitoApi.Services.Auth;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -93,5 +94,22 @@ public class TokenExchangeBoundaryTests : IClassFixture<CustomWebApplicationFact
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Empty(fake.Calls);
+    }
+
+    [Fact]
+    public async Task AuthController_ShouldReturnRfc6749ErrorBody_WhenGoogleRejectsTheCode()
+    {
+        // guito-ui parses {error, error_description} from the exchange response
+        // (guito-ui tokenFailureMessage); the body must carry the verbatim fields.
+        var client = ClientWithGatesOn(out var fake);
+        fake.Throw = new GoogleTokenExchangeException(400, "invalid_grant", "code was already redeemed");
+
+        var response = await client.PostAsJsonAsync("/Auth/token", new { code = "auth-code", codeVerifier = "verifier", redirectUri = "https://guito.example.com/auth/callback" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("\"error\":\"invalid_grant\"", body);
+        Assert.Contains("\"error_description\":\"code was already redeemed\"", body);
+        Assert.DoesNotContain("fake-client-secret", body);
     }
 }

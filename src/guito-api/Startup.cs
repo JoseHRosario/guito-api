@@ -5,7 +5,6 @@ using GuitoApi.Services;
 using GuitoApi.Services.Account;
 using GuitoApi.Services.ArtificialIntelligence;
 using GuitoApi.Services.Category;
-using GuitoApi.Services;
 using GuitoApi.Services.Auth;
 using GuitoApi.Services.Expense;
 using Serilog;
@@ -59,7 +58,7 @@ namespace GuitoApi
             // Google human-auth client secret (issue #52): same location pattern as the runtime secrets.
             services.AddSingleton<IHumanAuthSecretProvider>(CreateHumanAuthSecretProvider(secretsLocation));
             services.AddScoped<ITokenExchangeService, GoogleTokenExchangeService>();
-            services.AddHttpClient(nameof(GoogleTokenExchangeService));
+            services.AddHttpClient(GoogleTokenExchangeService.HttpClientName);
 
             services.AddScoped<ICreateExpenseService, CreateExpenseGoogleApisSheetsService>();
             services.AddScoped<IMatchExpensesService, MatchExpensesService>();
@@ -87,16 +86,17 @@ namespace GuitoApi
             _ => new FileSecretsProvider(Configuration.GetValue<string>("AppConfiguration:Secrets:FilePath") ?? "secrets.local.json"),
         };
 
+        /// <summary>The Secrets config section bound to SecretsConfig — defaults live there, not here.</summary>
+        private SecretsConfig Secrets => Configuration.GetSection("AppConfiguration:Secrets").Get<SecretsConfig>() ?? new SecretsConfig();
+
         private IHumanAuthSecretProvider CreateHumanAuthSecretProvider(string? secretsLocation) => secretsLocation switch
         {
-            SecretsConfig.LocationAws => new AwsHumanAuthSecretProvider(
-                Configuration.GetValue<string>("AppConfiguration:Secrets:HumanAuthSecretName") ?? "guito-api/human-auth"),
-            _ => new FileHumanAuthSecretProvider(
-                Configuration.GetValue<string>("AppConfiguration:Secrets:HumanAuthFilePath") ?? "human-auth.local.json"),
+            SecretsConfig.LocationAws => new AwsHumanAuthSecretProvider(Secrets.HumanAuthSecretName),
+            _ => new FileHumanAuthSecretProvider(Secrets.HumanAuthFilePath),
         };
 
         private string RequiredAwsSecretName() =>
-            Configuration.GetValue<string>("AppConfiguration:Secrets:SecretName")
+            Secrets.SecretName
             ?? throw new InvalidOperationException("AppConfiguration:Secrets:SecretName is required when Secrets:Location is Aws");
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env, ILoggerFactory loggerFactory)

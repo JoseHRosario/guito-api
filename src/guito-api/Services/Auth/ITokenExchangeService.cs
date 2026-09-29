@@ -1,7 +1,5 @@
-using GuitoApi.DataTransferObjects.Output;
-
-using GuitoApi.Configuration;
 using GuitoApi.DataTransferObjects.Input;
+using GuitoApi.DataTransferObjects.Output;
 
 namespace GuitoApi.Services.Auth
 {
