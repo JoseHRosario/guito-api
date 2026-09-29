@@ -24,9 +24,11 @@ Guito: personal expense-tracking API (.NET 10, AWS Lambda + API Gateway HTTP API
 ## Commands
 
 ```bash
+export PATH="$HOME/.dotnet:$PATH" DOTNET_ROOT="$HOME/.dotnet"   # .NET SDK is NOT on PATH by default — prepend before ANY dotnet command
 dotnet build          # build
 dotnet run --project src/guito-api  # local dev server (Kestrel) — plain dotnet run, no Lambda emulation
-dotnet test --filter "Category!=Integration"   # tests (external behavior only: HTTP boundary, provider seam)
+dotnet test --filter "Category!=Integration"   # hermetic unit tests (bare `dotnet test` FAILS without env vars — sit/ suites are not hermetic)
+scripts/run-deployed-tests.sh       # deployed-staging SIT suites (business + auth contract); resolves secrets from AWS Secrets Manager
 dotnet tool restore   # if Lambda tools are needed for packaging checks
 ```
 

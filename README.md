@@ -37,11 +37,17 @@ Google (ID token)            CLI / AI agents (X-Api-Key)
 Prerequisites: .NET 10 SDK, a Google service account key, and the Guito spreadsheet shared with that service account.
 
 ```bash
+export PATH="$HOME/.dotnet:$PATH" DOTNET_ROOT="$HOME/.dotnet"   # if the SDK is not already on PATH
 dotnet restore
 dotnet run                       # Kestrel on the dev profile
 ```
 
-Configuration comes from `appsettings.{Environment}.json` plus environment variables (Google service account credentials, Sheets ids, bank-provider credentials). Secrets are stored in AWS Secrets Manager in deployed environments — never commit them.
+```bash
+dotnet test --filter "Category!=Integration"   # hermetic unit tests (CI gate)
+scripts/run-deployed-tests.sh                 # deployed-staging integration tests (reads secrets from AWS)
+```
+
+Configuration comes from `appsettings.{Environment}.json` plus environment variables (Google service account credentials, Sheets ids, bank-provider credentials). Secrets are stored in AWS Secrets Manager in deployed environments — never commit them. Base/`appsettings.json` targets the DEV spreadsheet; `appsettings.Production.json` targets prod.
 
 ## Deployment
 
