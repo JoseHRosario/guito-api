@@ -234,6 +234,17 @@ aws --region "$REGION" apigatewayv2 create-route --api-id "$API_ID" --route-key 
 # Issue #52: the token exchange is unauthenticated by design — public route like /healthz.
 aws --region "$REGION" apigatewayv2 create-route --api-id "$API_ID" --route-key 'ANY /Auth/token' \
   --authorization-type NONE --target "integrations/$INT_ID" >/dev/null 2>&1 || true
+# Browser CORS preflights (guito-api#9): OPTIONS must reach the app's CORS
+# middleware, not $default's authorizer (a targetless route 401s — the route
+# must carry the Lambda integration; the invoke permission above covers it).
+aws --region "$REGION" apigatewayv2 create-route --api-id "$API_ID" --route-key 'OPTIONS /{proxy+}' \
+  --authorization-type NONE --target "integrations/$INT_ID" >/dev/null 2>&1 || true
+# If the route exists but predates the integration attachment (bare route 401s), re-attach.
+for rid in $(aws --region "$REGION" apigatewayv2 get-routes --api-id "$API_ID" \
+  --query "Items[?starts_with(RouteKey,'OPTIONS') && !Target].RouteId" --output text); do
+  aws --region "$REGION" apigatewayv2 update-route --api-id "$API_ID" --route-id "$rid" \
+    --target "integrations/$INT_ID" >/dev/null 2>&1 || true
+done
 
 aws --region "$REGION" lambda add-permission --function-name "$API_NAME" --statement-id apigw-invoke \
   --action lambda:InvokeFunction --principal apigateway.amazonaws.com \
