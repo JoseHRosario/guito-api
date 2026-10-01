@@ -402,3 +402,6 @@ FodyWeavers.xsd
 # REST Client secret env (API keys)
 http-client.private.env.json
 human-auth.local.json
+
+# Git worktrees for parallel agent sessions
+/.worktrees/

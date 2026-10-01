@@ -4,7 +4,7 @@ Guidance for AI coding agents working in this repo. Keep it small and current �
 
 ## Where the code lives
 
-**Canonical working tree on the host filesystem: `/d/srv/projects/guito-api`** — agents must use this path for all work (build, test, commit, push, pull). Don't clone elsewhere.
+**Canonical working tree on the host filesystem: `/d/srv/projects/guito-api`** — agents must use this path for all work (build, test, commit, push, pull). Don't clone elsewhere. For parallel sessions working separate issues, see the worktree rule under **Rules** — branch work happens in a `.worktrees/` worktree, not by switching the main tree's branch.
 
 ## What this project is
 
@@ -42,6 +42,10 @@ Lambda packaging happens in CI (Amazon.Lambda.Tools). Do not add local Lambda em
 - **Auth paths are separate.** Human (Google ID token) and agent (`X-Api-Key`) authorization are distinct authorizers; never merge or weaken them.
 - **The extraction endpoint is intentionally a 501 stub** until the OpenRouter implementation lands — do not "fix" it.
 - **Workflow**: feature branch → PR → reviewed and merged by José. One feature branch per issue, named `feature/<issue#>-<slug>` (issue number first); the PR body **must end with `Closes #N`** so GitHub closes the issue on merge into `master`. Feature issues use the Feature issue template. Never push directly to `master`.
+- **Parallel sessions use git worktrees.** The main tree (`/d/srv/projects/guito-api`) stays on `master` and is shared (José's Windows sync + any agent session) — never check a feature branch out there. For work on a separate issue while another session works, create a worktree **inside the repo** under the gitignored `.worktrees/` dir: `git worktree add .worktrees/<issue#>-<slug> feature/<issue#>-<slug>`. Branches are exclusive per worktree, so sessions cannot collide. Note: gitignored secrets (`google-spreadsheets*.json`, `appsettings.*.json` locals) exist only in the main tree — copy them into the worktree or sourced commands will fail.
+- **Before any blanket `git add -A`, verify `.worktrees/` is ignored on the current branch** (`git check-ignore .worktrees/` — branch history may predate the ignore entry); otherwise prefer adding explicit paths. A branch without the ignore entry would stage an entire nested repo copy.
+- **Always run `git branch --show-current` before starting work** — the shared tree may have been switched by another session since you last looked.
+- Remove the worktree when its PR merges: `git worktree remove .worktrees/<name> && git worktree prune`.
 - **Commit attribution**: agent commits are authored as `Meireles <josehrosario@gmail.com>` (or amend with `--author`); José's commits stay under his name.
 - **AWS operations** assume the role `arn:aws:iam::497087877832:role/MinervaAIAgent` — never use the user identity directly.
 
