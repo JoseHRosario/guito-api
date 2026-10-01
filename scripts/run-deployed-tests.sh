@@ -59,6 +59,25 @@ case "$GUITO_TARGET_BASE_URL" in
   *) GUITO_TARGET_BASE_URL="https://$GUITO_TARGET_BASE_URL" ;;
 esac
 
+# Prefer the API's custom-domain mapping (the URL real clients use — e.g.
+# guito.api.kerumirembora.com), so the suite also exercises the domain→API
+# routing layer. Falls back to the execute-api endpoint when no domain is mapped.
+API_ID=$(aws --region "$REGION" apigatewayv2 get-apis \
+  --query "Items[?Name=='$API_NAME'].ApiId" --output text)
+case "$ENV_TARGET" in
+  production) CUSTOM_DOMAIN_NAME='guito.api.kerumirembora.com' ;;
+  staging)    CUSTOM_DOMAIN_NAME='guito-staging.api.kerumirembora.com' ;;
+esac
+MAPPING_COUNT=$(aws --region "$REGION" apigatewayv2 get-api-mappings \
+  --domain-name "$CUSTOM_DOMAIN_NAME" \
+  --query "length(Items[?ApiId=='$API_ID'])" --output text 2>/dev/null || echo 0)
+if [ "$MAPPING_COUNT" != "0" ] && [ -n "$MAPPING_COUNT" ]; then
+  echo "Using custom domain $CUSTOM_DOMAIN_NAME for $ENV_TARGET."
+  GUITO_TARGET_BASE_URL="https://$CUSTOM_DOMAIN_NAME"
+else
+  echo "No custom-domain mapping for $API_NAME — using $GUITO_TARGET_BASE_URL."
+fi
+
 # --- Resolve both agent keys from Secrets Manager -----------------------------
 secret_key() {
   aws --region "$REGION" secretsmanager get-secret-value --secret-id "$1" \
