@@ -1,7 +1,7 @@
 using Google.Apis.Http;
 using Google.Apis.Services;
 using Google.Apis.Sheets.v4;
-using GuitoApi.Services;
+using GuitoApi.Infrastructure.Sheets;
 using HttpFactory = Google.Apis.Http.IHttpClientFactory;
 
 namespace GuitoApi.Tests;
@@ -11,11 +11,11 @@ namespace GuitoApi.Tests;
 /// (controller → service → Google Sheets client → HTTP request/response JSON)
 /// runs against canned spreadsheet responses instead of the real Sheets API.
 /// </summary>
-public class FakeGooglesheetsService : IGooglesheetsService
+public class FakeGooglesheetsClientProvider : IGooglesheetsClientProvider
 {
     private readonly FakeSheetsHttpHandler _handler;
 
-    public FakeGooglesheetsService(FakeSheetsHttpHandler handler) => _handler = handler;
+    public FakeGooglesheetsClientProvider(FakeSheetsHttpHandler handler) => _handler = handler;
 
     public Task<SheetsService> GetAsync(CancellationToken cancellationToken = default)
     {

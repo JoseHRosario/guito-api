@@ -4,12 +4,14 @@ using GuitoApi.Configuration;
 using GuitoApi.DataTransferObjects.Input;
 using GuitoApi.DataTransferObjects.Output;
 using GuitoApi.Exceptions;
+using GuitoApi.Infrastructure.Sheets;
+using GuitoApi.Repositories;
 using GuitoApi.Services;
 using Microsoft.Extensions.Options;
 using System.Globalization;
 using System.Text.RegularExpressions;
 
-namespace GuitoApi.Repositories
+namespace GuitoApi.Infrastructure.Sheets
 {
     /// <summary>
     /// Google-Sheets-backed IExpenseRepository. Every Sheets-specific behavior
@@ -21,13 +23,13 @@ namespace GuitoApi.Repositories
     public class GoogleSheetsExpenseRepository : IExpenseRepository
     {
         private readonly AppConfigurationOptions _options;
-        private readonly IGooglesheetsService _googlesheetsService;
+        private readonly IGooglesheetsClientProvider _googlesheetsService;
         private readonly IUserIdentityResolver _userIdentityResolver;
         private readonly ISheetScopeResolver _sheetScopeResolver;
 
         public GoogleSheetsExpenseRepository(
             IOptions<AppConfigurationOptions> options,
-            IGooglesheetsService googlesheetsService,
+            IGooglesheetsClientProvider googlesheetsService,
             IUserIdentityResolver userIdentityResolver,
             ISheetScopeResolver sheetScopeResolver)
         {

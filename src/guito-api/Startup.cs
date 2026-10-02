@@ -1,4 +1,6 @@
 using GuitoApi.Configuration;
+using GuitoApi.Infrastructure.Secrets;
+using GuitoApi.Infrastructure.Sheets;
 using GuitoApi.Exceptions;
 using GuitoApi.Middleware;
 using GuitoApi.Repositories;
@@ -80,7 +82,7 @@ namespace GuitoApi
             services.AddScoped<IListCategoryService, ListCategoryGoogleApisSheetsService>();
             services.AddScoped<IListTransactionsService, ListTransactionsNordigenService>();
             services.AddHttpClient(nameof(ListTransactionsNordigenService));
-            services.AddScoped<IGooglesheetsService, GooglesheetsService>();
+            services.AddScoped<IGooglesheetsClientProvider, GooglesheetsClientProvider>();
             if (environment == Environments.Development)
             {
                 // Local dev: canned bank transactions so /expense/match works end-to-end

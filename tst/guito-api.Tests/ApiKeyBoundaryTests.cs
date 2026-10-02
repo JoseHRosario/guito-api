@@ -6,6 +6,8 @@ using GuitoApi.Configuration;
 using GuitoApi.Services;
 using GuitoApi.DataTransferObjects.Input;
 
+using GuitoApi.Infrastructure.Secrets;
+
 namespace GuitoApi.Tests;
 
 /// <summary>

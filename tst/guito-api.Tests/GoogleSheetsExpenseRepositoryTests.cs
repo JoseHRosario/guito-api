@@ -1,6 +1,7 @@
 using GuitoApi.Configuration;
 using GuitoApi.DataTransferObjects.Input;
 using GuitoApi.Exceptions;
+using GuitoApi.Infrastructure.Sheets;
 using GuitoApi.Repositories;
 using Microsoft.Extensions.Options;
 
@@ -13,7 +14,7 @@ public class GoogleSheetsExpenseRepositoryTests
 
     private GoogleSheetsExpenseRepository CreateRepository() =>
         new(Options.Create(_options),
-            new FakeGooglesheetsService(_handler),
+            new FakeGooglesheetsClientProvider(_handler),
             new FakeUserIdentityResolver(),
             new FakeSheetScopeResolver(_options));
 

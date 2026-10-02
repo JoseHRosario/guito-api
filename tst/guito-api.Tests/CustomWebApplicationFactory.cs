@@ -1,4 +1,5 @@
-using GuitoApi.Services;
+using GuitoApi.Infrastructure.Secrets;
+using GuitoApi.Infrastructure.Sheets;
 using GuitoApi.Services.Account;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -18,7 +19,7 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
         builder.ConfigureTestServices(services =>
         {
             var sheets = SheetsHandler;
-            Replace<IGooglesheetsService>(services, sp => new FakeGooglesheetsService(sheets));
+            Replace<IGooglesheetsClientProvider>(services, sp => new FakeGooglesheetsClientProvider(sheets));
             Replace<IListTransactionsService>(services, _ => new ListTransactionsDummyService());
             // Canned secrets: the repo has no real ones (gitignored by design).
             var descriptor = services.Single(d => d.ServiceType == typeof(ISecretsProvider));

@@ -1,4 +1,5 @@
 using GuitoApi.Configuration;
+using GuitoApi.Infrastructure.Sheets;
 using GuitoApi.Repositories;
 using Microsoft.Extensions.Options;
 
@@ -13,7 +14,7 @@ public class GoogleSheetsCategoryRepositoryTests
         var options = TestSheetsConfiguration.Build();
         var repository = new GoogleSheetsCategoryRepository(
             Options.Create(options),
-            new FakeGooglesheetsService(new FakeSheetsHttpHandler()));
+            new FakeGooglesheetsClientProvider(new FakeSheetsHttpHandler()));
 
         // Act
         var categories = await repository.ListAsync();

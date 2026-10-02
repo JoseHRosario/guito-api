@@ -1,4 +1,4 @@
-namespace GuitoApi.Services
+namespace GuitoApi.Infrastructure.Sheets
 {
     /// <summary>
     /// Resolves the effective Sheets ranges for the current request. When the

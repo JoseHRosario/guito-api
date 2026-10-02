@@ -1,14 +1,15 @@
-﻿using System.Text;
+using System.Text;
 using Google.Apis.Auth.OAuth2;
 using Google.Apis.Services;
 using Google.Apis.Sheets.v4;
 using GuitoApi.Configuration;
 using GuitoApi.Exceptions;
+using GuitoApi.Infrastructure.Secrets;
 using Microsoft.Extensions.Options;
 
-namespace GuitoApi.Services
+namespace GuitoApi.Infrastructure.Sheets
 {
-    public class GooglesheetsService : IGooglesheetsService
+    public class GooglesheetsClientProvider : IGooglesheetsClientProvider
     {
         public const string CredentialLocationFilesystem = "Filesystem";
         public const string CredentialLocationSecrets = "Secrets";
@@ -16,7 +17,7 @@ namespace GuitoApi.Services
         private readonly AppConfigurationOptions _options;
         private readonly ISecretsProvider _secretsProvider;
 
-        public GooglesheetsService(IOptions<AppConfigurationOptions> options, ISecretsProvider secretsProvider)
+        public GooglesheetsClientProvider(IOptions<AppConfigurationOptions> options, ISecretsProvider secretsProvider)
         {
             _options = options.Value;
             _secretsProvider = secretsProvider;

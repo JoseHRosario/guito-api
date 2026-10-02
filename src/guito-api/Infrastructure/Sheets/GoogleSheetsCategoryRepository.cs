@@ -2,10 +2,11 @@ using Google.Apis.Sheets.v4;
 using Google.Apis.Sheets.v4.Data;
 using GuitoApi.Configuration;
 using GuitoApi.DataTransferObjects.Output;
-using GuitoApi.Services;
+using GuitoApi.Infrastructure.Sheets;
+using GuitoApi.Repositories;
 using Microsoft.Extensions.Options;
 
-namespace GuitoApi.Repositories
+namespace GuitoApi.Infrastructure.Sheets
 {
     /// <summary>
     /// Google-Sheets-backed ICategoryRepository: reads the Config tab's category
@@ -14,11 +15,11 @@ namespace GuitoApi.Repositories
     public class GoogleSheetsCategoryRepository : ICategoryRepository
     {
         private readonly AppConfigurationOptions _options;
-        private readonly IGooglesheetsService _googlesheetsService;
+        private readonly IGooglesheetsClientProvider _googlesheetsService;
 
         public GoogleSheetsCategoryRepository(
             IOptions<AppConfigurationOptions> options,
-            IGooglesheetsService googlesheetsService)
+            IGooglesheetsClientProvider googlesheetsService)
         {
             _options = options.Value;
             _googlesheetsService = googlesheetsService;
