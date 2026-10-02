@@ -9,11 +9,11 @@ namespace GuitoApi.Services.Expense
     /// the wire shape are unchanged, while every Sheets behavior moved into the
     /// repository layer.
     /// </summary>
-    public class ListLatestExpensesGoogleApisSheetsService : IListLatestExpensesService
+    public class ListLatestExpensesService : IListLatestExpensesService
     {
         private readonly IExpenseRepository _expenseRepository;
 
-        public ListLatestExpensesGoogleApisSheetsService(IExpenseRepository expenseRepository) =>
+        public ListLatestExpensesService(IExpenseRepository expenseRepository) =>
             _expenseRepository = expenseRepository;
 
         public async Task<ExpenseListLatest> ListLatestAsync(int count, CancellationToken cancellationToken = default)

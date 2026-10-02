@@ -74,10 +74,10 @@ namespace GuitoApi
             services.AddScoped<IExpenseRepository, GoogleSheetsExpenseRepository>();
             services.AddScoped<ICategoryRepository, GoogleSheetsCategoryRepository>();
 
-            services.AddScoped<ICreateExpenseService, CreateExpenseGoogleApisSheetsService>();
+            services.AddScoped<ICreateExpenseService, CreateExpenseService>();
             services.AddScoped<IMatchExpensesService, MatchExpensesService>();
-            services.AddScoped<IListLatestExpensesService, ListLatestExpensesGoogleApisSheetsService>();
-            services.AddScoped<IDeleteExpenseRowService, DeleteExpenseGoogleApisSheetsService>();
+            services.AddScoped<IListLatestExpensesService, ListLatestExpensesService>();
+            services.AddScoped<IDeleteExpenseRowService, DeleteExpenseService>();
             services.AddScoped<ISheetScopeResolver, SheetScopeResolver>();
             services.AddScoped<IListCategoryService, ListCategoryGoogleApisSheetsService>();
             services.AddScoped<IListTransactionsService, ListTransactionsNordigenService>();

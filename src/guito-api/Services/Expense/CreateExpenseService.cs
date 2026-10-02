@@ -12,11 +12,11 @@ namespace GuitoApi.Services.Expense
     /// repository layer. The repository's opaque string Id is the sheet row index
     /// today; the wire still carries it as the numeric Id of ExpenseCreated.
     /// </summary>
-    public class CreateExpenseGoogleApisSheetsService : ICreateExpenseService
+    public class CreateExpenseService : ICreateExpenseService
     {
         private readonly IExpenseRepository _expenseRepository;
 
-        public CreateExpenseGoogleApisSheetsService(IExpenseRepository expenseRepository) =>
+        public CreateExpenseService(IExpenseRepository expenseRepository) =>
             _expenseRepository = expenseRepository;
 
         public async Task<ExpenseCreated> CreateAsync(ExpenseCreate value, CancellationToken cancellationToken = default)

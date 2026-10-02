@@ -10,11 +10,11 @@ namespace GuitoApi.Services.Expense
     /// repository layer. Not-found now surfaces as ExpenseNotFoundException from
     /// the repository, translated to 404 by the exception handler.
     /// </summary>
-    public class DeleteExpenseGoogleApisSheetsService : IDeleteExpenseRowService
+    public class DeleteExpenseService : IDeleteExpenseRowService
     {
         private readonly IExpenseRepository _expenseRepository;
 
-        public DeleteExpenseGoogleApisSheetsService(IExpenseRepository expenseRepository) =>
+        public DeleteExpenseService(IExpenseRepository expenseRepository) =>
             _expenseRepository = expenseRepository;
 
         public Task DeleteAsync(int id, CancellationToken cancellationToken = default) =>
