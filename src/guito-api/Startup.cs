@@ -64,6 +64,10 @@ namespace GuitoApi
             services.AddScoped<ITokenExchangeService, GoogleTokenExchangeService>();
             services.AddHttpClient(GoogleTokenExchangeService.HttpClientName);
 
+            // Google token revocation on sign-out (issue #64): the session's access token → Google's revoke endpoint.
+            services.AddScoped<IRevokeGoogleTokenService, RevokeGoogleTokenService>();
+            services.AddHttpClient(RevokeGoogleTokenService.HttpClientName);
+
             services.AddScoped<ICreateExpenseService, CreateExpenseGoogleApisSheetsService>();
             services.AddScoped<IMatchExpensesService, MatchExpensesService>();
             services.AddScoped<IListLatestExpensesService, ListLatestExpensesGoogleApisSheetsService>();
