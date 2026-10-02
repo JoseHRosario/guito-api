@@ -3,6 +3,18 @@
 Rules that apply to every PR in this repo. AGENTS.md carries architecture and workflow;
 this file carries coding conventions. Agents must check this list before committing.
 
+## Branching
+
+One branch per issue, cut from `master`, named with the issue number first:
+
+- Features and new work: `feature/<issue#>-<slug>` (e.g. `feature/9-user-flow`)
+- Bugs — something that worked as intended is broken (code regression, wrong
+  behavior, broken config): `bug/<issue#>-<slug>` (e.g. `bug/40-token-crash`)
+- Environment/CI/docs work stays under the existing informal prefixes (`chore/`,
+  `docs/`) — not formalized further.
+
+The PR body must end with `Closes #N`. Never push directly to `master`.
+
 ## One class or interface per file
 
 A source file declares exactly **one** type. Records count as types. Supporting records
