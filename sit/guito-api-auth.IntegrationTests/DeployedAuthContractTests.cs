@@ -168,6 +168,98 @@ public class DeployedAuthContractTests
     }
 
     /// <summary>
+    /// POST /Auth/logout (issue #64), agent path: the TARGET agent key in both
+    /// headers gates the endpoint (it is NOT public like /Auth/token — a 401 here
+    /// means the auth contract broke, never the route). The body revokes a GARBAGE
+    /// token: Google's live revoke endpoint answers 400 invalid_token ("already
+    /// expired or already revoked"), which the endpoint's idempotent contract
+    /// surfaces as 204 — proving the real revocation round-trip end-to-end while
+    /// harming no real token (NEVER revoke a runner-minted token: that grant's
+    /// refresh token is the human-auth minting source itself).
+    /// </summary>
+    [Fact]
+    public async Task LogoutEndpoint_ShouldReturnNoContent_WhenAgentRevokesAGarbageToken()
+    {
+        // Arrange
+        using var client = DeployedEndpointFixture.CreateAgentClient(DeployedEndpointFixture.AgentKey);
+
+        // Act
+        var response = await client.PostAsync("/Auth/logout",
+            DeployedEndpointFixture.ToJsonContent(new { accessToken = $"guito-sit-garbage-{Guid.NewGuid():N}" }));
+
+        // Assert
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+    }
+
+    /// <summary>
+    /// POST /Auth/logout (issue #64), human path: the REAL Google ID token minted by
+    /// the runner, carried in BOTH headers — the edge Google validator Allows and the
+    /// in-app GoogleIdTokenMiddleware passes the logout through. The body revokes the
+    /// same GARBAGE-token case as the agent-path test (never the presented token).
+    /// </summary>
+    [Fact]
+    public async Task LogoutEndpoint_ShouldReturnNoContent_WhenValidGoogleIdTokenIsPresentInBothHeaders()
+    {
+        // Arrange
+        using var client = DeployedEndpointFixture.CreateGoogleClient(DeployedEndpointFixture.GoogleIdToken);
+
+        // Act
+        var response = await client.PostAsync("/Auth/logout",
+            DeployedEndpointFixture.ToJsonContent(new { accessToken = $"guito-sit-garbage-{Guid.NewGuid():N}" }));
+
+        // Assert
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+    }
+
+    /// <summary>
+    /// POST /Auth/logout, negative case with layer attribution: no Authorization
+    /// header → the gateway rejects before any authorizer runs (its 401 body), with
+    /// an irrelevant X-Api-Key present so an in-app verdict here would mean the
+    /// request was never gated at the edge.
+    /// </summary>
+    [Fact]
+    public async Task LogoutEndpoint_ShouldReturnUnauthorizedFromGateway_WhenNoAuthorizationHeaderIsPresent()
+    {
+        // Arrange
+        var client = DeployedEndpointFixture.CreateAnonymousClient();
+        client.DefaultRequestHeaders.Add("X-Api-Key", "irrelevant-missing-authorization-header");
+
+        // Act
+        var response = await client.PostAsync("/Auth/logout",
+            DeployedEndpointFixture.ToJsonContent(new { accessToken = "guito-sit-garbage" }));
+
+        // Assert
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Contains("Unauthorized", await response.Content.ReadAsStringAsync());
+    }
+
+    /// <summary>
+    /// POST /Auth/logout browser preflight (issue #64): the UI's sign-out fetch is
+    /// cross-origin, so its OPTIONS must come back 2xx with an Access-Control-Allow-Origin
+    /// header (edge CORS + the public OPTIONS route's in-app answer) — a 401/403 here
+    /// blocks every real browser sign-out, and HttpClient-only tests can never
+    /// surface it.
+    /// </summary>
+    [Fact]
+    public async Task LogoutEndpoint_ShouldAnswerCorsPreflight_WhenBrowserSendsOne()
+    {
+        // Arrange
+        using var client = DeployedEndpointFixture.CreateAnonymousClient();
+        var request = new HttpRequestMessage(HttpMethod.Options, "/Auth/logout");
+        request.Headers.Add("Origin", "https://guito.web.kerumirembora.com");
+        request.Headers.Add("Access-Control-Request-Method", "POST");
+
+        // Act
+        var response = await client.SendAsync(request);
+
+        // Assert
+        Assert.True((int)response.StatusCode >= 200 && (int)response.StatusCode < 300,
+            $"preflight must be 2xx, got {(int)response.StatusCode}");
+        Assert.True(response.Headers.Contains("Access-Control-Allow-Origin"),
+            "preflight must carry Access-Control-Allow-Origin or the browser blocks the sign-out");
+    }
+
+    /// <summary>
     /// Deliberately omits X-Api-Key while presenting the valid staging key as the
     /// raw Authorization value: the edge authorizer accepts it, and the request
     /// reaches the app, whose ApiKeyMiddleware rejects it with 401 "Missing API key"
