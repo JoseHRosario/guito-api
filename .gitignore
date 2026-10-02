@@ -405,3 +405,7 @@ human-auth.local.json
 
 # Git worktrees for parallel agent sessions
 /.worktrees/
+
+# Runtime secrets (Local location; issue #69 adds the OpenRouter key field)
+secrets.local.json
+human-auth.local.json

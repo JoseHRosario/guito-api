@@ -11,6 +11,7 @@ public class FakeSecretsProvider : ISecretsProvider
     public SecretsPayload Payload { get; set; } = new()
     {
         ApiKeys = ["test-agent-key"],
+        OpenRouterApiKey = "test-openrouter-key",
     };
 
     public Task<SecretsPayload> GetAsync(CancellationToken cancellationToken = default) =>
