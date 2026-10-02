@@ -10,6 +10,8 @@ namespace GuitoApi.Tests
     {
         public List<string> ChatRequestBodies { get; } = [];
         public List<string> DecisionRequestBodies { get; } = [];
+        public List<string> ChatAuthorizationHeaders { get; } = [];
+        public List<string> DecisionAuthorizationHeaders { get; } = [];
 
         /// <summary>Content of the canned extraction model reply (a JSON object string).</summary>
         public string ChatResponseContent { get; set; } =
@@ -29,6 +31,7 @@ namespace GuitoApi.Tests
             if (request.RequestUri?.ToString().Contains("/api/v1/chat/completions") == true)
             {
                 ChatRequestBodies.Add(content);
+                ChatAuthorizationHeaders.Add(request.Headers.Authorization?.ToString() ?? string.Empty);
                 if (FailChatWithStatus is { } status)
                     return Task.FromResult(Json(status, new { error = new { message = "upstream chat failure" } }));
                 var wrapped = $"{{ \"choices\": [ {{ \"message\": {{ \"content\": {System.Text.Json.JsonSerializer.Serialize(ChatResponseContent)} }} }} ] }}";
@@ -38,6 +41,7 @@ namespace GuitoApi.Tests
             if (request.RequestUri?.ToString().Contains("/api/alpha/decisions") == true)
             {
                 DecisionRequestBodies.Add(content);
+                DecisionAuthorizationHeaders.Add(request.Headers.Authorization?.ToString() ?? string.Empty);
                 if (FailDecisionWithStatus is { } status)
                     return Task.FromResult(Json(status, new { error = new { message = "upstream decision failure" } }));
                 var payload = new

@@ -33,10 +33,12 @@ namespace GuitoApi.Tests
             var chatRequest = factory.OpenRouterHandler.ChatRequestBodies.Last();
             Assert.Contains("cafe 2,30 no Coco Verde", chatRequest);
             Assert.Equal("google/gemini-2.5-flash", FakeOpenRouterHttpHandler.Field(chatRequest, "model"));
+            Assert.Equal("Bearer test-openrouter-key", factory.OpenRouterHandler.ChatAuthorizationHeaders.Last());
 
             var decisionRequest = factory.OpenRouterHandler.DecisionRequestBodies.Last();
             Assert.Contains("Restaurants", decisionRequest);
             Assert.Contains("cafe 2,30 no Coco Verde", decisionRequest);
+            Assert.Equal("Bearer test-openrouter-key", factory.OpenRouterHandler.DecisionAuthorizationHeaders.Last());
         }
 
         [Fact]
@@ -110,7 +112,7 @@ namespace GuitoApi.Tests
         }
 
         [Fact]
-        public async Task Extract_ShouldReturnServiceUnavailable_WhenChatCallFails()
+        public async Task Extract_ShouldReturnBadGateway_WhenChatCallFails()
         {
             using var factory = new CustomWebApplicationFactory();
             factory.OpenRouterHandler.FailChatWithStatus = 500;
@@ -122,7 +124,7 @@ namespace GuitoApi.Tests
         }
 
         [Fact]
-        public async Task Extract_ShouldReturnServiceUnavailable_WhenDecisionCallFails()
+        public async Task Extract_ShouldReturnBadGateway_WhenDecisionCallFails()
         {
             using var factory = new CustomWebApplicationFactory();
             factory.OpenRouterHandler.FailDecisionWithStatus = 500;
