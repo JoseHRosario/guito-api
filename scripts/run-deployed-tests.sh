@@ -138,15 +138,29 @@ cd "$REPO_ROOT"
 # The FIRST agent-key request to a freshly-deployed authorizer pays a ~10s cold
 # Secrets Manager fetch that API Gateway won't wait for, so the first auth-contract
 # assertion 500s (the "500-where-401/403-expected" cold-start symptom; recurring
-# because every deploy cold-starts the authorizer). Fire one authed request now:
-# the ~10s fetch happens here, the secret caches for its 5-min TTL, and the real
-# tests hit the warm path. The response code is irrelevant — a 500 here warms the
-# authorizer exactly as a 200 does.
-WARM_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 \
-  -H "Authorization: $GUITO_TARGET_AGENT_KEY" \
-  -H "X-Api-Key: $GUITO_TARGET_AGENT_KEY" \
-  "$GUITO_TARGET_BASE_URL/Expense/latest/5" || echo "warmup-failed")
-echo "authorizer warm-up request returned HTTP $WARM_CODE (warmed)."
+# because every deploy cold-starts BOTH the authorizer and the app). A single
+# fire-and-forget warm-up is not enough: while the APP function is still mid-init,
+# the gateway 500s the request and NOTHING is warmed — observed live (2026-10-02,
+# guito-api#65) as the first auth test failing 500-where-204-expected. So: retry
+# the authed request until the APP actually answers (non-5xx), bounded.
+WARM_CODE=000
+for attempt in $(seq 1 15); do
+  WARM_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 \
+    -H "Authorization: $GUITO_TARGET_AGENT_KEY" \
+    -H "X-Api-Key: $GUITO_TARGET_AGENT_KEY" \
+    "$GUITO_TARGET_BASE_URL/Expense/latest/5" || echo "warmup-failed")
+  if [ "$WARM_CODE" != "500" ] && [ "$WARM_CODE" != "502" ] && [ "$WARM_CODE" != "503" ] \
+     && [ "$WARM_CODE" != "504" ] && [ "$WARM_CODE" != "warmup-failed" ]; then
+    break
+  fi
+  echo "warm-up attempt $attempt returned HTTP $WARM_CODE (function still cold) — retrying."
+  sleep 5
+done
+if [ "$WARM_CODE" = "500" ] || [ "$WARM_CODE" = "warmup-failed" ]; then
+  echo "FATAL: warm-up never reached the app (last HTTP $WARM_CODE) — a mid-init drop would fail the first auth test with 500-where-2xx-expected." >&2
+  exit 1
+fi
+echo "warm-up complete: HTTP $WARM_CODE (authorizer + app warm)."
 
 FAILED=0
 for PROJECT in "${PROJECTS[@]}"; do
