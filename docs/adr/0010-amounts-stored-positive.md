@@ -4,8 +4,9 @@ Guito stores and transmits every Expense `Amount` as a **positive** number; that
 
 ## Consequences
 
-- `POST /Expense` receives positive amounts; the UI no longer negates; the list renders the stored value as-is (no `-` prefix).
-- Existing sheet rows (negative) need a **one-time data migration script**; the code flip and the migration must land together or old and new rows render inconsistently.
+- `POST /Expense` receives positive amounts and **rejects non-positive amounts with 400** (`ExpenseCreate.Amount` is `[Range]`-validated strictly positive), so no caller can persist a negative.
+- The guito-ui create screen posts the parsed amount as-is (negation removed) and the list renders the stored value as-is (no `-` prefix).
+- The spreadsheet data was already positive when this was decided — no data migration was needed or performed.
 - The approved Figma frames that show `-65,55 €` are superseded on this point.
 
 _Supersedes the "post the negative" convention noted in `create-expense-page.ts` and the negative-amount examples in the approved frames._
