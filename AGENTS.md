@@ -97,3 +97,17 @@ Request path: **Controller → Service → Data access**. Each layer has one job
 
 - Follow the existing code layout: controllers thin, one service interface per operation (`I<Action>Service` + `<Action>Service`), configuration via `Configuration/` options classes.
 - Keep the API surface backward-compatible with the existing spreadsheet data and the planned Angular UI.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues on this repo (`gh` CLI); one branch per issue, PR closes #N. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Five canonical roles used as-is: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` + `docs/adr/` at repo root. See `docs/agents/domain.md`.
