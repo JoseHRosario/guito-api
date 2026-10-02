@@ -91,6 +91,7 @@ namespace GuitoApi
                 services.AddScoped<IListTransactionsService, ListTransactionsDummyService>();
             }
             services.AddScoped<IExtractMethodService, ExtractMethodService>();
+            services.AddScoped<IExpenseExtractionRepository, OpenRouterExpenseExtractionRepository>();
             services.AddScoped<IOpenRouterClientProvider, OpenRouterClientProvider>();
             services.AddHttpClient(OpenRouterClientProvider.HttpClientName);
             services.AddScoped<IUserIdentityResolver, UserIdentityResolver>();
