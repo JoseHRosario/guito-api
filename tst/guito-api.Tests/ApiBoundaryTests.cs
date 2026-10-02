@@ -24,6 +24,57 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
+    public async Task CreateExpense_ShouldReturnBadRequest_WhenAmountIsNegative()
+    {
+        using var factory = new CustomWebApplicationFactory();
+        var client = factory.CreateClient();
+        var response = await client.PostAsJsonAsync("/expense", new ExpenseCreate
+        {
+            Date = new DateTime(2026, 10, 2),
+            Amount = -42.50m,
+            Description = "negative test",
+            Category = "Restaurants",
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Empty(factory.SheetsHandler.AppendBodies);
+    }
+
+    [Fact]
+    public async Task CreateExpense_ShouldReturnBadRequest_WhenAmountIsZero()
+    {
+        using var factory = new CustomWebApplicationFactory();
+        var client = factory.CreateClient();
+        var response = await client.PostAsJsonAsync("/expense", new ExpenseCreate
+        {
+            Date = new DateTime(2026, 10, 2),
+            Amount = 0m,
+            Description = "zero test",
+            Category = "Restaurants",
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Empty(factory.SheetsHandler.AppendBodies);
+    }
+
+    [Fact]
+    public async Task CreateExpense_ShouldAppendPayload_WhenAmountIsInclusiveLowerBound()
+    {
+        using var factory = new CustomWebApplicationFactory();
+        var client = factory.CreateClient();
+        var response = await client.PostAsJsonAsync("/expense", new ExpenseCreate
+        {
+            Date = new DateTime(2026, 10, 2),
+            Amount = 0.01m,
+            Description = "minimum amount",
+            Category = "Restaurants",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("0.01", factory.SheetsHandler.AppendBodies.Last());
+    }
+
+    [Fact]
     public async Task CreateExpense_ShouldAppendPayloadToSpreadsheet_WhenExpenseIsValid()
     {
         var client = _factory.CreateClient();
