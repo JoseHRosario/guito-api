@@ -167,6 +167,14 @@ public class DeployedAuthContractTests
         Assert.DoesNotContain("Missing API key", body);
     }
 
+    /// <summary>Shared happy-path body for POST /Auth/logout: a garbage token (never a real one) must come back 204.</summary>
+    private static async Task<HttpStatusCode> LogoutGarbageTokenStatus(HttpClient client)
+    {
+        var response = await client.PostAsync("/Auth/logout",
+            DeployedEndpointFixture.ToJsonContent(new { accessToken = $"guito-sit-garbage-{Guid.NewGuid():N}" }));
+        return response.StatusCode;
+    }
+
     /// <summary>
     /// POST /Auth/logout (issue #64), agent path: the TARGET agent key in both
     /// headers gates the endpoint (it is NOT public like /Auth/token — a 401 here
@@ -183,12 +191,8 @@ public class DeployedAuthContractTests
         // Arrange
         using var client = DeployedEndpointFixture.CreateAgentClient(DeployedEndpointFixture.AgentKey);
 
-        // Act
-        var response = await client.PostAsync("/Auth/logout",
-            DeployedEndpointFixture.ToJsonContent(new { accessToken = $"guito-sit-garbage-{Guid.NewGuid():N}" }));
-
-        // Assert
-        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        // Act + Assert
+        Assert.Equal(HttpStatusCode.NoContent, await LogoutGarbageTokenStatus(client));
     }
 
     /// <summary>
@@ -203,12 +207,8 @@ public class DeployedAuthContractTests
         // Arrange
         using var client = DeployedEndpointFixture.CreateGoogleClient(DeployedEndpointFixture.GoogleIdToken);
 
-        // Act
-        var response = await client.PostAsync("/Auth/logout",
-            DeployedEndpointFixture.ToJsonContent(new { accessToken = $"guito-sit-garbage-{Guid.NewGuid():N}" }));
-
-        // Assert
-        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        // Act + Assert
+        Assert.Equal(HttpStatusCode.NoContent, await LogoutGarbageTokenStatus(client));
     }
 
     /// <summary>

@@ -30,39 +30,57 @@ namespace GuitoApi.Controllers
         [HttpPost("token")]
         public async Task<IActionResult> TokenAsync(TokenExchangeRequest request, CancellationToken cancellationToken)
         {
-            try
-            {
-                return Ok(await _tokenExchangeService.ExchangeAsync(request, cancellationToken));
-            }
-            catch (GoogleTokenExchangeException e)
-            {
-                // RFC 6749 error shape (guito-ui tokenFailureMessage parses it); carries no credentials.
-                return StatusCode((int)e.HttpStatusCode, new GoogleTokenErrorResponse
-                {
-                    Error = e.Error,
-                    ErrorDescription = e.ErrorDescription,
-                });
-            }
+            return await CallGoogleAsync(
+                () => _tokenExchangeService.ExchangeAsync(request, cancellationToken), Ok);
         }
 
         [HttpPost("logout")]
         public async Task<IActionResult> LogoutAsync(LogoutRequest request, CancellationToken cancellationToken)
         {
+            // Idempotent already-revoked results never throw — success only here.
+            return await CallGoogleAsync(
+                () => _revokeService.RevokeAsync(request, cancellationToken), NoContent);
+        }
+
+        /// <summary>
+        /// Shared Google error mapping for every Auth action: Google's RFC 6749
+        /// error/error_description surface verbatim (guito-ui tokenFailureMessage
+        /// parses this shape, NOT ProblemDetails) — a deliberate exception to the
+        /// controllers-never-build-responses rule, documented in AGENTS.md.
+        /// Carries no credentials.
+        /// </summary>
+        private async Task<IActionResult> CallGoogleAsync(
+            Func<Task> action, Func<IActionResult> success)
+        {
             try
             {
-                await _revokeService.RevokeAsync(request, cancellationToken);
-                return NoContent();
+                await action();
+                return success();
             }
             catch (GoogleTokenExchangeException e)
             {
-                // RFC 6749 error shape; carries no credentials. Idempotent
-                // already-revoked results never throw — success only here.
-                return StatusCode((int)e.HttpStatusCode, new GoogleTokenErrorResponse
-                {
-                    Error = e.Error,
-                    ErrorDescription = e.ErrorDescription,
-                });
+                return GoogleError(e);
             }
         }
+
+        private async Task<IActionResult> CallGoogleAsync<T>(
+            Func<Task<T>> action, Func<T, IActionResult> success)
+        {
+            try
+            {
+                return success(await action());
+            }
+            catch (GoogleTokenExchangeException e)
+            {
+                return GoogleError(e);
+            }
+        }
+
+        private IActionResult GoogleError(GoogleTokenExchangeException e) =>
+            StatusCode((int)e.HttpStatusCode, new GoogleTokenErrorResponse
+            {
+                Error = e.Error,
+                ErrorDescription = e.ErrorDescription,
+            });
     }
 }

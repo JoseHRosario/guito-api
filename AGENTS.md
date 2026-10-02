@@ -69,7 +69,7 @@ Request path: **Controller → Service → Data access**. Each layer has one job
 - All ranges/spreadsheet ids come from `Configuration/` options (`AppConfigurationOptions`, populated from `appsettings*.json`); no hardcoded ids or ranges in services.
 
 ### Errors
-- Services throw `Exceptions/ProblemException(statusCode, message)` for expected failures (e.g. the 501 extraction stub). `Exceptions/ExceptionToProblemDetailsHandler` converts them to RFC 7807 ProblemDetails — controllers never build error responses by hand.
+- Services throw `Exceptions/ProblemException(statusCode, message)` for expected failures (e.g. the 501 extraction stub). `Exceptions/ExceptionToProblemDetailsHandler` converts them to RFC 7807 ProblemDetails — controllers never build error responses by hand. Deliberate exception (José-approved 2026-10-02): the `AuthController` Google actions (`/Auth/token`, `/Auth/logout`) map `GoogleTokenExchangeException` through a shared `CallGoogleAsync`/`GoogleError` helper to the verbatim RFC 6749 `{error, error_description}` body, because guito-ui's `tokenFailureMessage` parses THAT shape, not ProblemDetails; the status is Google's upstream status (or 502 on provider failure). Services classify the failure (throw the typed exception); the controller translates it to the wire contract — this translation is the only hand-built response in the codebase.
 
 ### Auth (`src/guito-api/Middleware/`)
 - **Two independent paths — never merge or weaken them (ADR-0003):**
