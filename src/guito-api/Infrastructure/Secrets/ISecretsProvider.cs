@@ -1,6 +1,6 @@
 using GuitoApi.Configuration;
 
-namespace GuitoApi.Services
+namespace GuitoApi.Infrastructure.Secrets
 {
     /// <summary>
     /// Single seam over runtime secrets (issue #3). Implementations: AwsSecretsProvider

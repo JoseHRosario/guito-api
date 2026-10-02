@@ -2,6 +2,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using GuitoApi.Configuration;
+using GuitoApi.Infrastructure.Secrets;
 using GuitoApi.Services;
 using Microsoft.Extensions.Options;
 

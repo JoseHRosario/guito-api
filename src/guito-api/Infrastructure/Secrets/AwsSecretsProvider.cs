@@ -4,23 +4,20 @@ using Amazon.SecretsManager.Model;
 using GuitoApi.Configuration;
 using GuitoApi.Exceptions;
 
-namespace GuitoApi.Services
+namespace GuitoApi.Infrastructure.Secrets
 {
-    /// <summary>
-    /// Human-auth client secret from AWS Secrets Manager ("guito-api/human-auth",
-    /// issue #52); AWS implementation. Caches for 5 minutes like AwsSecretsProvider.
-    /// </summary>
-    public class AwsHumanAuthSecretProvider : IHumanAuthSecretProvider
+    /// <summary>Secrets from AWS Secrets Manager; production implementation. Caches for 5 minutes.</summary>
+    public class AwsSecretsProvider : ISecretsProvider
     {
         private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
 
         private readonly string _secretName;
-        private HumanAuthSecret? _cached;
+        private SecretsPayload? _cached;
         private DateTimeOffset _cachedAt;
 
-        public AwsHumanAuthSecretProvider(string secretName) => _secretName = secretName;
+        public AwsSecretsProvider(string secretName) => _secretName = secretName;
 
-        public async Task<HumanAuthSecret> GetAsync(CancellationToken cancellationToken = default)
+        public async Task<SecretsPayload> GetAsync(CancellationToken cancellationToken = default)
         {
             if (_cached is not null && DateTimeOffset.UtcNow - _cachedAt < CacheTtl)
                 return _cached;
@@ -31,14 +28,14 @@ namespace GuitoApi.Services
             {
                 SecretId = _secretName,
             }, cancellationToken);
-            var secret = JsonSerializer.Deserialize<HumanAuthSecret>(
+            var payload = JsonSerializer.Deserialize<SecretsPayload>(
                 response.SecretString,
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
-                ?? throw new ProblemException(500, "Human-auth secret payload is invalid");
+                ?? throw new ProblemException(500, "Secrets payload is invalid");
 
-            _cached = secret;
+            _cached = payload;
             _cachedAt = DateTimeOffset.UtcNow;
-            return secret;
+            return payload;
         }
     }
 }

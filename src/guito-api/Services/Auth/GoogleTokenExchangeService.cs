@@ -4,6 +4,7 @@ using GuitoApi.Configuration;
 using GuitoApi.DataTransferObjects.Input;
 using GuitoApi.DataTransferObjects.Output;
 using GuitoApi.Exceptions;
+using GuitoApi.Infrastructure.Secrets;
 using GuitoApi.Services;
 using Microsoft.Extensions.Options;
 

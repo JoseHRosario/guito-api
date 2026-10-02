@@ -2,7 +2,7 @@ using GuitoApi.Configuration;
 using GuitoApi.Exceptions;
 using Microsoft.Extensions.Options;
 
-namespace GuitoApi.Services
+namespace GuitoApi.Infrastructure.Sheets
 {
     /// <summary>
     /// Resolves request ranges against AppConfiguration. Smoke scope (ADR-0009) is

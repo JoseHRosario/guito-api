@@ -1,6 +1,8 @@
 using GuitoApi.Configuration;
 using GuitoApi.Services;
 
+using GuitoApi.Infrastructure.Secrets;
+
 namespace GuitoApi.Tests;
 
 /// <summary>Canned human-auth secret; tests replace IHumanAuthSecretProvider with this via DI.</summary>

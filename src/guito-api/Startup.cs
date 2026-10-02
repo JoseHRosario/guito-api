@@ -1,6 +1,9 @@
 using GuitoApi.Configuration;
+using GuitoApi.Infrastructure.Secrets;
+using GuitoApi.Infrastructure.Sheets;
 using GuitoApi.Exceptions;
 using GuitoApi.Middleware;
+using GuitoApi.Repositories;
 using GuitoApi.Services;
 using GuitoApi.Services.Account;
 using GuitoApi.Services.ArtificialIntelligence;
@@ -68,15 +71,18 @@ namespace GuitoApi
             services.AddScoped<IRevokeGoogleTokenService, RevokeGoogleTokenService>();
             services.AddHttpClient(RevokeGoogleTokenService.HttpClientName);
 
-            services.AddScoped<ICreateExpenseService, CreateExpenseGoogleApisSheetsService>();
+            services.AddScoped<IExpenseRepository, GoogleSheetsExpenseRepository>();
+            services.AddScoped<ICategoryRepository, GoogleSheetsCategoryRepository>();
+
+            services.AddScoped<ICreateExpenseService, CreateExpenseService>();
             services.AddScoped<IMatchExpensesService, MatchExpensesService>();
-            services.AddScoped<IListLatestExpensesService, ListLatestExpensesGoogleApisSheetsService>();
-            services.AddScoped<IDeleteExpenseRowService, DeleteExpenseGoogleApisSheetsService>();
+            services.AddScoped<IListLatestExpensesService, ListLatestExpensesService>();
+            services.AddScoped<IDeleteExpenseRowService, DeleteExpenseService>();
             services.AddScoped<ISheetScopeResolver, SheetScopeResolver>();
             services.AddScoped<IListCategoryService, ListCategoryGoogleApisSheetsService>();
             services.AddScoped<IListTransactionsService, ListTransactionsNordigenService>();
             services.AddHttpClient(nameof(ListTransactionsNordigenService));
-            services.AddScoped<IGooglesheetsService, GooglesheetsService>();
+            services.AddScoped<IGooglesheetsClientProvider, GooglesheetsClientProvider>();
             if (environment == Environments.Development)
             {
                 // Local dev: canned bank transactions so /expense/match works end-to-end

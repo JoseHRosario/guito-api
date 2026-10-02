@@ -1,6 +1,8 @@
 using GuitoApi.Configuration;
 using GuitoApi.Services;
 
+using GuitoApi.Infrastructure.Secrets;
+
 namespace GuitoApi.Tests;
 
 /// <summary>Canned secrets payload; tests replace ISecretsProvider with this via DI.</summary>

@@ -8,6 +8,7 @@ using Google.Apis.Sheets.v4.Data;
 using GuitoApi.Configuration;
 using GuitoApi.DataTransferObjects.Output;
 using GuitoApi.Exceptions;
+using GuitoApi.Infrastructure.Sheets;
 using Microsoft.Extensions.Options;
 
 namespace GuitoApi.Services.Account
@@ -18,13 +19,13 @@ namespace GuitoApi.Services.Account
 
         private readonly AppConfigurationOptions _options;
         private readonly ILogger<ListTransactionsNordigenService> _logger;
-        private readonly IGooglesheetsService _googlesheetsService;
+        private readonly IGooglesheetsClientProvider _googlesheetsService;
         private readonly HttpClient _client;
 
         public ListTransactionsNordigenService(
             IOptions<AppConfigurationOptions> options,
             ILogger<ListTransactionsNordigenService> logger,
-            IGooglesheetsService googlesheetsService,
+            IGooglesheetsClientProvider googlesheetsService,
             IHttpClientFactory httpClientFactory)
         {
             _options = options.Value;

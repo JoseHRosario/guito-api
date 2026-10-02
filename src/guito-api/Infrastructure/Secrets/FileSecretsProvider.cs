@@ -2,7 +2,7 @@ using System.Text.Json;
 using GuitoApi.Configuration;
 using GuitoApi.Exceptions;
 
-namespace GuitoApi.Services
+namespace GuitoApi.Infrastructure.Secrets
 {
     /// <summary>
     /// Secrets from a gitignored local JSON file (same schema as SecretsPayload);
