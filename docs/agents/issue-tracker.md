@@ -18,6 +18,57 @@ Infer the repo from `git remote -v`; `gh` does this automatically when run insid
 - **Branch naming**: `feature/<issue#>-<slug>` / `bug/<issue#>-<slug>` (issue number first). Never push to `master`.
 - **PR body must end with `Closes #N`** so GitHub closes the issue on merge into `master` (staging merges don't close — that's deliberate).
 
+## Issue templates
+
+Both repos define GitHub issue forms under `.github/ISSUE_TEMPLATE/`. Create issues using them — `gh issue create --template` opens the form interactively; when scripting, construct the body from the template's fields so issues stay uniform. The form's `labels:` are applied automatically on issue creation.
+
+### Feature (`feature.yml`, label `feature`)
+
+Body fields:
+
+- **What** (required): one paragraph — the user-visible outcome.
+- **Acceptance criteria** (required): verifiable, one `- [ ]` checkbox per criterion.
+- **Out of scope**: explicitly excluded, so scope creep has a name.
+- **Open questions**: decisions still to settle before implementation.
+
+### Bug (`bug.yml`, label `bug`)
+
+Body fields:
+
+- **What broke** (required): one paragraph — expected vs actual behavior.
+- **Steps to reproduce** (required): minimal, verifiable steps from a clean state.
+- **Acceptance criteria** (required): how we verify it's fixed — one `- [ ]` checkbox per criterion.
+- **Suspected cause / affected area** (optional): area of code, config, or infra you suspect.
+
+### guito-ui only
+
+`feature.yml` adds a **Figma frame** field: link to the frame the work traces to (Guito App page); omit for non-UI work.
+
+A scripted create looks like:
+
+```bash
+gh issue create --title "..." --label feature --body "$(cat <<'EOF'
+## What
+
+<one paragraph>
+
+## Acceptance criteria
+
+- [ ] ...
+
+## Out of scope
+
+- ...
+
+## Open questions
+
+- ...
+EOF
+)"
+```
+
+Blank issues are enabled (`config.yml`) — use them only for work that fits neither form (e.g. infra/docs chores).
+
 ## Pull requests as a triage surface
 
 **PRs as a request surface: no.** _(Set to `yes` if this repo treats external PRs as feature requests; `/triage` reads this flag.)_
