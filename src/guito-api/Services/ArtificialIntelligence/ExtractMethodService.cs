@@ -97,8 +97,9 @@ namespace GuitoApi.Services.ArtificialIntelligence
             var systemPrompt =
                 "You extract expense details from a short natural-language note in Portuguese (pt-PT). " +
                 $"Today is {today}. Reply with ONLY a JSON object, no markdown: " +
-                "{\"date\": \"YYYY-MM-DD\", \"amount\": <positive number in EUR>, \"description\": \"<short Title Case description>\"}. " +
-                "Amount is always POSITIVE. If no date is mentioned use today.";
+                "{\"date\": \"YYYY-MM-DD\", \"amount\": <positive number in EUR>, \"description\": \"<the merchant or place name>\"}. " +
+                "Amount is always POSITIVE. The description is ONLY the merchant/store name (e.g. \"café 2,30 no Coco Verde\" -> \"Coco Verde\"); " +
+                "drop the item and every filler word. If no date is mentioned use today.";
 
             var requestPayload = new JsonObject
             {
