@@ -70,7 +70,11 @@ case "$ENV_TARGET" in
 esac
 MAPPING_COUNT=$(aws --region "$REGION" apigatewayv2 get-api-mappings \
   --domain-name "$CUSTOM_DOMAIN_NAME" \
-  --query "length(Items[?ApiId=='$API_ID'])" --output text 2>/dev/null || echo 0)
+  --query "length(Items[?ApiId=='$API_ID'])" --output text) || {
+  echo "FATAL: get-api-mappings failed for $CUSTOM_DOMAIN_NAME — an IAM-denied query silently downgrades the suite to the execute-api URL (bypassing the domain→API mapping layer); fix the caller's apigateway:GET policy instead of ignoring this." >&2
+  exit 1
+}
+[ "$MAPPING_COUNT" = "None" ] && MAPPING_COUNT=0
 if [ "$MAPPING_COUNT" != "0" ] && [ -n "$MAPPING_COUNT" ]; then
   echo "Using custom domain $CUSTOM_DOMAIN_NAME for $ENV_TARGET."
   GUITO_TARGET_BASE_URL="https://$CUSTOM_DOMAIN_NAME"
