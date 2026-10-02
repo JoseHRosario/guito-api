@@ -1,4 +1,5 @@
 using GuitoApi.Infrastructure.Secrets;
+using GuitoApi.Infrastructure.AI;
 using GuitoApi.Infrastructure.Sheets;
 using GuitoApi.Services.Account;
 using Microsoft.AspNetCore.Hosting;
@@ -13,13 +14,18 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
     /// <summary>Shared stub for all Google Sheets traffic; tests assert against it.</summary>
     public FakeSheetsHttpHandler SheetsHandler { get; } = new();
 
+    /// <summary>Shared stub for all OpenRouter traffic; tests assert against it.</summary>
+    public FakeOpenRouterHttpHandler OpenRouterHandler { get; } = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
         builder.ConfigureTestServices(services =>
         {
             var sheets = SheetsHandler;
+            var openRouter = OpenRouterHandler;
             Replace<IGooglesheetsClientProvider>(services, sp => new FakeGooglesheetsClientProvider(sheets));
+            Replace<IOpenRouterClientProvider>(services, _ => new FakeOpenRouterClientProvider(openRouter));
             Replace<IListTransactionsService>(services, _ => new ListTransactionsDummyService());
             // Canned secrets: the repo has no real ones (gitignored by design).
             var descriptor = services.Single(d => d.ServiceType == typeof(ISecretsProvider));

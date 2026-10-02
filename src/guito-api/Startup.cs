@@ -1,6 +1,7 @@
 using GuitoApi.Configuration;
 using GuitoApi.Infrastructure.Secrets;
 using GuitoApi.Infrastructure.Sheets;
+using GuitoApi.Infrastructure.AI;
 using GuitoApi.Exceptions;
 using GuitoApi.Middleware;
 using GuitoApi.Repositories;
@@ -90,6 +91,9 @@ namespace GuitoApi
                 services.AddScoped<IListTransactionsService, ListTransactionsDummyService>();
             }
             services.AddScoped<IExtractMethodService, ExtractMethodService>();
+            services.AddScoped<IExpenseExtractionRepository, OpenRouterExpenseExtractionRepository>();
+            services.AddScoped<IOpenRouterClientProvider, OpenRouterClientProvider>();
+            services.AddHttpClient(OpenRouterClientProvider.HttpClientName);
             services.AddScoped<IUserIdentityResolver, UserIdentityResolver>();
         }
 

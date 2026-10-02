@@ -147,21 +147,6 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task ExtractAsync_ShouldReturn501_WhenExtractionIsStubbed()
-    {
-        var client = _factory.CreateClient();
-        var response = await client.PostAsJsonAsync("/ai/extract", new ExpenseExtract
-        {
-            Prompt = "coffee for 3 euros yesterday",
-            Language = "en-US",
-        });
-
-        Assert.Equal(HttpStatusCode.NotImplemented, response.StatusCode);
-        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Contains("not implemented", problem.GetProperty("detail").GetString());
-    }
-
-    [Fact]
     public async Task GoogleIdTokenMiddleware_ShouldRejectRequest_WhenIdTokenHeaderIsMissing()
     {
         var client = _factory.WithWebHostBuilder(b =>
