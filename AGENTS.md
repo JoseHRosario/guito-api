@@ -13,6 +13,8 @@ Guito: personal expense-tracking API (.NET 10, AWS Lambda + API Gateway HTTP API
 ## Layout
 
 - `src/guito-api/` — API source (one project, `src/guito-api/guito-api.csproj`)
+- `src/guito-api/Repositories/` — per-aggregate data-access INTERFACES only (`IExpenseRepository`, `ICategoryRepository`, `IExpenseExtractionRepository`)
+- `src/guito-api/Infrastructure/` — datastore/provider implementations behind those interfaces (`Sheets/`, `Secrets/`, `AI/`); Services never see a concrete datastore or provider type (ADR 0011)
 - `src/guito-api-authorizer/` — X-Api-Key Lambda authorizer (separate project/function)
 - `tst/guito-api.Tests` — API tests
 - `tst/guito-api-authorizer.Tests` — authorizer tests
@@ -40,7 +42,7 @@ Lambda packaging happens in CI (Amazon.Lambda.Tools). Do not add local Lambda em
 - **Respect the ADRs.** Google Sheets stays the datastore; auth is dual (Google PKCE for humans, `X-Api-Key` for agents); bank sync goes through the provider interface — do not bypass these without a new ADR.
 - **Sheets schema is frozen.** Never change spreadsheet layout, column order, or header names — the UI and existing data depend on them.
 - **Auth paths are separate.** Human (Google ID token) and agent (`X-Api-Key`) authorization are distinct authorizers; never merge or weaken them.
-- **The extraction endpoint is intentionally a 501 stub** until the OpenRouter implementation lands — do not "fix" it.
+- **The extraction endpoint (`POST /AI/extract`) calls OpenRouter**: a chat model extracts date/amount/merchant, Jev gates the note and picks the category (PR #73).
 - **Workflow**: feature or bug branch → PR → reviewed and merged by José. One branch per issue, named `feature/<issue#>-<slug>` or `bug/<issue#>-<slug>` (issue number first); the PR body **must end with `Closes #N`** so GitHub closes the issue on merge into `master`. Feature issues use the Feature issue template; bug issues use the Bug issue template (bug = something that worked as intended is broken — code regression, wrong behavior, broken config; environment/CI/docs work stays under existing informal prefixes). Never push directly to `master`.
 - **Parallel sessions use git worktrees.** The main tree (`/d/srv/projects/guito-api`) stays on `master` and is shared (José's Windows sync + any agent session) — never check a feature branch out there. For work on a separate issue while another session works, create a worktree **inside the repo** under the gitignored `.worktrees/` dir: `git worktree add .worktrees/<issue#>-<slug> feature/<issue#>-<slug>`. Branches are exclusive per worktree, so sessions cannot collide. Note: gitignored secrets (`google-spreadsheets*.json`, `appsettings.*.json` locals) exist only in the main tree — copy them into the worktree or sourced commands will fail.
 - **Before any blanket `git add -A`, verify `.worktrees/` is ignored on the current branch** (`git check-ignore .worktrees/` — branch history may predate the ignore entry); otherwise prefer adding explicit paths. A branch without the ignore entry would stage an entire nested repo copy.
@@ -61,15 +63,15 @@ Request path: **Controller → Service → Data access**. Each layer has one job
 ### Service (`src/guito-api/Services/<Domain>/`)
 - **One interface per operation**: `I<Action>Service` + `<Action>Service` in the same folder (e.g. `Services/Expense/ICreateExpenseService.cs` + `CreateExpenseGoogleApisSheetsService.cs`). Never grow a god-interface; a new operation is a new pair.
 - Services own the business logic and produce/consume `DataTransferObjects/Output` and `Input` DTOs. `Input/` = request bodies, `Output/` = response payloads.
-- Data-access backends are named by technology in the class name (`...GoogleApisSheetsService`, `...NordigenService`, `...DummyService`). The interface is the contract; the implementation is swappable (Nordigen ↔ dummy is how PSD2 stays behind a seam, ADR-0004).
+- Data-access implementations live in `Infrastructure/` behind repository interfaces and are named by technology (`GoogleSheetsExpenseRepository`, `OpenRouterExpenseExtractionRepository`); the interface is the contract and the implementation is swappable (Nordigen ↔ dummy keeps PSD2 behind a seam, ADR-0004). The `Service` suffix stays reserved for application-layer collaborators.
 - Register the pair in `src/guito-api/Startup.cs` `ConfigureServices`. Environment-specific overrides are explicit `if (environment == ...)` blocks with a comment saying why.
 
-### Data access (`src/guito-api/Services/GooglesheetsService.cs`)
-- `IGooglesheetsService.Get()` returns an authenticated Google `SheetsService` — the credential/secrets concern is isolated here; everything else just calls it.
+### Data access (`src/guito-api/Infrastructure/`)
+- `IGooglesheetsClientProvider.GetAsync()` returns an authenticated Google `SheetsService` — the credential/secrets concern is isolated here; everything else just calls it (interface lives in `Repositories/`, implementations in `Infrastructure/Sheets/`).
 - All ranges/spreadsheet ids come from `Configuration/` options (`AppConfigurationOptions`, populated from `appsettings*.json`); no hardcoded ids or ranges in services.
 
 ### Errors
-- Services throw `Exceptions/ProblemException(statusCode, message)` for expected failures (e.g. the 501 extraction stub). `Exceptions/ExceptionToProblemDetailsHandler` converts them to RFC 7807 ProblemDetails — controllers never build error responses by hand. Deliberate exception (José-approved 2026-10-02): the `AuthController` Google actions (`/Auth/token`, `/Auth/logout`) map `GoogleTokenExchangeException` through a shared `CallGoogleAsync`/`GoogleError` helper to the verbatim RFC 6749 `{error, error_description}` body, because guito-ui's `tokenFailureMessage` parses THAT shape, not ProblemDetails; the status is Google's upstream status (or 502 on provider failure). Services classify the failure (throw the typed exception); the controller translates it to the wire contract — this translation is the only hand-built response in the codebase.
+- Services throw `Exceptions/ProblemException(statusCode, message)` for expected failures. `Exceptions/ExceptionToProblemDetailsHandler` converts them to RFC 7807 ProblemDetails — controllers never build error responses by hand. Deliberate exception (José-approved 2026-10-02): the `AuthController` Google actions (`/Auth/token`, `/Auth/logout`) map `GoogleTokenExchangeException` through a shared `CallGoogleAsync`/`GoogleError` helper to the verbatim RFC 6749 `{error, error_description}` body, because guito-ui's `tokenFailureMessage` parses THAT shape, not ProblemDetails; the status is Google's upstream status (or 502 on provider failure). Services classify the failure (throw the typed exception); the controller translates it to the wire contract — this translation is the only hand-built response in the codebase.
 
 ### Auth (`src/guito-api/Middleware/`)
 - **Two independent paths — never merge or weaken them (ADR-0003):**
@@ -95,7 +97,7 @@ Request path: **Controller → Service → Data access**. Each layer has one job
 
 ## Style
 
-- Follow the existing code layout: controllers thin, one service interface per operation (`I<Action>Service` + `<Action>Service`), configuration via `Configuration/` options classes.
+- Follow the existing code layout: controllers thin, one service interface per operation (`I<Action>Service` + `<Action>Service`), services as thin adapters over repository interfaces (ADR 0011), configuration via `Configuration/` options classes.
 - Keep the API surface backward-compatible with the existing spreadsheet data and the planned Angular UI.
 
 ## Agent skills
