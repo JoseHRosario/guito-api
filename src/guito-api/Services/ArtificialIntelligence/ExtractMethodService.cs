@@ -27,6 +27,10 @@ namespace GuitoApi.Services.ArtificialIntelligence
         private const string ChatCompletionsEndpoint = "https://openrouter.ai/api/v1/chat/completions";
         private const string DecisionsEndpoint = "https://openrouter.ai/api/alpha/decisions";
         private const string CategoryDecisionKey = "category";
+        private const string ExpenseGateQuestionKey = "is_expense";
+
+        /// <summary>Jev noul probability of "yes" below which the note is rejected as non-expense.</summary>
+        private const decimal ExpenseGateMinimumProbability = 0.5m;
 
         public async Task<ExpenseExtracted> ExtractMethodAsync(ExpenseExtract input,
             CancellationToken cancellationToken = default)
@@ -40,6 +44,9 @@ namespace GuitoApi.Services.ArtificialIntelligence
 
             using var client = await openRouterClients.GetAsync(cancellationToken);
 
+            // Jev gate first: reject non-expense notes before spending a chat-model call.
+            await EnsureIsExpenseNoteAsync(client, apiKey, input.Prompt, cancellationToken);
+
             var extracted = await ExtractExpenseAsync(client, apiKey, input.Prompt, cancellationToken);
             var category = await ResolveCategoryAsync(client, apiKey, input.Prompt, extracted.Description, cancellationToken);
 
@@ -50,6 +57,37 @@ namespace GuitoApi.Services.ArtificialIntelligence
                 Description = extracted.Description,
                 Category = category,
             };
+        }
+
+        private async Task EnsureIsExpenseNoteAsync(HttpClient client, string apiKey,
+            string prompt, CancellationToken cancellationToken)
+        {
+            var requestPayload = new JsonObject
+            {
+                ["model"] = options.Value.ArtificialIntelligence.CategoryModel,
+                ["questions"] = new JsonObject
+                {
+                    [ExpenseGateQuestionKey] = new JsonObject
+                    {
+                        ["type"] = "noul",
+                        ["criteria"] = new JsonObject
+                        {
+                            ["true"] = "The note records an expense: a purchase or payment with an amount.",
+                            ["false"] = "The note is anything else: a question, a greeting, a command, or unrelated content.",
+                        },
+                        ["instructions"] = "Is this note recording an expense?",
+                    },
+                },
+                ["state"] = new JsonObject
+                {
+                    ["note"] = prompt,
+                },
+            };
+
+            var response = await SendAsync(client, apiKey, DecisionsEndpoint, requestPayload, cancellationToken);
+            var probability = response?["answers"]?[ExpenseGateQuestionKey]?["noul"]?.GetValue<decimal>();
+            if (probability is null || probability < ExpenseGateMinimumProbability)
+                throw new ProblemException(400, "The prompt does not look like an expense note");
         }
 
         private async Task<ExpenseExtracted> ExtractExpenseAsync(HttpClient client, string apiKey,

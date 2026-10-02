@@ -136,6 +136,39 @@ namespace GuitoApi.Tests
         }
 
         [Fact]
+        public async Task Extract_ShouldReturnBadRequest_WhenNoteIsNotAnExpense()
+        {
+            using var factory = new CustomWebApplicationFactory();
+            factory.OpenRouterHandler.NoulProbability = 0.01;
+            var client = factory.CreateClient();
+
+            var response = await client.PostAsJsonAsync("/AI/extract", new ExpenseExtract
+            {
+                Prompt = "hey, what is the weather like?",
+            });
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Empty(factory.OpenRouterHandler.ChatRequestBodies);
+            Assert.Empty(factory.OpenRouterHandler.ChatAuthorizationHeaders);
+        }
+
+        [Fact]
+        public async Task Extract_ShouldSendExpenseGateBeforeChatCall_WhenPromptIsValid()
+        {
+            using var factory = new CustomWebApplicationFactory();
+            var client = factory.CreateClient();
+
+            var response = await client.PostAsJsonAsync("/AI/extract", new ExpenseExtract
+            {
+                Prompt = "cafe 2,30 no Coco Verde",
+            });
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            // The Jev gate runs first: its request body carries the noul question key.
+            Assert.Contains("\"is_expense\"", factory.OpenRouterHandler.DecisionRequestBodies[0]);
+        }
+
+        [Fact]
         public async Task Extract_ShouldReturnServerError_WhenApiKeyIsMissing()
         {
             using var factory = new CustomWebApplicationFactory().WithWebHostBuilder(builder =>

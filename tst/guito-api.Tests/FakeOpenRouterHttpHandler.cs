@@ -20,6 +20,9 @@ namespace GuitoApi.Tests
         /// <summary>Choice the canned category decision returns.</summary>
         public string DecisionChoice { get; set; } = "Restaurants";
 
+        /// <summary>Probability of "yes" the canned expense-gate noul returns.</summary>
+        public double NoulProbability { get; set; } = 0.96;
+
         public int? FailChatWithStatus { get; set; }
         public int? FailDecisionWithStatus { get; set; }
 
@@ -44,6 +47,13 @@ namespace GuitoApi.Tests
                 DecisionAuthorizationHeaders.Add(request.Headers.Authorization?.ToString() ?? string.Empty);
                 if (FailDecisionWithStatus is { } status)
                     return Task.FromResult(Json(status, new { error = new { message = "upstream decision failure" } }));
+                // The Jev expense gate is a noul question keyed "is_expense"; the category
+                // decision is a choice keyed "category".
+                if (content.Contains("\"is_expense\""))
+                {
+                    var gatePayload = new { answers = new { is_expense = new { type = "noul", noul = NoulProbability } } };
+                    return Task.FromResult(Json(200, System.Text.Json.JsonSerializer.Serialize(gatePayload)));
+                }
                 var payload = new
                 {
                     answers = new
