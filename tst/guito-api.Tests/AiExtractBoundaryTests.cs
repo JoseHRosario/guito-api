@@ -93,7 +93,9 @@ namespace GuitoApi.Tests
 
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
             var body = await response.Content.ReadFromJsonAsync<JsonDocument>();
-            Assert.Equal(DateTime.Today, body!.RootElement.GetProperty("date").GetDateTime());
+            var lisbonToday = TimeZoneInfo.ConvertTimeFromUtc(
+                DateTime.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Europe/Lisbon")).Date;
+            Assert.Equal(lisbonToday, body!.RootElement.GetProperty("date").GetDateTime());
         }
 
         [Fact]

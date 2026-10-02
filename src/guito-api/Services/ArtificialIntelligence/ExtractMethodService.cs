@@ -35,6 +35,15 @@ namespace GuitoApi.Services.ArtificialIntelligence
         /// <summary>Jev noul probability of "yes" below which the note is rejected as non-expense.</summary>
         private const decimal ExpenseGateMinimumProbability = 0.5m;
 
+        /// <summary>
+        /// "Today" resolves in Lisbon time: the Lambda runs UTC, so a note logged just after
+        /// 23:00 UTC would otherwise be dated the previous day for the user.
+        /// </summary>
+        private static readonly TimeZoneInfo LisbonTimeZone =
+            TimeZoneInfo.FindSystemTimeZoneById("Europe/Lisbon");
+
+        private static DateTime LisbonToday() => TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, LisbonTimeZone).Date;
+
         public async Task<ExpenseExtracted> ExtractMethodAsync(ExpenseExtract input,
             CancellationToken cancellationToken = default)
         {
@@ -96,7 +105,7 @@ namespace GuitoApi.Services.ArtificialIntelligence
         private async Task<ExpenseExtracted> ExtractExpenseAsync(HttpClient client, string apiKey,
             string prompt, CancellationToken cancellationToken)
         {
-            var today = DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            var today = LisbonToday().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             var systemPrompt =
                 "You extract expense details from a short natural-language note in Portuguese (pt-PT). " +
                 $"Today is {today}. Reply with ONLY a JSON object, no markdown: " +
@@ -214,7 +223,7 @@ namespace GuitoApi.Services.ArtificialIntelligence
                     : null;
                 var date = DateTime.TryParse(dateText, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsedDate)
                     ? parsedDate.Date
-                    : DateTime.Today;
+                    : LisbonToday();
 
                 var amount = root.TryGetProperty("amount", out var amountElement) && amountElement.ValueKind == JsonValueKind.Number
                     ? amountElement.GetDecimal()
