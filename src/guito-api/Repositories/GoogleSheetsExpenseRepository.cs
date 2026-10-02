@@ -41,47 +41,67 @@ namespace GuitoApi.Repositories
         {
             SheetsService service = await _googlesheetsService.GetAsync(cancellationToken);
 
+            var appendResponse = await AppendExpenseRowAsync(service, value, cancellationToken);
+            var appendedRowIndex = ResolveAppendedRowIndex(appendResponse);
+            await BackfillYearMonthFormulasAsync(service, appendedRowIndex, cancellationToken);
+
+            return appendedRowIndex.ToString(CultureInfo.InvariantCulture);
+        }
+
+        private async Task<AppendValuesResponse> AppendExpenseRowAsync(SheetsService service,
+            ExpenseCreate value, CancellationToken cancellationToken)
+        {
             ValueRange valueRange = new ValueRange
+            {
+                Values = new List<IList<object>>
+                {
+                    BuildExpenseRow(value)
+                }
+            };
+
+            SpreadsheetsResource.ValuesResource.AppendRequest appendRequest =
+                service.Spreadsheets.Values.Append(
+                    valueRange,
+                    _options.Googlesheets.SpreadsheetId,
+                    _sheetScopeResolver.ExpensesRange);
+
+            appendRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
+            return await appendRequest.ExecuteAsync(cancellationToken);
+        }
+
+        private IList<object> BuildExpenseRow(ExpenseCreate value) => new List<object>
+        {
+            value.Date.ToString("yyyy-MM-dd"),
+            "", // Year
+            "", // Month
+            value.Amount,
+            NormalizeDescription(value.Description),
+            value.Category,
+            _userIdentityResolver.GetEmail()
+        };
+
+        // The append response's updated range ("...!B53:G53") carries the appended
+        // row index; the Year/Month formula columns of that row still need filling.
+        private static int ResolveAppendedRowIndex(AppendValuesResponse appendResponse)
+        {
+            var match = Regex.Match(appendResponse.Updates.UpdatedRange, @"\d+$");
+            return match.Success
+                ? int.Parse(match.Value)
+                : throw new ProblemException(500, "Could not resolve the appended expense row");
+        }
+
+        private async Task BackfillYearMonthFormulasAsync(SheetsService service, int appendedRowIndex,
+            CancellationToken cancellationToken)
+        {
+            var valueRange = new ValueRange
             {
                 Values = new List<IList<object>>
                 {
                     new List<object>
                     {
-                        value.Date.ToString("yyyy-MM-dd"),
-                        "", // Year
-                        "", // Month
-                        value.Amount,
-                        NormalizeDescription(value.Description),
-                        value.Category,
-                        _userIdentityResolver.GetEmail()
+                        $"=YEAR(B{appendedRowIndex})",
+                        $"=MONTH(B{appendedRowIndex})",
                     }
-                }
-            };
-
-            var expensesRange = _sheetScopeResolver.ExpensesRange;
-            SpreadsheetsResource.ValuesResource.AppendRequest appendRequest =
-                service.Spreadsheets.Values.Append(
-                    valueRange,
-                    _options.Googlesheets.SpreadsheetId,
-                    expensesRange);
-
-            appendRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
-            var appendResponse = await appendRequest.ExecuteAsync(cancellationToken);
-
-            // The append response's updated range ("...!B53:G53") carries the appended row
-            // index; the Year/Month formula columns of that row still need filling in.
-            var match = Regex.Match(appendResponse.Updates.UpdatedRange, @"\d+$");
-            if (!match.Success)
-                throw new ProblemException(500, "Could not resolve the appended expense row");
-
-            var appendedRowIndex = int.Parse(match.Value);
-
-            valueRange.Values = new List<IList<object>>
-            {
-                new List<object>
-                {
-                    $"=YEAR(B{appendedRowIndex})",
-                    $"=MONTH(B{appendedRowIndex})",
                 }
             };
 
@@ -92,34 +112,40 @@ namespace GuitoApi.Repositories
                 updateRange);
             updateRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
             await updateRequest.ExecuteAsync(cancellationToken);
-
-            return appendedRowIndex.ToString(CultureInfo.InvariantCulture);
         }
 
         public async Task<IReadOnlyList<ExpenseListLatestDetail>> ListLatestAsync(int limit, CancellationToken cancellationToken = default)
         {
-            var output = new List<ExpenseListLatestDetail>();
             SheetsService service = await _googlesheetsService.GetAsync(cancellationToken);
 
             var (_, firstDataRow, _) = ParseAnchor(_sheetScopeResolver.ExpensesRange);
             var lastRowIndex = await GetLatestRowIndexAsync(service, cancellationToken);
             lastRowIndex = lastRowIndex < firstDataRow ? firstDataRow : lastRowIndex;
-
             if (lastRowIndex is null)
-                return output;
+                return [];
 
-            var firstRowIndex = lastRowIndex.Value - limit + 1;
-            firstRowIndex = firstRowIndex < firstDataRow ? firstDataRow : firstRowIndex;
+            return await ReadLatestExpensesAsync(service, limit, lastRowIndex.Value, firstDataRow, cancellationToken);
+        }
+
+        private async Task<IReadOnlyList<ExpenseListLatestDetail>> ReadLatestExpensesAsync(SheetsService service,
+            int limit, int lastRowIndex, int firstDataRow, CancellationToken cancellationToken)
+        {
+            var firstRowIndex = Math.Max(lastRowIndex - limit + 1, firstDataRow);
             // ExpensesLatestRange is a config-provided format template ("...!B{0}:H{1}").
-            var range = string.Format(_sheetScopeResolver.ExpensesLatestRange, firstRowIndex, lastRowIndex.Value);
+            var range = string.Format(_sheetScopeResolver.ExpensesLatestRange, firstRowIndex, lastRowIndex);
             SpreadsheetsResource.ValuesResource.GetRequest request =
                 service.Spreadsheets.Values.Get(_options.Googlesheets.SpreadsheetId, range);
 
             ValueRange response = await request.ExecuteAsync(cancellationToken);
-            var values = response.Values;
-            if (values is not { Count: > 0 })
-                return output;
+            return MapExpenseRows(response.Values);
+        }
 
+        private static IReadOnlyList<ExpenseListLatestDetail> MapExpenseRows(IList<IList<object>>? values)
+        {
+            if (values is not { Count: > 0 })
+                return [];
+
+            var output = new List<ExpenseListLatestDetail>();
             for (var i = 0; i < values.Count; i++)
             {
                 if (string.IsNullOrWhiteSpace(values[i]?[0]?.ToString()))
@@ -227,28 +253,29 @@ namespace GuitoApi.Repositories
         private static async Task DeleteRowDimensionAsync(SheetsService service, string spreadsheetId,
             int sheetId, int id, CancellationToken cancellationToken)
         {
-            var request = new BatchUpdateSpreadsheetRequest
+            var request = BuildDeleteOneRowRequest(sheetId, id);
+            await service.Spreadsheets.BatchUpdate(request, spreadsheetId).ExecuteAsync(cancellationToken);
+        }
+
+        private static BatchUpdateSpreadsheetRequest BuildDeleteOneRowRequest(int sheetId, int id) => new()
+        {
+            Requests = new List<Request>
             {
-                Requests = new List<Request>
+                new Request
                 {
-                    new Request
+                    DeleteDimension = new DeleteDimensionRequest
                     {
-                        DeleteDimension = new DeleteDimensionRequest
+                        Range = new DimensionRange
                         {
-                            Range = new DimensionRange
-                            {
-                                SheetId = sheetId,
-                                Dimension = "ROWS",
-                                StartIndex = id - 1,
-                                EndIndex = id,
-                            }
+                            SheetId = sheetId,
+                            Dimension = "ROWS",
+                            StartIndex = id - 1,
+                            EndIndex = id,
                         }
                     }
                 }
-            };
-
-            await service.Spreadsheets.BatchUpdate(request, spreadsheetId).ExecuteAsync(cancellationToken);
-        }
+            }
+        };
 
         private static (string TabTitle, int FirstDataRow, string DateColumn) ParseAnchor(string range)
         {

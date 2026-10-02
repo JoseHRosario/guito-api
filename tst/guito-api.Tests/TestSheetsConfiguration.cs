@@ -2,7 +2,10 @@ using GuitoApi.Configuration;
 
 namespace GuitoApi.Tests;
 
-/// <summary>Test spreadsheet configuration matching the fake handler's canned responses (values from appsettings).</summary>
+/// <summary>
+/// Test spreadsheet configuration matching the fake handler's canned responses
+/// (values from appsettings), plus shared derivations from those config values.
+/// </summary>
 public static class TestSheetsConfiguration
 {
     public static AppConfigurationOptions Build() => new()
@@ -19,4 +22,11 @@ public static class TestSheetsConfiguration
             CategoriesRange = "Config!D2:D24"
         }
     };
+
+    /// <summary>First data row parsed from a config range anchor (the digits after the cell column).</summary>
+    public static int FirstDataRow(AppConfigurationOptions options)
+    {
+        var anchor = options.Googlesheets.ExpensesRange.Split('!', 2)[1];
+        return int.Parse(new string(anchor.Where(char.IsDigit).ToArray()));
+    }
 }

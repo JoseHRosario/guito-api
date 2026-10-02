@@ -27,7 +27,7 @@ namespace GuitoApi.Repositories
         public async Task<IReadOnlyList<CategoryListDetail>> ListAsync(CancellationToken cancellationToken = default)
         {
             var output = new List<CategoryListDetail>();
-            SheetsService service = await _googlesheetsService.GetAsync();
+            SheetsService service = await _googlesheetsService.GetAsync(cancellationToken);
 
             SpreadsheetsResource.ValuesResource.GetRequest request =
                 service.Spreadsheets.Values.Get(_options.Googlesheets.SpreadsheetId, _options.Googlesheets.CategoriesRange);

@@ -6,18 +6,19 @@ namespace GuitoApi.Tests;
 
 public class GoogleSheetsCategoryRepositoryTests
 {
-    private readonly FakeSheetsHttpHandler _handler = new();
-    private readonly GuitoApi.Configuration.AppConfigurationOptions _options = TestSheetsConfiguration.Build();
-
     [Fact]
-    public void ListAsync_ShouldReturnCategoriesOrderedByName_WhenRowsExist()
+    public async Task ListAsync_ShouldReturnCategoriesOrderedByName_WhenRowsExist()
     {
-        var repository = new GuitoApi.Repositories.GoogleSheetsCategoryRepository(
-            Options.Create(_options),
-            new FakeGooglesheetsService(_handler));
+        // Arrange
+        var options = TestSheetsConfiguration.Build();
+        var repository = new GoogleSheetsCategoryRepository(
+            Options.Create(options),
+            new FakeGooglesheetsService(new FakeSheetsHttpHandler()));
 
-        var categories = repository.ListAsync().GetAwaiter().GetResult();
+        // Act
+        var categories = await repository.ListAsync();
 
+        // Assert
         Assert.Equal(["Groceries", "Restaurants", "Transport"], categories.Select(c => c.Name));
     }
 }
