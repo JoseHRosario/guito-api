@@ -17,9 +17,13 @@ namespace GuitoApi.Exceptions
 
         public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
         {
-            var statusCode = exception is ProblemException problemException
-                ? problemException.HttpStatusCode
-                : 500;
+            var statusCode = exception switch
+            {
+                ProblemException problemException => problemException.HttpStatusCode,
+                // Repository not-found (ExpenseNotFoundException) maps to 404.
+                ExpenseNotFoundException => StatusCodes.Status404NotFound,
+                _ => 500,
+            };
 
             var isUnexpectedError = statusCode == 500 && exception is not ProblemException;
             if (isUnexpectedError)

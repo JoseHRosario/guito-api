@@ -1,53 +1,25 @@
-﻿using Google.Apis.Sheets.v4;
-using Google.Apis.Sheets.v4.Data;
-using GuitoApi.Configuration;
-using GuitoApi.DataTransferObjects.Output;
-using Microsoft.Extensions.Options;
+﻿using GuitoApi.DataTransferObjects.Output;
+using GuitoApi.Repositories;
 
 namespace GuitoApi.Services.Category
 {
+    /// <summary>
+    /// Adapter over <see cref="ICategoryRepository"/> (repository-pattern
+    /// refactor, ADR 0011): keeps the IListCategoryService contract so controllers
+    /// and the wire shape are unchanged, while every Sheets behavior moved into
+    /// the repository layer.
+    /// </summary>
     public class ListCategoryGoogleApisSheetsService : IListCategoryService
     {
-        private readonly AppConfigurationOptions _options;
-        private readonly IGooglesheetsService _googlesheetsService;
-        private readonly ILogger<ListCategoryGoogleApisSheetsService> _logger;
+        private readonly ICategoryRepository _categoryRepository;
 
-        public ListCategoryGoogleApisSheetsService(
-            IOptions<AppConfigurationOptions> options,
-            IGooglesheetsService googlesheetsService,
-            ILogger<ListCategoryGoogleApisSheetsService> logger
-            )
-        {
-            _options = options.Value;
-            _googlesheetsService = googlesheetsService;
-            _logger = logger;
-        }
+        public ListCategoryGoogleApisSheetsService(ICategoryRepository categoryRepository) =>
+            _categoryRepository = categoryRepository;
 
         public async Task<CategoryList> ListAsync(CancellationToken cancellationToken = default)
         {
-            var output = new CategoryList();
-            SheetsService service = await _googlesheetsService.GetAsync();
-
-            // Read values from the specified range
-            SpreadsheetsResource.ValuesResource.GetRequest request =
-                service.Spreadsheets.Values.Get(_options.Googlesheets.SpreadsheetId, _options.Googlesheets.CategoriesRange);
-
-            ValueRange response = await request.ExecuteAsync(cancellationToken);
-            var values = response.Values;
-            if (values is not { Count: > 0 })
-                return output;
-
-            foreach (var row in values)
-            {
-                var categoryName = row[0]?.ToString();
-                if (string.IsNullOrWhiteSpace(categoryName))
-                    continue;
-
-                output.Categories.Add(new CategoryListDetail { Name = categoryName });
-            }
-            output.Categories = output.Categories.OrderBy(c => c.Name).ToList();
-
-            return output;
+            var categories = await _categoryRepository.ListAsync(cancellationToken);
+            return new CategoryList { Categories = [.. categories] };
         }
     }
 }

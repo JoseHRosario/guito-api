@@ -1,5 +1,5 @@
 ﻿using GuitoApi.DataTransferObjects.Output;
-using GuitoApi.Exceptions;
+using GuitoApi.Repositories;
 using GuitoApi.Services.Account;
 
 namespace GuitoApi.Services.Expense
@@ -7,26 +7,26 @@ namespace GuitoApi.Services.Expense
     public class MatchExpensesService : IMatchExpensesService
     {
         private readonly IListTransactionsService _listTransactionsService;
-        private readonly IListLatestExpensesService _listLatestExpensesService;
+        private readonly IExpenseRepository _expenseRepository;
         private const decimal Deviation = 0.5m;
         // Sentinel that no real amount can match: unknown (null) amounts never pair up.
         private const decimal NeverMatchAmount = 999999999m;
 
         public MatchExpensesService(IListTransactionsService listTransactionsService,
-            IListLatestExpensesService listLatestExpensesService)
+            IExpenseRepository expenseRepository)
         {
             _listTransactionsService = listTransactionsService;
-            _listLatestExpensesService = listLatestExpensesService;
+            _expenseRepository = expenseRepository;
         }
 
         public async Task<ExpenseMatchList> MatchExpensesAsync(CancellationToken cancellationToken = default)
         {
             var output = new ExpenseMatchList();
             var transactionsTask = _listTransactionsService.ListAsync(cancellationToken: cancellationToken);
-            var expensesTask = _listLatestExpensesService.ListLatestAsync(10, cancellationToken);
+            var expensesTask = _expenseRepository.ListLatestAsync(10, cancellationToken);
             await Task.WhenAll(transactionsTask, expensesTask);
             var transactions = transactionsTask.Result.Transactions.OrderByDescending(x => x.Date);
-            var expenses = expensesTask.Result.Expenses.OrderByDescending(x => x.Date);
+            var expenses = expensesTask.Result.OrderByDescending(x => x.Date);
             foreach (var transaction in transactions)
             {
                 var matchingExpense = expenses

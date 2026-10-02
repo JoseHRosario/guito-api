@@ -1,6 +1,7 @@
 using GuitoApi.Configuration;
 using GuitoApi.Exceptions;
 using GuitoApi.Middleware;
+using GuitoApi.Repositories;
 using GuitoApi.Services;
 using GuitoApi.Services.Account;
 using GuitoApi.Services.ArtificialIntelligence;
@@ -67,6 +68,9 @@ namespace GuitoApi
             // Google token revocation on sign-out (issue #64): the session's access token → Google's revoke endpoint.
             services.AddScoped<IRevokeGoogleTokenService, RevokeGoogleTokenService>();
             services.AddHttpClient(RevokeGoogleTokenService.HttpClientName);
+
+            services.AddScoped<IExpenseRepository, GoogleSheetsExpenseRepository>();
+            services.AddScoped<ICategoryRepository, GoogleSheetsCategoryRepository>();
 
             services.AddScoped<ICreateExpenseService, CreateExpenseGoogleApisSheetsService>();
             services.AddScoped<IMatchExpensesService, MatchExpensesService>();
