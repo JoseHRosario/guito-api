@@ -29,6 +29,9 @@ namespace GuitoApi.Services.ArtificialIntelligence
         private const string CategoryDecisionKey = "category";
         private const string ExpenseGateQuestionKey = "is_expense";
 
+        /// <summary>Cap on the extraction model's reply tokens (a JSON object is tiny).</summary>
+        private const int ExtractMaxOutputTokens = 200;
+
         /// <summary>Jev noul probability of "yes" below which the note is rejected as non-expense.</summary>
         private const decimal ExpenseGateMinimumProbability = 0.5m;
 
@@ -104,7 +107,7 @@ namespace GuitoApi.Services.ArtificialIntelligence
             var requestPayload = new JsonObject
             {
                 ["model"] = options.Value.ArtificialIntelligence.ExtractModel,
-                ["max_tokens"] = 200,
+                ["max_tokens"] = ExtractMaxOutputTokens,
                 ["messages"] = new JsonArray
                 {
                     new JsonObject { ["role"] = "system", ["content"] = systemPrompt },
