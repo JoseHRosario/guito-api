@@ -98,16 +98,18 @@ aws --region "$REGION" iam put-role-policy --role-name "$ROLE" --policy-name gui
 # (a staging run would overwrite prod-scoped policies with env-specific ARNs).
 
 # --- 2. Package (arm64 — matches the deployed functions; ARCH=x64 to override) ---
-# Version stamp (issue #75): CI exports VERSION (from deploy/version.sh); a
-# local run without VERSION computes it here. A deploy without a resolvable
-# version FAILS — an unstamped build must never reach a live environment.
-if [ -z "${VERSION:-}" ]; then VERSION=$(./deploy/version.sh); fi
-[ -n "$VERSION" ] || { echo "FATAL: VERSION is empty — refusing to deploy an unstamped build." >&2; exit 1; }
+# Version stamp (issue #77, amends #75): the version is DECLARED in the csproj
+# (<Version>) — no git tags, no manual steps. The deploy appends build metadata
+# (UTC timestamp + short SHA) so same-day builds are distinguishable. Fail
+# closed: an undeclared version must never reach a live environment.
+DECLARED_VERSION=$(sed -n 's/.*<Version>\([^<]*\)<\/Version>.*/\1/p' src/guito-api/guito-api.csproj | head -1)
+[ -n "$DECLARED_VERSION" ] || { echo "FATAL: <Version> not declared in src/guito-api/guito-api.csproj — refusing to deploy an unstamped build." >&2; exit 1; }
+VERSION="$DECLARED_VERSION+$(date -u +%Y%m%dT%H%M%SZ).$(git rev-parse --short HEAD)"
 echo "Building version: $VERSION"
 ARCH=${ARCH:-arm64}
 # IncludeSourceRevisionInInformationalVersion=false: otherwise the SDK appends
-# the full commit SHA to the stamp (verified 2026-10-03: the version came out as
-# "...<stamp>.<full-sha>"), duplicating version.sh's short-SHA metadata.
+# the full commit SHA to the stamp (verified 2026-10-03), duplicating the
+# metadata above.
 dotnet publish src/guito-api -c Release -f net10.0 -r "linux-$ARCH" --self-contained false -p:InformationalVersion="$VERSION" -p:IncludeSourceRevisionInInformationalVersion=false -o /tmp/pub-api
 dotnet publish src/guito-api-authorizer -c Release -f net10.0 -r "linux-$ARCH" --self-contained false -o /tmp/pub-auth
 ( cd /tmp/pub-api && zip -qr /tmp/guito-api.zip . )

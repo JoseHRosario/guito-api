@@ -54,18 +54,9 @@ jobs:
     environment: staging
     steps:
       - uses: actions/checkout@v4
-        with:
-          # deploy/version.sh derives the build version from git tags+history
-          # (issue #75) — a depth-1 checkout would produce a wrong/missing stamp.
-          fetch-depth: 0
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-      - name: Compute version stamp (issue #75)
-        run: |
-          VERSION=$(./deploy/version.sh)
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          echo "Building version: $VERSION"
       - name: Assume AWS deploy role (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -86,18 +77,9 @@ jobs:
     environment: production
     steps:
       - uses: actions/checkout@v4
-        with:
-          # deploy/version.sh derives the build version from git tags+history
-          # (issue #75) — a depth-1 checkout would produce a wrong/missing stamp.
-          fetch-depth: 0
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-      - name: Compute version stamp (issue #75)
-        run: |
-          VERSION=$(./deploy/version.sh)
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          echo "Building version: $VERSION"
       - name: Assume AWS deploy role (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
