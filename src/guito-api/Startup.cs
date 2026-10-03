@@ -11,6 +11,7 @@ using GuitoApi.Services.ArtificialIntelligence;
 using GuitoApi.Services.Category;
 using GuitoApi.Services.Auth;
 using GuitoApi.Services.Expense;
+using Microsoft.Extensions.Options;
 using Serilog;
 
 namespace GuitoApi
@@ -23,8 +24,6 @@ namespace GuitoApi
 
         public void ConfigureServices(IServiceCollection services)
         {
-            var environment = Configuration.GetValue<string>("ASPNETCORE_ENVIRONMENT") ?? Environments.Production;
-
             Log.Logger = new LoggerConfiguration()
                 .ReadFrom.Configuration(Configuration)
                 .CreateLogger();
@@ -81,15 +80,21 @@ namespace GuitoApi
             services.AddScoped<IDeleteExpenseRowService, DeleteExpenseService>();
             services.AddScoped<ISheetScopeResolver, SheetScopeResolver>();
             services.AddScoped<IListCategoryService, ListCategoryGoogleApisSheetsService>();
-            services.AddScoped<IListTransactionsService, ListTransactionsNordigenService>();
-            services.AddHttpClient(nameof(ListTransactionsNordigenService));
-            services.AddScoped<IGooglesheetsClientProvider, GooglesheetsClientProvider>();
-            if (environment == Environments.Development)
+            // Bank transaction provider selected by configuration (ADR-0004): EnableBanking is
+            // the PSD2 provider; Dummy serves canned data for local dev until the Enable
+            // Banking adapter lands (issue #5, first PR).
+            services.AddScoped<IListTransactionsService>(sp =>
             {
-                // Local dev: canned bank transactions so /expense/match works end-to-end
-                // without PSD2 credentials. PSD2 wiring returns in phase 1.
-                services.AddScoped<IListTransactionsService, ListTransactionsDummyService>();
-            }
+                var bankProvider = sp.GetRequiredService<IOptions<AppConfigurationOptions>>().Value.BankProvider;
+                return bankProvider switch
+                {
+                    "Dummy" => new ListTransactionsDummyService(),
+                    "EnableBanking" => throw new NotSupportedException(
+                        "Enable Banking transactions adapter is not implemented yet (issue #5). Set BankProvider to Dummy."),
+                    _ => throw new InvalidOperationException($"Unknown BankProvider '{bankProvider}'.")
+                };
+            });
+            services.AddScoped<IGooglesheetsClientProvider, GooglesheetsClientProvider>();
             services.AddScoped<IExtractMethodService, ExtractMethodService>();
             services.AddScoped<IExpenseExtractionRepository, OpenRouterExpenseExtractionRepository>();
             services.AddScoped<IOpenRouterClientProvider, OpenRouterClientProvider>();

@@ -352,7 +352,7 @@ namespace GuitoApi.Services.Account
             return Task.FromResult(output);
         }
 
-        // Same parse contract as the Nordigen implementation: invariant culture,
+        // Parse contract: invariant culture,
         // unparseable dates become null instead of throwing.
         private static DateTime? ParseBookingDate(JsonElement transaction)
         {
