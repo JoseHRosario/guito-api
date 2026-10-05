@@ -39,7 +39,8 @@ namespace GuitoApi
                 {
                     builder.AllowAnyOrigin()
                            .AllowAnyMethod()
-                           .AllowAnyHeader();
+                           .AllowAnyHeader()
+                           .WithExposedHeaders(VersionHeaderMiddleware.HeaderName);
                 });
                 o.AddPolicy("AllowOnlyWebApp", builder =>
                 {
@@ -48,7 +49,8 @@ namespace GuitoApi
                     // — token exchange included — is CORS-blocked.
                     builder.WithOrigins(allowedOrigins)
                            .AllowAnyMethod()
-                           .AllowAnyHeader();
+                           .AllowAnyHeader()
+                           .WithExposedHeaders(VersionHeaderMiddleware.HeaderName);
                 });
             });
             services.AddHealthChecks();
@@ -136,6 +138,9 @@ namespace GuitoApi
                 app.UseCors("AllowOnlyWebApp");
             }
             app.UseExceptionHandler();
+            // Build-version stamp on every response (issue #75) — before the auth
+            // middlewares so rejected requests carry it too.
+            app.UseMiddleware<VersionHeaderMiddleware>();
             // Agent key path (ADR-0003) first: X-Api-Key gate; independent of the Google token path.
             app.UseMiddleware<ApiKeyMiddleware>();
             app.UseMiddleware<GoogleIdTokenMiddleware>();
@@ -143,6 +148,9 @@ namespace GuitoApi
             app.UseResponseCaching();
             app.UseEndpoints(endpoints =>
             {
+                // /healthz stays a plain health probe (original behavior); the
+                // build version rides the X-Api-Version response header
+                // (VersionHeaderMiddleware), not this body (issue #75).
                 endpoints.MapHealthChecks("/healthz");
                 endpoints.MapControllers();
             });

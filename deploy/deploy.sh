@@ -98,8 +98,19 @@ aws --region "$REGION" iam put-role-policy --role-name "$ROLE" --policy-name gui
 # (a staging run would overwrite prod-scoped policies with env-specific ARNs).
 
 # --- 2. Package (arm64 — matches the deployed functions; ARCH=x64 to override) ---
+# Version stamp (issue #77, amends #75): the version is DECLARED in the csproj
+# (<Version>) — no git tags, no manual steps. The deploy appends build metadata
+# (UTC timestamp + short SHA) so same-day builds are distinguishable. Fail
+# closed: an undeclared version must never reach a live environment.
+DECLARED_VERSION=$(sed -n 's/.*<Version>\([^<]*\)<\/Version>.*/\1/p' src/guito-api/guito-api.csproj | head -1)
+[ -n "$DECLARED_VERSION" ] || { echo "FATAL: <Version> not declared in src/guito-api/guito-api.csproj — refusing to deploy an unstamped build." >&2; exit 1; }
+VERSION="$DECLARED_VERSION+$(date -u +%Y%m%dT%H%M%SZ).$(git rev-parse --short HEAD)"
+echo "Building version: $VERSION"
 ARCH=${ARCH:-arm64}
-dotnet publish src/guito-api -c Release -f net10.0 -r "linux-$ARCH" --self-contained false -o /tmp/pub-api
+# IncludeSourceRevisionInInformationalVersion=false: otherwise the SDK appends
+# the full commit SHA to the stamp (verified 2026-10-03), duplicating the
+# metadata above.
+dotnet publish src/guito-api -c Release -f net10.0 -r "linux-$ARCH" --self-contained false -p:InformationalVersion="$VERSION" -p:IncludeSourceRevisionInInformationalVersion=false -o /tmp/pub-api
 dotnet publish src/guito-api-authorizer -c Release -f net10.0 -r "linux-$ARCH" --self-contained false -o /tmp/pub-auth
 ( cd /tmp/pub-api && zip -qr /tmp/guito-api.zip . )
 ( cd /tmp/pub-auth && rm -f /tmp/guito-authorizer.zip && zip -qr /tmp/guito-authorizer.zip . )
@@ -197,7 +208,7 @@ AUTH_ARN=$(aws --region "$REGION" lambda get-function --function-name "$AUTH_NAM
 # sees an OPTIONS. AllowOrigins * is safe here: every non-exchange route stays
 # auth-gated at the authorizer; the exchange is unauthenticated by design.
 aws --region "$REGION" apigatewayv2 update-api --api-id "$API_ID" \
-  --cors-configuration '{"AllowOrigins":["*"],"AllowMethods":["GET","POST","OPTIONS"],"AllowHeaders":["content-type","x-api-key","authorization","x-google-idtoken"],"MaxAge":86400}' >/dev/null 2>&1 || true
+  --cors-configuration '{"AllowOrigins":["*"],"AllowMethods":["GET","POST","OPTIONS"],"AllowHeaders":["content-type","x-api-key","authorization","x-google-idtoken"],"ExposeHeaders":["x-api-version"],"MaxAge":86400}' >/dev/null 2>&1 || true
 
 AUTH_ID=$(aws --region "$REGION" apigatewayv2 get-authorizers --api-id "$API_ID" --query "Items[?Name=='guito-key-authorizer'].AuthorizerId" --output text)
 [ -n "$AUTH_ID" ] || AUTH_ID=$(aws --region "$REGION" apigatewayv2 create-authorizer --api-id "$API_ID" --name guito-key-authorizer \
