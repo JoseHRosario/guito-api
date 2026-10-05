@@ -13,7 +13,7 @@ Personal expense-tracking system (API + webapp) used to control expenses and max
 - **Match** — the act of pairing a bank **Transaction** with an Expense (or creating an Expense from it).
 - **Transaction** — a bank movement retrieved from a PSD2 provider. Not the same as an Expense until matched.
 - **Extract** — AI parsing of free-form input (text/speech) into a proposed Expense.
-- **PSD2 provider** — the open-banking service supplying Transactions (GoCardless Bank Account Data or Enable Banking), always behind `IListTransactionsService`.
+- **PSD2 provider** — Enable Banking (free Restricted Production tier), supplying Transactions behind `IListTransactionsService`; provider selection is configuration (`BankProvider`).
 - **Design tokens** — the daisyUI semantic values (`design/tokens.json` in guito-ui) compiled by `npm run tokens` into the theme. Single source: the "Design Tokens"/SDS variables of the Guito Figma file; code never invents colors or radii ad hoc.
 - **Figma MCP sync** — how Design tokens reach the repo: Hermes reads the Figma file's variables over the Figma MCP and regenerates `design/tokens.json`; the PAT-based `tools/tokens/pull-figma.mjs` is dead because the REST scope `file_variables:read` is Enterprise-only. Design file key `UoIK5MnIqDrgfHqMmBZoYk` (José's duplicate; "Guito App" page holds the designs). See guito-ui/docs/adr/0010-figma-token-source-mcp-sync.
 - **Local dev** — running the API on a development machine (`dotnet run --project src`). Targets the dev/staging spreadsheet via base `appsettings.json`; never points at the prod sheet.

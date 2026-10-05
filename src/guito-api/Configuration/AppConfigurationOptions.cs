@@ -6,7 +6,7 @@
         public Googlesheets Googlesheets { get; set; } = new();
         public Authentication Authentication { get; set; } = new();
         public Cors Cors { get; set; } = new();
-        public Nordigen Nordigen { get; set; } = new();
+        public string BankProvider { get; set; } = "Dummy";
         public ArtificialIntelligence ArtificialIntelligence { get; set; } = new();
         public SecretsConfig Secrets { get; set; } = new();
     }

@@ -11,7 +11,7 @@ Personal expense-tracking API + webapp (built ~2023-2024) to control expenses an
 1. **ADR-0001** — Deploy to AWS: API Gateway HTTP API + Lambda (.NET 10, arm64), S3+CloudFront for the UI, CloudWatch logs (Azure sink dropped). Near-zero cost. AWS operations assume `arn:aws:iam::497087877832:role/MinervaAIAgent`.
 2. **ADR-0002** — UI rewritten in **Angular 22** (signals, standalone) in new repo **`guito-ui`**; `guito-web-app` archived.
 3. **ADR-0003** — Dual auth: Google OAuth PKCE for the UI (ID token validated by a Lambda authorizer) + long-lived `X-Api-Key` for CLI/AI-agent access. Google auth is required for the MVP; the API-key path remains independent but CLI/agent tooling is deferred.
-4. **ADR-0004** — PSD2 behind `IListTransactionsService`; try grandfathered GoCardless account first, fallback Enable Banking free tier. Manual consent re-auth accepted. **This is not MVP scope; re-check provider availability/pricing when Phase 2/3 is scheduled.**
+4. **ADR-0004** — PSD2 behind `IListTransactionsService`; Enable Banking free "Restricted Production" tier is the provider (old Nordigen/GoCardless code deleted); consent re-auth every ~90 days accepted, on-demand sync, suggest-only matching into a Match Transactions sheet.
 5. **ADR-0005** — Google Sheets stays the datastore; no DynamoDB migration. Keep the existing spreadsheet schema unchanged.
 6. **ADR-0006** — UI design driven by Figma design tokens (Variables → tokens.json → style-dictionary → Angular theme) + Figma MCP for per-screen implementation.
 
