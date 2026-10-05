@@ -3,6 +3,13 @@
 Rules that apply to every PR in this repo. AGENTS.md carries architecture and workflow;
 this file carries coding conventions. Agents must check this list before committing.
 
+## Solution file (guito-api.slnx) membership
+
+Keep the solution file a complete map of the repo:
+1. **When a DB migration is created** (`db/migrations/NNN_*.sql`), add it to the solution file inside a `/db/migrations/` folder block (like the `/docs/` folder below).
+2. **When an ADR is created** (`docs/adr/NNNN-*.md`), add it to the solution file's `/docs/` folder.
+3. The solution is the first place a reader sees the repo shape — a file missing from it is a review finding.
+
 ## Branching
 
 One branch per issue, cut from `master`, named with the issue number first:
