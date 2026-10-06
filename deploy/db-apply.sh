@@ -20,7 +20,7 @@ esac
 REGION="${REGION:-eu-west-1}"
 CLUSTER_ARN="${CLUSTER_ARN:-arn:aws:rds:${REGION}:497087877832:cluster:db-cluster}"
 ADMIN_SECRET_ARN="$(aws secretsmanager describe-secret --secret-id guito-api/db-admin --region "$REGION" --query ARN --output text)"
-SQL_DIR="$(cd "$(dirname "$0")/../docs/db" && pwd)"
+SQL_DIR="$(cd "$(dirname "$0")/../db/migrations" && pwd)"
 
 # sanity: admin credentials work (also resumes an auto-paused cluster before DDL)
 aws rds-data execute-statement --resource-arn "$CLUSTER_ARN" --secret-arn "$ADMIN_SECRET_ARN" \
