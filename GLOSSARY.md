@@ -12,6 +12,10 @@ Personal expense-tracking system (API + webapp) used to control expenses and max
 - **Category** — label grouping expenses for analysis. Lives in its own sheet.
 - **Match** — the act of pairing a bank **Transaction** with an Expense (or creating an Expense from it).
 - **Transaction** — a bank movement retrieved from a PSD2 provider. Not the same as an Expense until matched.
+- **Bank Transactions** — the aggregate of bank movements synced from Enable Banking into Postgres (`bank_transactions`), the former "Match Transactions" sheet idea. Income-direction (CRDT) and non-BOOK rows are not stored. See ADR 0013.
+- **bank_accounts** — the Postgres table holding one row per bank account linked through Enable Banking: EB uid, session id, IBAN, name, currency, ASPSP, and consent status/expiry. Populated by the auth flow; consumed by sync.
+- **sync_key** — the UNIQUE dedup key of a Bank Transaction: a hash of the EB recommended composite (account uid + booking_date + amount + credit_debit_indicator + entry_reference + counterparty), since EB rows carry no unique transaction id. Re-syncs are idempotent via `ON CONFLICT DO NOTHING`.
+- **Data API** — the RDS Data API: HTTPS access to Aurora Postgres, letting the Lambda stay VPC-less (no NAT/subnets). The only database access path; faked in unit tests via `IPostgresDataApiClient`. See ADR 0013.
 - **Extract** — AI parsing of free-form input (text/speech) into a proposed Expense.
 - **PSD2 provider** — Enable Banking (free Restricted Production tier), supplying Transactions behind `IListTransactionsService`; provider selection is configuration (`BankProvider`).
 - **Design tokens** — the daisyUI semantic values (`design/tokens.json` in guito-ui) compiled by `npm run tokens` into the theme. Single source: the "Design Tokens"/SDS variables of the Guito Figma file; code never invents colors or radii ad hoc.
