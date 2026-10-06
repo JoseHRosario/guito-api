@@ -10,6 +10,18 @@ namespace GuitoApi.Tests;
 /// </summary>
 public class FakeRdsDataServiceClient : AmazonRDSDataServiceClient
 {
+    // The base client's constructor validates region/credentials even though the fake
+    // overrides every operation — CI runners have no ambient AWS config, so pin explicit
+    // dummy values to keep construction hermetic.
+    private static AmazonRDSDataServiceConfig HermeticConfig() => new()
+    {
+        RegionEndpoint = Amazon.RegionEndpoint.EUWest1,
+    };
+
+    public FakeRdsDataServiceClient()
+        : base(new Amazon.Runtime.BasicAWSCredentials("hermetic", "hermetic"), HermeticConfig())
+    {
+    }
     public ExecuteStatementResponse? NextExecuteResponse { get; set; } = new();
     public string? NextTransactionId { get; set; }
     public CommitTransactionResponse? NextCommitResponse { get; set; } = new();
