@@ -1,4 +1,6 @@
+using Amazon.RDSDataService;
 using GuitoApi.Configuration;
+using GuitoApi.Infrastructure.Postgres;
 using GuitoApi.Infrastructure.Secrets;
 using GuitoApi.Infrastructure.Sheets;
 using GuitoApi.Infrastructure.AI;
@@ -102,6 +104,13 @@ namespace GuitoApi
             services.AddScoped<IOpenRouterClientProvider, OpenRouterClientProvider>();
             services.AddHttpClient(OpenRouterClientProvider.HttpClientName);
             services.AddScoped<IUserIdentityResolver, UserIdentityResolver>();
+
+            // Data API (issue #87 + unit of work): the fake seam for all Postgres access.
+            services.Configure<DatabaseOptions>(Configuration.GetSection(DatabaseOptions.SectionName));
+            services.AddSingleton<IAmazonRDSDataService, AmazonRDSDataServiceClient>();
+            services.AddScoped<PostgresTransactionContext>();
+            services.AddScoped<IPostgresDataApiClient, DataApiClient>();
+            services.AddScoped<IUnitOfWork, DataApiUnitOfWork>();
         }
 
         private ISecretsProvider CreateSecretsProvider(string? secretsLocation) => secretsLocation switch
