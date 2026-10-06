@@ -28,6 +28,11 @@ aws rds-data execute-statement --resource-arn "$CLUSTER_ARN" --secret-arn "$ADMI
 
 APPLIED="$(aws rds-data execute-statement --resource-arn "$CLUSTER_ARN" --secret-arn "$ADMIN_SECRET_ARN" \
   --database "$DB" --sql "SELECT name FROM _migrations" --no-cli-pager 2>/dev/null || true)"
+if [ -z "$APPLIED" ] && ! aws rds-data execute-statement --resource-arn "$CLUSTER_ARN" --secret-arn "$ADMIN_SECRET_ARN" \
+  --database "$DB" --sql "SELECT 1 FROM _migrations LIMIT 1" --no-cli-pager >/dev/null 2>&1; then
+  echo "FATAL: _migrations ledger missing in $DB — apply the ledger migration first (db/migrations/001_init.sql)." >&2
+  exit 1
+fi
 
 for SQL_FILE in "$SQL_DIR"/*.sql; do
   NAME="$(basename "$SQL_FILE")"
