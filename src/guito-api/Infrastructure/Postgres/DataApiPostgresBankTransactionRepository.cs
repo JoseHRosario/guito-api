@@ -1,5 +1,4 @@
-using GuitoApi.DataTransferObjects.Input;
-using GuitoApi.DataTransferObjects.Output;
+using GuitoApi.Model;
 using GuitoApi.Repositories;
 
 namespace GuitoApi.Infrastructure.Postgres;

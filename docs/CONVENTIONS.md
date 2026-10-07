@@ -34,6 +34,27 @@ next to it — same namespace, file named after the type.
 Nested private helper classes inside a test fixture class are fine; the rule is about
 top-level declared types.
 
+## Type homes (where a class lives, by what it is)
+
+The purpose of a type determines its folder — the same shape in two places is NOT
+duplicated code if the purposes differ (Clean Architecture: each boundary owns its own
+model; nothing crosses a boundary in a foreign layer's type):
+
+- `DataTransferObjects/` — HTTP wire contracts ONLY: request/response bodies of the API
+  (`Input/` for request DTOs, `Output/` for response DTOs). If a type never touches a
+  controller, it does not belong here.
+- `Model/` — internal domain/application payloads: the vocabulary services and
+  repositories exchange (`UserIdentity`, `BankTransactionInsert`,
+  `BankTransactionPendingDetail`). Never a request body, never SQL or wire-shaped.
+- `Repositories/` — repository INTERFACES the services define (ADR-0011).
+- `Infrastructure/` — technology adapters implementing repository interfaces; SQL,
+  ranges, HTTP transports, mappers live only here.
+
+Boundaries translate mechanically between homes: controllers map wire DTO ↔ Model,
+services map external payloads (e.g. Enable Banking JSON) ↔ Model. A repository
+interface must not take a `DataTransferObjects/` type (known debt: `IExpenseRepository`
+currently takes `ExpenseCreate` — refactor tracked separately).
+
 ---
 
 # C# Clean Code & Coding Conventions

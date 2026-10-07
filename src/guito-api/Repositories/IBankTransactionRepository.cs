@@ -1,5 +1,4 @@
-using GuitoApi.DataTransferObjects.Input;
-using GuitoApi.DataTransferObjects.Output;
+using GuitoApi.Model;
 
 namespace GuitoApi.Repositories;
 

@@ -1,4 +1,4 @@
-namespace GuitoApi.DataTransferObjects.Output;
+namespace GuitoApi.Model;
 
 /// <summary>
 /// A pending (unmatched) bank transaction as the matching screen (#83) consumes it:

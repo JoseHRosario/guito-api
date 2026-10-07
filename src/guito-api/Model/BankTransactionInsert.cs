@@ -1,4 +1,4 @@
-namespace GuitoApi.DataTransferObjects.Input;
+namespace GuitoApi.Model;
 
 /// <summary>
 /// One bank transaction to persist into the bank_transactions table (issue #88).
