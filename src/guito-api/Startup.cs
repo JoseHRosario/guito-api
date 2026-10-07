@@ -110,6 +110,9 @@ namespace GuitoApi
             services.AddScoped<PostgresTransactionContext>();
             services.AddScoped<IPostgresDataApiClient, DataApiClient>();
             services.AddScoped<IUnitOfWork, DataApiUnitOfWork>();
+            // Bank Transactions aggregate (issue #88): ADR-0011 shape — interface in
+            // Repositories/, Data API implementation here in Infrastructure/Postgres/.
+            services.AddScoped<IBankTransactionRepository, DataApiPostgresBankTransactionRepository>();
         }
 
         private ISecretsProvider CreateSecretsProvider(string? secretsLocation) => secretsLocation switch
