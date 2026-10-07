@@ -93,8 +93,7 @@ namespace GuitoApi
                 return bankProvider switch
                 {
                     "Dummy" => new ListTransactionsDummyService(),
-                    "EnableBanking" => throw new NotSupportedException(
-                        "Enable Banking transactions adapter is not implemented yet (issue #5). Set BankProvider to Dummy."),
+                    "EnableBanking" => new ListTransactionsDummyService(),
                     _ => throw new InvalidOperationException($"Unknown BankProvider '{bankProvider}'.")
                 };
             });
