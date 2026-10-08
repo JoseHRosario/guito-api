@@ -154,4 +154,34 @@ public class DataApiPostgresBankTransactionRepositoryTests
 
         Assert.Empty(pending);
     }
+
+    [Fact]
+    public async Task ListPendingAsync_ShouldMapStringEncodedNumerics_WhenDataApiReturnsStringFields()
+    {
+        // The live Data API returns bigint/numeric columns as string fields (seen in
+        // staging, issue #91): id and amount arrive as strings, not typed values.
+        var client = new FakePostgresDataApiClient();
+        client.NextResults.Enqueue(new PostgresResult(
+            ["id", "account_uid", "booking_date", "amount", "currency", "remittance_information"],
+            [
+                [PostgresValue.FromString("7"), PostgresValue.FromString("eb-account-1"),
+                    PostgresValue.FromString("2026-10-05"), PostgresValue.FromString("9.20"),
+                    PostgresValue.FromString("EUR"), PostgresValue.FromString("Quicksilver")],
+                [PostgresValue.FromString("6"), PostgresValue.FromString("eb-account-1"),
+                    PostgresValue.FromString("2026-10-04"), PostgresValue.FromString("3.60"),
+                    PostgresValue.FromString("EUR"), PostgresValue.Null()],
+            ],
+            0));
+        var repository = new DataApiPostgresBankTransactionRepository(client);
+
+        var pending = await repository.ListPendingAsync();
+
+        Assert.Equal(2, pending.Count);
+        Assert.Equal(7, pending[0].Id);
+        Assert.Equal(9.20m, pending[0].Amount);
+        Assert.Equal(new DateOnly(2026, 10, 5), pending[0].BookingDate);
+        Assert.Equal(6, pending[1].Id);
+        Assert.Equal(3.60m, pending[1].Amount);
+        Assert.Null(pending[1].RemittanceInformation);
+    }
 }
