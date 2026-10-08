@@ -194,4 +194,78 @@ public class BankTransactionSyncBoundaryTests
         // Assert
         Assert.Equal((HttpStatusCode)429, response.StatusCode);
     }
+
+    [Fact]
+    public async Task Sync_ShouldStoreSuggestion_WhenNewTransactionArrives()
+    {
+        // Arrange — the categories table is seeded by the migration script (004); the
+        // fake mirrors that with canned rows. Jev picks "Restaurants" for the new row.
+        using var factory = EnabledFactory();
+        factory.Categories.Categories.AddRange([
+            new CategorySummary(1, "Groceries", null),
+            new CategorySummary(3, "Restaurants", null),
+        ]);
+        factory.EnableBankingTransport.Enqueue(200, SyncPage);
+        var client = factory.CreateClient();
+
+        // Act
+        var body = await PostSync(client);
+
+        // Assert — suggestion stored as the seeded id of the Jev choice.
+        Assert.Equal(1, body.GetProperty("new").GetInt32());
+        var update = Assert.Single(factory.BankTransactions.SuggestionUpdates);
+        Assert.Equal(3, update.CategoryId);
+        Assert.Equal(factory.BankTransactions.Inserts.Single().SyncKey, update.SyncKey);
+        var decisionBody = Assert.Single(factory.OpenRouterHandler.DecisionRequestBodies);
+        Assert.Contains("COMPRA 9166 MEO", decisionBody);
+        Assert.Contains("\"category\"", decisionBody);
+        Assert.Contains("Restaurants", decisionBody);
+    }
+
+    [Fact]
+    public async Task Sync_ShouldSuggestEachNewRow_WhenReSyncingNewTransactions()
+    {
+        // Arrange — re-syncs never touch the categories table; each genuinely-new row
+        // (different sync_key) still gets its suggestion against the same seeded ids.
+        using var factory = EnabledFactory();
+        factory.Categories.Categories.AddRange([
+            new CategorySummary(1, "Groceries", null),
+            new CategorySummary(3, "Restaurants", null),
+        ]);
+        factory.EnableBankingTransport.Enqueue(200, SyncPage);
+        factory.EnableBankingTransport.Enqueue(200, SyncPage
+            .Replace("\"transaction_id\": \"tx-1\"", "\"transaction_id\": \"tx-4\"")
+            .Replace("\"entry_reference\": \"ref-1\"", "\"entry_reference\": \"ref-4\"")
+            .Replace("\"transaction_amount\": {\"amount\": \"-77.93\"", "\"transaction_amount\": {\"amount\": \"-12.50\""));
+        var client = factory.CreateClient();
+
+        // Act
+        await PostSync(client);
+        await PostSync(client);
+
+        // Assert
+        Assert.Equal(2, factory.BankTransactions.SuggestionUpdates.Count);
+        Assert.All(factory.BankTransactions.SuggestionUpdates,
+            u => Assert.Equal(3, u.CategoryId)); // "Restaurants" in the seeded categories
+    }
+
+    [Fact]
+    public async Task Sync_ShouldFailOpen_WhenJevDecisionFails()
+    {
+        // Arrange — Jev decision endpoint 500s: the sync succeeds and the row stays
+        // without a suggestion (NULL), never a silent default category.
+        using var factory = EnabledFactory();
+        factory.OpenRouterHandler.FailDecisionWithStatus = 500;
+        factory.EnableBankingTransport.Enqueue(200, SyncPage);
+        var client = factory.CreateClient();
+
+        // Act
+        var response = await client.PostAsync("/banktransaction/sync", content: null);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        // Assert — sync succeeded (row stored), but no suggestion was written.
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(1, body.GetProperty("new").GetInt32());
+        Assert.Empty(factory.BankTransactions.SuggestionUpdates);
+    }
 }

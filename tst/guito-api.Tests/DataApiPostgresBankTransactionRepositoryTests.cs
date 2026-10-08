@@ -110,8 +110,9 @@ public class DataApiPostgresBankTransactionRepositoryTests
 
         var sql = Assert.Single(client.ExecutedSql);
         Assert.Contains("FROM bank_transactions", sql);
-        Assert.Contains("WHERE expense_id IS NULL", sql);
-        Assert.Contains("ORDER BY booking_date DESC, id DESC", sql);
+        Assert.Contains("LEFT JOIN categories c ON c.id = bt.suggested_category_id", sql);
+        Assert.Contains("WHERE bt.expense_id IS NULL", sql);
+        Assert.Contains("ORDER BY bt.booking_date DESC, bt.id DESC", sql);
     }
 
     [Fact]
@@ -119,14 +120,16 @@ public class DataApiPostgresBankTransactionRepositoryTests
     {
         var client = new FakePostgresDataApiClient();
         client.NextResults.Enqueue(new PostgresResult(
-            ["id", "account_uid", "booking_date", "amount", "currency", "remittance_information"],
+            ["id", "account_uid", "booking_date", "amount", "currency", "remittance_information", "category_id", "category_name"],
             [
                 [PostgresValue.FromLong(7), PostgresValue.FromString("eb-account-1"),
                     PostgresValue.FromString("2026-10-05"), PostgresValue.FromDouble(9.20),
-                    PostgresValue.FromString("EUR"), PostgresValue.FromString("Quicksilver")],
+                    PostgresValue.FromString("EUR"), PostgresValue.FromString("Quicksilver"),
+                    PostgresValue.FromLong(3), PostgresValue.FromString("Restaurants")],
                 [PostgresValue.FromLong(6), PostgresValue.FromString("eb-account-1"),
                     PostgresValue.FromString("2026-10-04"), PostgresValue.FromDouble(3.60),
-                    PostgresValue.FromString("EUR"), PostgresValue.Null()],
+                    PostgresValue.FromString("EUR"), PostgresValue.Null(),
+                    PostgresValue.Null(), PostgresValue.Null()],
             ],
             0));
         var repository = new DataApiPostgresBankTransactionRepository(client);
@@ -140,8 +143,10 @@ public class DataApiPostgresBankTransactionRepositoryTests
         Assert.Equal(9.20m, pending[0].Amount);
         Assert.Equal("EUR", pending[0].Currency);
         Assert.Equal("Quicksilver", pending[0].RemittanceInformation);
+        Assert.Equal(new BankSuggestedCategory(3, "Restaurants"), pending[0].SuggestedCategory);
         Assert.Equal(6, pending[1].Id);
         Assert.Null(pending[1].RemittanceInformation);
+        Assert.Null(pending[1].SuggestedCategory);
     }
 
     [Fact]
@@ -162,14 +167,16 @@ public class DataApiPostgresBankTransactionRepositoryTests
         // staging, issue #91): id and amount arrive as strings, not typed values.
         var client = new FakePostgresDataApiClient();
         client.NextResults.Enqueue(new PostgresResult(
-            ["id", "account_uid", "booking_date", "amount", "currency", "remittance_information"],
+            ["id", "account_uid", "booking_date", "amount", "currency", "remittance_information", "category_id", "category_name"],
             [
                 [PostgresValue.FromString("7"), PostgresValue.FromString("eb-account-1"),
                     PostgresValue.FromString("2026-10-05"), PostgresValue.FromString("9.20"),
-                    PostgresValue.FromString("EUR"), PostgresValue.FromString("Quicksilver")],
+                    PostgresValue.FromString("EUR"), PostgresValue.FromString("Quicksilver"),
+                    PostgresValue.FromString("3"), PostgresValue.FromString("Restaurants")],
                 [PostgresValue.FromString("6"), PostgresValue.FromString("eb-account-1"),
                     PostgresValue.FromString("2026-10-04"), PostgresValue.FromString("3.60"),
-                    PostgresValue.FromString("EUR"), PostgresValue.Null()],
+                    PostgresValue.FromString("EUR"), PostgresValue.Null(),
+                    PostgresValue.Null(), PostgresValue.Null()],
             ],
             0));
         var repository = new DataApiPostgresBankTransactionRepository(client);
@@ -183,5 +190,37 @@ public class DataApiPostgresBankTransactionRepositoryTests
         Assert.Equal(6, pending[1].Id);
         Assert.Equal(3.60m, pending[1].Amount);
         Assert.Null(pending[1].RemittanceInformation);
+        Assert.Equal(new BankSuggestedCategory(3, "Restaurants"), pending[0].SuggestedCategory);
+    }
+
+    [Fact]
+    public async Task UpdateSuggestedCategoryAsync_ShouldBindSyncKeyAndCategory_AsNamedParameters()
+    {
+        var client = new FakePostgresDataApiClient();
+        var repository = new DataApiPostgresBankTransactionRepository(client);
+
+        await repository.UpdateSuggestedCategoryAsync("sync-key-1", 42);
+
+        var sql = Assert.Single(client.ExecutedSql);
+        Assert.Contains("UPDATE bank_transactions", sql);
+        Assert.Contains("SET suggested_category_id = :category_id", sql);
+        Assert.Contains("WHERE sync_key = :sync_key", sql);
+        var parameters = Assert.Single(client.ExecutedParameters)!;
+        var byName = parameters.ToDictionary(p => p.Name, p => p.Value);
+        // Typed write (bigint column): a string field fails live with a type mismatch.
+        Assert.Equal(42L, byName["category_id"].LongValue);
+        Assert.Equal("sync-key-1", byName["sync_key"].StringValue);
+    }
+
+    [Fact]
+    public async Task UpdateSuggestedCategoryAsync_ShouldBindNullCategory_WhenNoSuggestion()
+    {
+        var client = new FakePostgresDataApiClient();
+        var repository = new DataApiPostgresBankTransactionRepository(client);
+
+        await repository.UpdateSuggestedCategoryAsync("sync-key-1", null);
+
+        var parameters = Assert.Single(client.ExecutedParameters)!;
+        Assert.True(parameters.Single(p => p.Name == "category_id").Value.IsNull);
     }
 }

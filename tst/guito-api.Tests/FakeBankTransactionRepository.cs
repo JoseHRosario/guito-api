@@ -25,4 +25,13 @@ public class FakeBankTransactionRepository : IBankTransactionRepository
 
     public Task<IReadOnlyList<BankTransactionPendingDetail>> ListPendingAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<BankTransactionPendingDetail>>([.. Pending]);
+
+    /// <summary>Suggestion updates recorded as (sync_key, category id), in call order (issue #112).</summary>
+    public List<(string SyncKey, long? CategoryId)> SuggestionUpdates { get; } = [];
+
+    public Task UpdateSuggestedCategoryAsync(string syncKey, long? categoryId, CancellationToken cancellationToken = default)
+    {
+        SuggestionUpdates.Add((syncKey, categoryId));
+        return Task.CompletedTask;
+    }
 }

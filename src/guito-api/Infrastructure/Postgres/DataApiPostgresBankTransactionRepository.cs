@@ -22,10 +22,18 @@ public class DataApiPostgresBankTransactionRepository(IPostgresDataApiClient cli
         """;
 
     private const string ListPendingSql = """
-        SELECT id, account_uid, booking_date, amount, currency, remittance_information
-        FROM bank_transactions
-        WHERE expense_id IS NULL
-        ORDER BY booking_date DESC, id DESC
+        SELECT bt.id, bt.account_uid, bt.booking_date, bt.amount, bt.currency,
+               bt.remittance_information, c.id, c.name
+        FROM bank_transactions bt
+        LEFT JOIN categories c ON c.id = bt.suggested_category_id
+        WHERE bt.expense_id IS NULL
+        ORDER BY bt.booking_date DESC, bt.id DESC
+        """;
+
+    private const string UpdateSuggestedCategorySql = """
+        UPDATE bank_transactions
+        SET suggested_category_id = :category_id
+        WHERE sync_key = :sync_key
         """;
 
     public async Task<bool> InsertOrSkipAsync(BankTransactionInsert transaction, CancellationToken cancellationToken = default)
@@ -44,6 +52,17 @@ public class DataApiPostgresBankTransactionRepository(IPostgresDataApiClient cli
         var result = await client.ExecuteAsync(ListPendingSql, cancellationToken: cancellationToken);
         return result.Rows.Select(ToPendingDetail).ToList();
     }
+
+    public Task UpdateSuggestedCategoryAsync(string syncKey, long? categoryId, CancellationToken cancellationToken = default) =>
+        client.ExecuteAsync(
+            UpdateSuggestedCategorySql,
+            [
+                // Typed write: the Data API's string-encoding quirk is READ-side only —
+                // a string field into a bigint column fails live (DatabaseErrorException).
+                new("category_id", categoryId is { } id ? PostgresValue.FromLong(id) : PostgresValue.Null()),
+                new("sync_key", PostgresValue.FromString(syncKey)),
+            ],
+            cancellationToken: cancellationToken);
 
     private static IReadOnlyList<PostgresParameter> ToParameters(BankTransactionInsert transaction) =>
     [
@@ -65,12 +84,17 @@ public class DataApiPostgresBankTransactionRepository(IPostgresDataApiClient cli
         BookingDate: DateOnly.Parse(row[2].StringValue!),
         Amount: Amount(row),
         Currency: row[4].StringValue!,
-        RemittanceInformation: row[5].IsNull ? null : row[5].StringValue);
+        RemittanceInformation: row[5].IsNull ? null : row[5].StringValue,
+        SuggestedCategory: row[6].IsNull
+            ? null
+            : new BankSuggestedCategory(Id(row, 6), row[7].StringValue!));
 
     // The Data API returns bigint/numeric columns as string fields (observed live in
     // staging, issue #91) — accept either encoding, never assume one.
-    private static long Id(IReadOnlyList<PostgresValue> row) =>
-        row[0].StringValue is { } id ? long.Parse(id, CultureInfo.InvariantCulture) : row[0].LongValue!.Value;
+    private static long Id(IReadOnlyList<PostgresValue> row, int column = 0) =>
+        row[column].StringValue is { } id
+            ? long.Parse(id, CultureInfo.InvariantCulture)
+            : row[column].LongValue!.Value;
 
     private static decimal Amount(IReadOnlyList<PostgresValue> row) =>
         row[3].StringValue is { } amount

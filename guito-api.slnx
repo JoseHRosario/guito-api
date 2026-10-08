@@ -2,6 +2,8 @@
   <Folder Name="/db/migrations/" Id="6b1f9a2c-4d3e-4f8a-9c1d-2e5b7a8c9d0e">
     <File Path="db/migrations/001_init.sql" />
     <File Path="db/migrations/002_bank_transactions.sql" />
+    <File Path="db/migrations/003_categories.sql" />
+    <File Path="db/migrations/004_seed_categories.sql" />
   </Folder>
   <Folder Name="/docs/" Id="4a5e54fd-a648-58af-ffbf-706d32b5cdde">
     <File Path="docs/adr/0001-aws-serverless-deployment-target.md" />
@@ -14,6 +16,7 @@
     <File Path="docs/adr/0008-per-environment-secrets-payload.md" />
     <File Path="docs/adr/0009-smoke-scope-quarantine-tab.md" />
     <File Path="docs/adr/0011-repository-pattern.md" />
+    <File Path="docs/adr/0014-categories-mirror-postgres.md" />
     <File Path="docs/adr/0010-amounts-stored-positive.md" />
   </Folder>
   <Folder Name="/sit/">

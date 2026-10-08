@@ -24,4 +24,12 @@ public interface IBankTransactionRepository
     /// none are unmatched.
     /// </summary>
     Task<IReadOnlyList<BankTransactionPendingDetail>> ListPendingAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Stores the Jev-suggested category (issue #112) on the transaction with the
+    /// given sync_key — the dedup anchor returned by the insert. Only called for NEW
+    /// rows and only when a category was resolved; an absent suggestion stays NULL
+    /// (fail-open, ADR-0014).
+    /// </summary>
+    Task UpdateSuggestedCategoryAsync(string syncKey, long? categoryId, CancellationToken cancellationToken = default);
 }
