@@ -18,4 +18,7 @@ public class EnableBankingOptions
     /// redirect_url on POST /auth.
     /// </summary>
     public string AuthCallbackUrl { get; set; } = string.Empty;
+
+    /// <summary>EB API base URL (sandbox and production share it; kept configurable for tests).</summary>
+    public string ApiBaseUrl { get; set; } = "https://api.enablebanking.com/";
 }

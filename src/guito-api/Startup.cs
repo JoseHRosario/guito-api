@@ -4,6 +4,8 @@ using GuitoApi.Infrastructure.Postgres;
 using GuitoApi.Infrastructure.Secrets;
 using GuitoApi.Infrastructure.Sheets;
 using GuitoApi.Infrastructure.AI;
+using GuitoApi.Infrastructure.EnableBanking;
+using GuitoApi.Services.BankAuth;
 using GuitoApi.Exceptions;
 using GuitoApi.Middleware;
 using GuitoApi.Repositories;
@@ -85,18 +87,32 @@ namespace GuitoApi
             services.AddScoped<ISheetScopeResolver, SheetScopeResolver>();
             services.AddScoped<IListCategoryService, ListCategoryGoogleApisSheetsService>();
             // Bank transaction provider selected by configuration (ADR-0004): EnableBanking is
-            // the PSD2 provider; Dummy serves canned data for local dev until the Enable
-            // Banking adapter lands (issue #5, first PR).
+            // the PSD2 provider (issue #89); Dummy serves canned data for local dev and CI.
             services.AddScoped<IListTransactionsService>(sp =>
             {
                 var bankProvider = sp.GetRequiredService<IOptions<AppConfigurationOptions>>().Value.BankProvider;
                 return bankProvider switch
                 {
                     "Dummy" => new ListTransactionsDummyService(),
-                    "EnableBanking" => new ListTransactionsDummyService(),
+                    "EnableBanking" => new ListTransactionsEnableBankingService(
+                        sp.GetRequiredService<IEnableBankingClient>(),
+                        sp.GetRequiredService<IBankAccountRepository>()),
                     _ => throw new InvalidOperationException($"Unknown BankProvider '{bankProvider}'.")
                 };
             });
+            // Enable Banking adapter internals (issue #89, ADR-0004): fresh JWT client
+            // assertion per request, transport seam faked in tests, typed client on top.
+            services.Configure<EnableBankingOptions>(Configuration.GetSection(AppConfigurationOptions.AppConfiguration).GetSection("EnableBanking"));
+            services.AddScoped<IEnableBankingJwtSigner, EnableBankingJwtSigner>();
+            services.AddHttpClient(HttpEnableBankingTransport.HttpClientName, client =>
+                client.BaseAddress = new Uri(
+                    Configuration.GetSection(AppConfigurationOptions.AppConfiguration).GetSection("EnableBanking")
+                        .Get<EnableBankingOptions>()?.ApiBaseUrl ?? "https://api.enablebanking.com/"));
+            services.AddScoped<IEnableBankingTransport, HttpEnableBankingTransport>();
+            services.AddScoped<IEnableBankingClient, EnableBankingClient>();
+            services.AddScoped<IBankAccountRepository, DataApiPostgresBankAccountRepository>();
+            services.AddScoped<IGetBankAuthUrlService, GetBankAuthUrlService>();
+            services.AddScoped<IFinishBankAuthService, FinishBankAuthService>();
             services.AddScoped<IGooglesheetsClientProvider, GooglesheetsClientProvider>();
             services.AddScoped<IExtractMethodService, ExtractMethodService>();
             services.AddScoped<IExpenseExtractionRepository, OpenRouterExpenseExtractionRepository>();

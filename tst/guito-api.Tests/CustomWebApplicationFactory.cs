@@ -1,10 +1,13 @@
-using GuitoApi.Infrastructure.Secrets;
 using GuitoApi.Infrastructure.AI;
+using GuitoApi.Infrastructure.EnableBanking;
+using GuitoApi.Infrastructure.Secrets;
 using GuitoApi.Infrastructure.Sheets;
+using GuitoApi.Repositories;
 using GuitoApi.Services.Account;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GuitoApi.Tests;
@@ -17,24 +20,52 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
     /// <summary>Shared stub for all OpenRouter traffic; tests assert against it.</summary>
     public FakeOpenRouterHttpHandler OpenRouterHandler { get; } = new();
 
+    /// <summary>Shared stub for all Enable Banking traffic (issue #89); tests assert against it.</summary>
+    public FakeEnableBankingTransport EnableBankingTransport { get; } = new();
+
+    /// <summary>Shared fake of the linked-accounts store (issue #89).</summary>
+    public FakeBankAccountRepository BankAccounts { get; } = new();
+
+    /// <summary>
+    /// When true the bank provider stays EnableBanking (real adapter over the faked EB
+    /// transport); the default keeps the Dummy provider, mirroring the default config.
+    /// </summary>
+    public bool UseEnableBankingProvider { get; set; }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
+        if (UseEnableBankingProvider)
+        {
+            builder.ConfigureAppConfiguration((_, configuration) =>
+                configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["AppConfiguration:BankProvider"] = "EnableBanking",
+                    ["AppConfiguration:EnableBanking:AuthCallbackUrl"] = "https://test/BankAuth/callback",
+                }));
+        }
+
         builder.ConfigureTestServices(services =>
         {
             var sheets = SheetsHandler;
             var openRouter = OpenRouterHandler;
             Replace<IGooglesheetsClientProvider>(services, sp => new FakeGooglesheetsClientProvider(sheets));
             Replace<IOpenRouterClientProvider>(services, _ => new FakeOpenRouterClientProvider(openRouter));
-            Replace<IListTransactionsService>(services, _ => new ListTransactionsDummyService());
+            if (!UseEnableBankingProvider)
+                Replace<IListTransactionsService>(services, _ => new ListTransactionsDummyService());
             // Canned secrets: the repo has no real ones (gitignored by design).
             var descriptor = services.Single(d => d.ServiceType == typeof(ISecretsProvider));
             services.Remove(descriptor);
             services.AddSingleton<ISecretsProvider>(new FakeSecretsProvider());
+            if (UseEnableBankingProvider)
+            {
+                Replace<IEnableBankingTransport>(services, _ => EnableBankingTransport);
+                Replace<IBankAccountRepository>(services, _ => BankAccounts);
+            }
         });
     }
 
-    private static void Replace<TService>(IServiceCollection services, Func<IServiceProvider, TService> factory)
+    private void Replace<TService>(IServiceCollection services, Func<IServiceProvider, TService> factory)
     {
         var descriptor = services.Single(d => d.ServiceType == typeof(TService));
         services.Remove(descriptor);
