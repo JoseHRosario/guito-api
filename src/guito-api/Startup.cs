@@ -154,6 +154,7 @@ namespace GuitoApi
             services.AddScoped<IBankTransactionRepository, DataApiPostgresBankTransactionRepository>();
             // Bank sync (issue #90): fetch from EB + idempotent store, per-request.
             services.AddScoped<ISyncBankTransactionsService, SyncBankTransactionsService>();
+            services.AddScoped<IListPendingBankTransactionsService, ListPendingBankTransactionsService>();
         }
 
         private ISecretsProvider CreateSecretsProvider(string? secretsLocation) => secretsLocation switch

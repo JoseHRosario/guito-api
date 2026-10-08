@@ -14,6 +14,9 @@ public class FakeBankTransactionRepository : IBankTransactionRepository
 
     public List<BankTransactionInsert> Inserts { get; } = [];
 
+    /// <summary>Scripted pending rows returned by ListPendingAsync (issue #91 GET test).</summary>
+    public List<BankTransactionPendingDetail> Pending { get; } = [];
+
     public Task<bool> InsertOrSkipAsync(BankTransactionInsert transaction, CancellationToken cancellationToken = default)
     {
         Inserts.Add(transaction);
@@ -21,5 +24,5 @@ public class FakeBankTransactionRepository : IBankTransactionRepository
     }
 
     public Task<IReadOnlyList<BankTransactionPendingDetail>> ListPendingAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult<IReadOnlyList<BankTransactionPendingDetail>>([]);
+        Task.FromResult<IReadOnlyList<BankTransactionPendingDetail>>([.. Pending]);
 }

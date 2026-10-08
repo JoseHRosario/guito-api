@@ -1,3 +1,4 @@
+using System.Globalization;
 using GuitoApi.Model;
 using GuitoApi.Repositories;
 
@@ -59,10 +60,20 @@ public class DataApiPostgresBankTransactionRepository(IPostgresDataApiClient cli
     ];
 
     private static BankTransactionPendingDetail ToPendingDetail(IReadOnlyList<PostgresValue> row) => new(
-        Id: row[0].LongValue!.Value,
+        Id: Id(row),
         AccountUid: row[1].StringValue!,
         BookingDate: DateOnly.Parse(row[2].StringValue!),
-        Amount: (decimal)row[3].DoubleValue!.Value,
+        Amount: Amount(row),
         Currency: row[4].StringValue!,
         RemittanceInformation: row[5].IsNull ? null : row[5].StringValue);
+
+    // The Data API returns bigint/numeric columns as string fields (observed live in
+    // staging, issue #91) — accept either encoding, never assume one.
+    private static long Id(IReadOnlyList<PostgresValue> row) =>
+        row[0].StringValue is { } id ? long.Parse(id, CultureInfo.InvariantCulture) : row[0].LongValue!.Value;
+
+    private static decimal Amount(IReadOnlyList<PostgresValue> row) =>
+        row[3].StringValue is { } amount
+            ? decimal.Parse(amount, CultureInfo.InvariantCulture)
+            : (decimal)row[3].DoubleValue!.Value;
 }
