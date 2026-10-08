@@ -8,8 +8,8 @@ namespace GuitoApi.Services.Account
     /// <summary>
     /// Enable Banking adapter behind IListTransactionsService (issue #89, ADR-0004):
     /// reads the linked accounts (bank_accounts, #89 consent flow), fetches every
-    /// account's transactions with strategy=default and continuation_key pagination,
-    /// and keeps only settled expense-direction rows (status=BOOK, DBIT) with amounts
+    /// account's transactions over continuation-key pagination and keeps only settled
+    /// expense-direction rows (status=BOOK, DBIT) with amounts
     /// normalized positive at the storage boundary (ADR-0010). Fetched rows are NOT
     /// stored here — that is the sync endpoint's job (#90). Speaks only provider ports
     /// (IBankTransactionProvider, IBankAccountRepository) — no EB types (issue #103).

@@ -39,16 +39,13 @@ namespace GuitoApi.Infrastructure.EnableBanking
                 state,
                 redirect_url = redirectUrl,
             }, JsonOptions);
-            var response = await SendAsync(new(HttpMethod.Post, "auth", body), cancellationToken);
-            var root = Parse(response.Body);
+            var root = await SendAndParseAsync(new(HttpMethod.Post, "auth", body), cancellationToken);
             return new BankConsentStart(root.GetProperty("url").GetString() ?? string.Empty);
         }
-
         public async Task<BankConsentSession> FinishAuthorizationAsync(string code, CancellationToken cancellationToken = default)
         {
             var body = JsonSerializer.Serialize(new { code }, JsonOptions);
-            var response = await SendAsync(new(HttpMethod.Post, "sessions", body), cancellationToken);
-            return ParseSession(Parse(response.Body));
+            return ParseSession(await SendAndParseAsync(new(HttpMethod.Post, "sessions", body), cancellationToken));
         }
 
         public async Task<BankTransactionSourcePage> ListTransactionsAsync(
@@ -66,8 +63,7 @@ namespace GuitoApi.Infrastructure.EnableBanking
             query.Add("strategy=default");
 
             var path = $"accounts/{Uri.EscapeDataString(accountUid)}/transactions{(query.Count > 0 ? $"?{string.Join('&', query)}" : string.Empty)}";
-            var response = await SendAsync(new(HttpMethod.Get, path, null), cancellationToken);
-            return ParseTransactionsPage(Parse(response.Body));
+            return ParseTransactionsPage(await SendAndParseAsync(new(HttpMethod.Get, path, null), cancellationToken));
         }
 
         /// <summary>
@@ -75,34 +71,33 @@ namespace GuitoApi.Infrastructure.EnableBanking
         /// throw ProblemException — fetch semantics (409 reconnect / 429 rate limit /
         /// 502) vs consent-flow semantics (rejected request/code → 400 / 502) differ.
         /// </summary>
-        private async Task<EnableBankingApiResponse> SendAsync(
+        private async Task<JsonElement> SendAndParseAsync(
             EnableBankingApiRequest request, CancellationToken cancellationToken)
         {
             var response = await _transport.SendAsync(request, cancellationToken);
             if (response.StatusCode is < 200 or >= 300)
-            {
-                var exception = EnableBankingApiException.FromResponse(response);
-                throw IsConsentRequest(request.Path)
-                    ? EnableBankingConsentErrorMapper.ToProblemException(exception)
-                    : EnableBankingFetchErrorMapper.ToProblemException(exception);
-            }
+                throw Classify(EnableBankingApiException.FromResponse(response), request.Path);
 
-            return response;
-        }
-
-        private static bool IsConsentRequest(string path) => path is "auth" or "sessions";
-
-        private static JsonElement Parse(string body)
-        {
             try
             {
-                return JsonDocument.Parse(body).RootElement.Clone();
+                return Parse(response.Body);
             }
             catch (JsonException exception)
             {
-                throw new ProblemException(502, $"Enable Banking returned malformed JSON: {exception.Message}");
+                throw Classify(
+                    new EnableBankingApiException(502, $"Enable Banking returned malformed JSON: {exception.Message}"),
+                    request.Path);
             }
         }
+
+        private static ProblemException Classify(EnableBankingApiException exception, string path) =>
+            IsConsentRequest(path)
+                ? EnableBankingConsentErrorMapper.ToProblemException(exception)
+                : EnableBankingFetchErrorMapper.ToProblemException(exception);
+
+        private static bool IsConsentRequest(string path) => path is "auth" or "sessions";
+
+        private static JsonElement Parse(string body) => JsonDocument.Parse(body).RootElement.Clone();
 
         private static BankConsentSession ParseSession(JsonElement root) => new(
             SessionId: root.GetProperty("session_id").GetString() ?? string.Empty,

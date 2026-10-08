@@ -1,6 +1,6 @@
 # PSD2 bank sync behind a swappable provider interface
 
-Date: 2026-10-03 (supersedes the GoCardless-first decision of the original 0004); amended 2026-10-05 per ADR-0013 (Postgres store, PS256 auth)
+Date: 2026-10-03 (supersedes the GoCardless-first decision of the original 0004); amended 2026-10-05 per ADR-0013 (Postgres store, auth); amended 2026-10-08 per issues #89–#103 (adapter shipped — RS256 verified over PS256; "provider interface" = the Repositories/ ports)
 
 The old Nordigen integration (used until 2024) was never reimplemented; Nordigen is now GoCardless Bank Account Data, which is closed to new signups and being wound down as a data-only product. Bank sync returns in Phase 2 behind the existing provider interface (`IListTransactionsService`), with **Enable Banking as the only real provider** — its free "Restricted Production" tier gives real transactions from self-linked EU banks (Portugal covered: CGD, Millennium BCP, Santander Totta, Novo Banco, BPI, Montepio) without a contract or paid tier. `ListTransactionsNordigenService` and the `Nordigen` configuration block are deleted; no GoCardless adapter will be built.
 
@@ -8,7 +8,9 @@ Provider selection is configuration-only (`AppConfiguration:BankProvider: "Enabl
 
 ## Decisions (grilling session, 2026-10-03)
 
-- **Auth**: every Enable Banking request carries a fresh **PS256** (RSA-PSS) JWT signed by the application private key (`System.IdentityModel.Tokens.Jwt`, no SDK) — corrected from RS256 per the EB API reference (ADR-0013). The private key lives in dotnet user-secrets locally and AWS Secrets Manager in deployed environments, using the same per-environment secrets mechanism as the Sheets service account (ADR-0008).
+**Amendment (2026-10-08, issues #89–#103):** the "provider interface" of this ADR means the application-layer ports `IBankTransactionProvider` and `IBankConsentProvider` in `src/guito-api/Repositories/` (ADR-0011 shape) — services reference only those and `Model/*` types; the Enable Banking wire vocabulary (JSON, exceptions, records) is internal to `Infrastructure/EnableBanking/`. `IListTransactionsService` remains the application-facing service seam above them.
+
+- **Auth**: every Enable Banking request carries a fresh JWT signed by the application private key (`System.IdentityModel.Tokens.Jwt`, no SDK) — RS256, **empirically verified against the EB sandbox 2026-10-08** (`GET /application`: PS256 → 401 "Wrong signature", RS256 → 200; the earlier PS256 reading was wrong). The private key lives in AWS Secrets Manager deployed (staging: dedicated `guito-api/eb-staging-pk`) and the application id (the JWT `kid`) in config, using the ADR-0008 per-environment secrets mechanism.
 - **Consent flow**: UI-driven — the API returns the Enable Banking auth redirect URL, the SPA navigates the bank SCA, the callback hits an API "finish auth" endpoint that calls `POST /sessions`. Minimal intermediate state (auth/session ids) persists with the `bank_accounts` rows (Postgres, ADR-0013). The consent state's long-term home is the Settings UI page.
 - **Consent inside the adapter**: sessions/consent lifecycle is an implementation detail of the Enable Banking provider. The interface stays `ListAsync(dateFrom, dateTo)`; a needed re-auth surfaces as a typed exception mapped to 409 ("reconnect needed"). The interface evolves only if a second real provider forces it.
 - **Sync trigger**: on demand only ("sync now"). No scheduler — per-bank PSD2 rate limits are respected by the user's own cadence.

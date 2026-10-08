@@ -10,7 +10,8 @@ namespace GuitoApi.Services.BankTransactions
 {
     /// <summary>
     /// POST /BankTransaction/sync (issue #90, ADR-0004/0013): for every linked account,
-    /// fetches EB transactions with strategy=default over the fixed 7-day window, keeps
+    /// fetches provider transactions over the fixed 7-day window with continuation-key
+    /// pagination, keeps
     /// only settled expense-direction rows (status=BOOK, DBIT), and stores them via
     /// via IBankTransactionRepository — INSERT ... ON CONFLICT (sync_key) DO NOTHING
     /// makes re-syncs over the same window idempotent. Response is exactly {fetched, new}.
@@ -91,7 +92,7 @@ namespace GuitoApi.Services.BankTransactions
         };
 
         /// <summary>
-        /// The dedup anchor (ADR-0013): SHA-256 over EB's recommended composite —
+        /// The dedup anchor (ADR-0013): SHA-256 over the provider's recommended composite —
         /// account uid + booking date + amount (the stored, positive value) + credit/debit
         /// indicator + entry reference + counterparty. Re-syncs of the same row hash
         /// identically.
