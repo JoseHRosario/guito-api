@@ -61,4 +61,19 @@ PYEOF
     --database "$DB" --sql "INSERT INTO _migrations (name) VALUES ('$NAME')" --no-cli-pager >/dev/null
   echo "$NAME applied ✓"
 done
+
+# Tables are created by the postgres admin role, but the app connects as the per-env
+# role (guito_dev/staging/prod, issue #80) — grant it on everything the migrations
+# made, plus default privileges so future migrations need no manual grant (issue #91:
+# hit live — bank_accounts was permission-denied for the app role).
+echo "Granting app-role privileges on $DB to $DB ..."
+aws rds-data execute-statement --resource-arn "$CLUSTER_ARN" --secret-arn "$ADMIN_SECRET_ARN" \
+  --database "$DB" --sql "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO $DB" --no-cli-pager >/dev/null
+aws rds-data execute-statement --resource-arn "$CLUSTER_ARN" --secret-arn "$ADMIN_SECRET_ARN" \
+  --database "$DB" --sql "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO $DB" --no-cli-pager >/dev/null
+aws rds-data execute-statement --resource-arn "$CLUSTER_ARN" --secret-arn "$ADMIN_SECRET_ARN" \
+  --database "$DB" --sql "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO $DB" --no-cli-pager >/dev/null
+aws rds-data execute-statement --resource-arn "$CLUSTER_ARN" --secret-arn "$ADMIN_SECRET_ARN" \
+  --database "$DB" --sql "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO $DB" --no-cli-pager >/dev/null
+
 echo "db-apply done ($ENVIRONMENT → $DB)"
