@@ -146,7 +146,8 @@ namespace GuitoApi.Infrastructure.EnableBanking
                         CreditDebitIndicator: GetStringOrNull(element, "credit_debit_indicator") ?? string.Empty,
                         Status: GetStringOrNull(element, "status") ?? string.Empty,
                         RemittanceInformation: JoinRemittanceInformation(element),
-                        Note: GetStringOrNull(element, "note")));
+                        Note: GetStringOrNull(element, "note"),
+                        CounterpartyName: PartyName(element, "creditor") ?? PartyName(element, "debtor")));
                 }
             }
 
@@ -161,6 +162,13 @@ namespace GuitoApi.Infrastructure.EnableBanking
             element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
                 ? value.GetString()
                 : null;
+
+        /// <summary>The counterparty's name (creditor for DBIT rows — the sync_key composite, ADR-0013).</summary>
+        private static string? PartyName(JsonElement element, string partyProperty) =>
+            element.TryGetProperty(partyProperty, out var party)
+            && party.ValueKind == JsonValueKind.Object
+            ? GetStringOrNull(party, "name")
+            : null;
 
         private static string? JoinRemittanceInformation(JsonElement element) =>
             element.TryGetProperty("remittance_information", out var remittance)

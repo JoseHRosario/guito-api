@@ -26,6 +26,9 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
     /// <summary>Shared fake of the linked-accounts store (issue #89).</summary>
     public FakeBankAccountRepository BankAccounts { get; } = new();
 
+    /// <summary>Shared fake of the bank-transactions store (issue #90).</summary>
+    public FakeBankTransactionRepository BankTransactions { get; } = new();
+
     /// <summary>
     /// When true the bank provider stays EnableBanking (real adapter over the faked EB
     /// transport); the default keeps the Dummy provider, mirroring the default config.
@@ -61,6 +64,7 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
             {
                 Replace<IEnableBankingTransport>(services, _ => EnableBankingTransport);
                 Replace<IBankAccountRepository>(services, _ => BankAccounts);
+                Replace<IBankTransactionRepository>(services, _ => BankTransactions);
             }
         });
     }

@@ -15,6 +15,7 @@ using GuitoApi.Services.ArtificialIntelligence;
 using GuitoApi.Services.Category;
 using GuitoApi.Services.Auth;
 using GuitoApi.Services.Expense;
+using GuitoApi.Services.BankTransactions;
 using Microsoft.Extensions.Options;
 using Serilog;
 
@@ -148,6 +149,8 @@ namespace GuitoApi
             // Bank Transactions aggregate (issue #88): ADR-0011 shape — interface in
             // Repositories/, Data API implementation here in Infrastructure/Postgres/.
             services.AddScoped<IBankTransactionRepository, DataApiPostgresBankTransactionRepository>();
+            // Bank sync (issue #90): fetch from EB + idempotent store, per-request.
+            services.AddScoped<ISyncBankTransactionsService, SyncBankTransactionsService>();
         }
 
         private ISecretsProvider CreateSecretsProvider(string? secretsLocation) => secretsLocation switch
