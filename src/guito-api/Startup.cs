@@ -96,7 +96,7 @@ namespace GuitoApi
                 {
                     "Dummy" => new ListTransactionsDummyService(),
                     "EnableBanking" => new ListTransactionsService(
-                        sp.GetRequiredService<IEnableBankingClient>(),
+                        sp.GetRequiredService<IBankTransactionProvider>(),
                         sp.GetRequiredService<IBankAccountRepository>()),
                     _ => throw new InvalidOperationException($"Unknown BankProvider '{bankProvider}'.")
                 };
@@ -129,7 +129,10 @@ namespace GuitoApi
             services.AddHttpClient(HttpEnableBankingTransport.HttpClientName, (sp, client) =>
                 client.BaseAddress = new Uri(sp.GetRequiredService<IOptions<EnableBankingOptions>>().Value.ApiBaseUrl));
             services.AddScoped<IEnableBankingTransport, HttpEnableBankingTransport>();
-            services.AddScoped<IEnableBankingClient, EnableBankingClient>();
+            // The adapter implements the application-layer provider ports (issue #103):
+            // services reference only Repositories/ interfaces — never EB internals.
+            services.AddScoped<IBankConsentProvider, EnableBankingClient>();
+            services.AddScoped<IBankTransactionProvider, EnableBankingClient>();
             services.AddScoped<IBankAccountRepository, DataApiPostgresBankAccountRepository>();
             services.AddScoped<IGetBankAuthUrlService, GetBankAuthUrlService>();
             services.AddScoped<IFinishBankAuthService, FinishBankAuthService>();

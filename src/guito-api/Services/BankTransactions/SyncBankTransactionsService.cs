@@ -3,7 +3,6 @@ using System.Security.Cryptography;
 using System.Text;
 using GuitoApi.DataTransferObjects.Output;
 using GuitoApi.Exceptions;
-using GuitoApi.Infrastructure.EnableBanking;
 using GuitoApi.Model;
 using GuitoApi.Repositories;
 
@@ -11,23 +10,25 @@ namespace GuitoApi.Services.BankTransactions
 {
     /// <summary>
     /// POST /BankTransaction/sync (issue #90, ADR-0004/0013): for every linked account,
-    /// fetches EB transactions with strategy=default over the fixed 7-day window, keeps
+    /// fetches provider transactions over the fixed 7-day window with continuation-key
+    /// pagination, keeps
     /// only settled expense-direction rows (status=BOOK, DBIT), and stores them via
-    /// IBankTransactionRepository — INSERT ... ON CONFLICT (sync_key) DO NOTHING makes
-    /// re-syncs over the same window idempotent. Response is exactly {fetched, new}.
+    /// via IBankTransactionRepository — INSERT ... ON CONFLICT (sync_key) DO NOTHING
+    /// makes re-syncs over the same window idempotent. Response is exactly {fetched, new}.
+    /// Speaks only provider ports (issue #103) — no Enable Banking types.
     /// </summary>
     public class SyncBankTransactionsService : ISyncBankTransactionsService
     {
         public const int WindowDays = 7;
 
-        private readonly IEnableBankingClient _client;
+        private readonly IBankTransactionProvider _transactionsProvider;
         private readonly IBankAccountRepository _accounts;
         private readonly IBankTransactionRepository _transactions;
 
         public SyncBankTransactionsService(
-            IEnableBankingClient client, IBankAccountRepository accounts, IBankTransactionRepository transactions)
+            IBankTransactionProvider transactionsProvider, IBankAccountRepository accounts, IBankTransactionRepository transactions)
         {
-            _client = client;
+            _transactionsProvider = transactionsProvider;
             _accounts = accounts;
             _transactions = transactions;
         }
@@ -54,28 +55,15 @@ namespace GuitoApi.Services.BankTransactions
             string? continuationKey = null;
             do
             {
-                var page = await FetchPageAsync(account, dateFrom, dateTo, continuationKey, cancellationToken);
+                // The port surfaces failures already classified as ProblemException (409/429/502).
+                var page = await _transactionsProvider.ListTransactionsAsync(account.Uid, dateFrom, dateTo, continuationKey, cancellationToken);
                 await StoreBookedDebitsAsync(account, page, result, cancellationToken);
                 continuationKey = page.ContinuationKey;
             } while (continuationKey is not null);
         }
 
-        private async Task<EnableBankingTransactionsPage> FetchPageAsync(
-            BankAccountSummary account, DateOnly dateFrom, DateOnly dateTo,
-            string? continuationKey, CancellationToken cancellationToken)
-        {
-            try
-            {
-                return await _client.ListTransactionsAsync(account.Uid, dateFrom, dateTo, continuationKey, cancellationToken);
-            }
-            catch (EnableBankingApiException exception)
-            {
-                throw EnableBankingFetchErrorMapper.ToProblemException(exception);
-            }
-        }
-
         private async Task StoreBookedDebitsAsync(
-            BankAccountSummary account, EnableBankingTransactionsPage page, BankSyncResult result,
+            BankAccountSummary account, BankTransactionSourcePage page, BankSyncResult result,
             CancellationToken cancellationToken)
         {
             foreach (var transaction in page.Transactions)
@@ -89,7 +77,7 @@ namespace GuitoApi.Services.BankTransactions
             }
         }
 
-        private static BankTransactionInsert ToInsert(BankAccountSummary account, EnableBankingTransaction transaction) => new()
+        private static BankTransactionInsert ToInsert(BankAccountSummary account, BankTransactionSource transaction) => new()
         {
             AccountUid = account.Uid,
             BookingDate = transaction.BookingDate,
@@ -104,12 +92,12 @@ namespace GuitoApi.Services.BankTransactions
         };
 
         /// <summary>
-        /// The dedup anchor (ADR-0013): SHA-256 over EB's recommended composite —
+        /// The dedup anchor (ADR-0013): SHA-256 over the provider's recommended composite —
         /// account uid + booking date + amount (the stored, positive value) + credit/debit
         /// indicator + entry reference + counterparty. Re-syncs of the same row hash
         /// identically.
         /// </summary>
-        private static string ComputeSyncKey(BankAccountSummary account, EnableBankingTransaction transaction)
+        private static string ComputeSyncKey(BankAccountSummary account, BankTransactionSource transaction)
         {
             var composite = string.Create(CultureInfo.InvariantCulture,
                 $"{account.Uid}|{transaction.BookingDate:yyyy-MM-dd}|{Math.Abs(transaction.Amount)}|{transaction.CreditDebitIndicator}|{transaction.EntryReference}|{transaction.CounterpartyName}");

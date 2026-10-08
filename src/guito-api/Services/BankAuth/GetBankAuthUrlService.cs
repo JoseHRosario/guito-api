@@ -1,25 +1,27 @@
 using GuitoApi.Configuration;
 using GuitoApi.DataTransferObjects.Output;
 using GuitoApi.Exceptions;
-using GuitoApi.Infrastructure.EnableBanking;
+using GuitoApi.Repositories;
 using Microsoft.Extensions.Options;
 
 namespace GuitoApi.Services.BankAuth
 {
     /// <summary>
-    /// Builds the bank auth redirect URL for the SPA (issue #89): EB POST /auth with the
-    /// chosen ASPSP, a fresh random state, and the registered callback URL (config).
-    /// The resulting authorization session lives on the EB side; the callback POSTs its
-    /// code to /BankAuth/callback which finishes the flow.
+    /// Builds the bank auth redirect URL for the SPA (issue #89): consent provider
+    /// start-authorization with the chosen ASPSP, a fresh random state, and the
+    /// registered callback URL (config). The resulting authorization session lives on
+    /// the EB side; the callback POSTs its code to /BankAuth/callback which finishes
+    /// the flow. Speaks only the IBankConsentProvider port — no EB types (issue #103);
+    /// the port surfaces failures already classified as ProblemException.
     /// </summary>
     public class GetBankAuthUrlService : IGetBankAuthUrlService
     {
-        private readonly IEnableBankingClient _client;
+        private readonly IBankConsentProvider _consentProvider;
         private readonly IOptions<EnableBankingOptions> _options;
 
-        public GetBankAuthUrlService(IEnableBankingClient client, IOptions<EnableBankingOptions> options)
+        public GetBankAuthUrlService(IBankConsentProvider consentProvider, IOptions<EnableBankingOptions> options)
         {
-            _client = client;
+            _consentProvider = consentProvider;
             _options = options;
         }
 
@@ -32,16 +34,8 @@ namespace GuitoApi.Services.BankAuth
             if (string.IsNullOrWhiteSpace(aspspName) || string.IsNullOrWhiteSpace(aspspCountry))
                 throw new ProblemException(400, "Both 'aspsp' and 'country' query parameters are required.");
 
-            EnableBankingStartAuthorization authorization;
-            try
-            {
-                authorization = await _client.StartAuthorizationAsync(
-                    aspspName, aspspCountry, Guid.NewGuid().ToString(), _options.Value.AuthCallbackUrl, cancellationToken);
-            }
-            catch (EnableBankingApiException exception)
-            {
-                throw BankAuthErrorMapper.ToProblemException(exception);
-            }
+            var authorization = await _consentProvider.StartAuthorizationAsync(
+                aspspName, aspspCountry, Guid.NewGuid().ToString(), _options.Value.AuthCallbackUrl, cancellationToken);
 
             return new BankAuthUrl { Url = authorization.Url };
         }

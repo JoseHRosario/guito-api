@@ -1,6 +1,6 @@
 using GuitoApi.DataTransferObjects.Output;
 using GuitoApi.Exceptions;
-using GuitoApi.Infrastructure.EnableBanking;
+using GuitoApi.Model;
 using GuitoApi.Repositories;
 
 namespace GuitoApi.Services.Account
@@ -8,19 +8,20 @@ namespace GuitoApi.Services.Account
     /// <summary>
     /// Enable Banking adapter behind IListTransactionsService (issue #89, ADR-0004):
     /// reads the linked accounts (bank_accounts, #89 consent flow), fetches every
-    /// account's transactions with strategy=default and continuation_key pagination,
-    /// and keeps only settled expense-direction rows (status=BOOK, DBIT) with amounts
-    /// normalized positive at the provider boundary (ADR-0010). Fetched rows are NOT
-    /// stored here — that is the sync endpoint's job (#90).
+    /// account's transactions over continuation-key pagination and keeps only settled
+    /// expense-direction rows (status=BOOK, DBIT) with amounts
+    /// normalized positive at the storage boundary (ADR-0010). Fetched rows are NOT
+    /// stored here — that is the sync endpoint's job (#90). Speaks only provider ports
+    /// (IBankTransactionProvider, IBankAccountRepository) — no EB types (issue #103).
     /// </summary>
     public class ListTransactionsService : IListTransactionsService
     {
-        private readonly IEnableBankingClient _client;
+        private readonly IBankTransactionProvider _transactionsProvider;
         private readonly IBankAccountRepository _accounts;
 
-        public ListTransactionsService(IEnableBankingClient client, IBankAccountRepository accounts)
+        public ListTransactionsService(IBankTransactionProvider transactionsProvider, IBankAccountRepository accounts)
         {
-            _client = client;
+            _transactionsProvider = transactionsProvider;
             _accounts = accounts;
         }
 
@@ -38,26 +39,18 @@ namespace GuitoApi.Services.Account
         }
 
         private async Task<List<TransactionListDetail>> FetchAccountAsync(
-            Model.BankAccountSummary account, DateTime? dateFrom, DateTime? dateTo, CancellationToken cancellationToken)
+            BankAccountSummary account, DateTime? dateFrom, DateTime? dateTo, CancellationToken cancellationToken)
         {
             var details = new List<TransactionListDetail>();
             DateOnly? windowFrom = dateFrom is null ? null : DateOnly.FromDateTime(dateFrom.Value);
             DateOnly? windowTo = dateTo is null ? null : DateOnly.FromDateTime(dateTo.Value);
 
-            // continuation_key pagination until null (ADR-0004/#89).
+            // Continuation-key pagination until null (ADR-0004/#89); the port surfaces
+            // failures already classified as ProblemException (409/429/502).
             string? continuationKey = null;
             do
             {
-                EnableBankingTransactionsPage page;
-                try
-                {
-                    page = await _client.ListTransactionsAsync(account.Uid, windowFrom, windowTo, continuationKey, cancellationToken);
-                }
-                catch (EnableBankingApiException exception)
-                {
-                    throw EnableBankingFetchErrorMapper.ToProblemException(exception);
-                }
-
+                var page = await _transactionsProvider.ListTransactionsAsync(account.Uid, windowFrom, windowTo, continuationKey, cancellationToken);
                 foreach (var transaction in page.Transactions)
                 {
                     var detail = ToDetail(transaction);
@@ -75,7 +68,7 @@ namespace GuitoApi.Services.Account
         /// Keeps only settled expense-direction rows (status=BOOK, DBIT — ADR-0010 keeps
         /// amounts positive at the provider boundary; PDNG/INFO and income are dropped).
         /// </summary>
-        private static TransactionListDetail? ToDetail(EnableBankingTransaction transaction) =>
+        private static TransactionListDetail? ToDetail(BankTransactionSource transaction) =>
             transaction.Status != "BOOK" || transaction.CreditDebitIndicator != "DBIT"
                 ? null
                 : new TransactionListDetail
