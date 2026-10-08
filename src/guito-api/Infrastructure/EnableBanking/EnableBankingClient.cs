@@ -35,6 +35,12 @@ namespace GuitoApi.Infrastructure.EnableBanking
         {
             var body = JsonSerializer.Serialize(new
             {
+                access = new
+                {
+                    // ADR-0004: consents expire after 90–180 days depending on the ASPSP;
+                    // EB requires an explicit valid_until — ask for the conservative 90.
+                    valid_until = DateTime.UtcNow.AddDays(90).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
+                },
                 aspsp = new { name = aspspName, country = aspspCountry },
                 state,
                 redirect_url = redirectUrl,
