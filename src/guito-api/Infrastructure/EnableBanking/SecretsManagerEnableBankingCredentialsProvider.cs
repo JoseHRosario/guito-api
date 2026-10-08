@@ -49,22 +49,21 @@ namespace GuitoApi.Infrastructure.EnableBanking
             return _cached;
         }
 
-        /// <summary>Accepts both secret layouts: the raw PEM text, or JSON {"pem": …}.</summary>
+        /// <summary>Accepts both secret layouts: JSON {"pem": …} (parsed first), or the raw PEM text.</summary>
         private static string? ExtractPem(string raw)
         {
-            if (raw.Contains("-----BEGIN PRIVATE KEY-----"))
-                return raw;
             try
             {
                 var document = JsonDocument.Parse(raw);
-                return document.RootElement.TryGetProperty("pem", out var pem)
-                    ? pem.GetString()
-                    : null;
+                if (document.RootElement.TryGetProperty("pem", out var pem))
+                    return pem.GetString();
             }
             catch (JsonException)
             {
-                return null;
+                // Not JSON — fall through to the raw-PEM layout.
             }
+
+            return raw.Contains("-----BEGIN PRIVATE KEY-----") ? raw : null;
         }
 
         /// <summary>
