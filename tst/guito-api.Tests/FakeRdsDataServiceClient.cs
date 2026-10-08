@@ -31,9 +31,30 @@ public class FakeRdsDataServiceClient : AmazonRDSDataServiceClient
     public RollbackTransactionRequest? LastRollbackRequest { get; private set; }
     public Exception? ExecuteException { get; set; }
 
+    /// <summary>
+    /// Sequential exception script: each ExecuteStatementAsync call dequeues one entry —
+    /// a non-null entry is thrown, null succeeds. Lets tests script "fails once, then
+    /// succeeds" (e.g. the Aurora auto-pause retry). Falls back to ExecuteException.
+    /// </summary>
+    public Queue<Exception?> ExecuteExceptionScript { get; } = [];
+
+    public int ExecuteCallCount { get; private set; }
+    public int BeginCallCount { get; private set; }
+
+    /// <summary>Sequential exception script for BeginTransactionAsync (same shape as the execute one).</summary>
+    public Queue<Exception?> BeginExceptionScript { get; } = [];
+
+
     public override Task<ExecuteStatementResponse> ExecuteStatementAsync(ExecuteStatementRequest request, CancellationToken cancellationToken = default)
     {
         LastExecuteRequest = request;
+        ExecuteCallCount++;
+        if (ExecuteExceptionScript.Count > 0)
+        {
+            var scripted = ExecuteExceptionScript.Dequeue();
+            if (scripted is not null) throw scripted;
+            return Task.FromResult(NextExecuteResponse ?? new ExecuteStatementResponse());
+        }
         if (ExecuteException is not null) throw ExecuteException;
         return Task.FromResult(NextExecuteResponse ?? new ExecuteStatementResponse());
     }
@@ -41,6 +62,12 @@ public class FakeRdsDataServiceClient : AmazonRDSDataServiceClient
     public override Task<BeginTransactionResponse> BeginTransactionAsync(BeginTransactionRequest request, CancellationToken cancellationToken = default)
     {
         LastBeginRequest = request;
+        BeginCallCount++;
+        if (BeginExceptionScript.Count > 0)
+        {
+            var scripted = BeginExceptionScript.Dequeue();
+            if (scripted is not null) throw scripted;
+        }
         return Task.FromResult(new BeginTransactionResponse { TransactionId = NextTransactionId });
     }
 
