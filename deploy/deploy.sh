@@ -270,6 +270,9 @@ aws --region "$REGION" apigatewayv2 get-routes --api-id "$API_ID" --query 'Items
   elif [ "$key" = 'ANY /healthz' ]; then
     aws --region "$REGION" apigatewayv2 update-route --api-id "$API_ID" --route-id "$id" \
       --authorization-type NONE --target "integrations/$INT_ID" >/dev/null
+  elif [ "$key" = 'ANY /warm' ]; then
+    aws --region "$REGION" apigatewayv2 update-route --api-id "$API_ID" --route-id "$id" \
+      --authorization-type NONE --target "integrations/$INT_ID" >/dev/null
   fi
 done
 aws --region "$REGION" apigatewayv2 create-route --api-id "$API_ID" --route-key '$default' \
@@ -278,6 +281,10 @@ aws --region "$REGION" apigatewayv2 create-route --api-id "$API_ID" --route-key 
   --authorization-type NONE --target "integrations/$INT_ID" >/dev/null 2>&1 || true
 # Issue #52: the token exchange is unauthenticated by design — public route like /healthz.
 aws --region "$REGION" apigatewayv2 create-route --api-id "$API_ID" --route-key 'ANY /Auth/token' \
+  --authorization-type NONE --target "integrations/$INT_ID" >/dev/null 2>&1 || true
+# Issue #109: /warm is public like /healthz — the UI's fire-and-forget warm-up
+# (guito-ui#59) must reach the app without credentials on every cold open.
+aws --region "$REGION" apigatewayv2 create-route --api-id "$API_ID" --route-key 'ANY /warm' \
   --authorization-type NONE --target "integrations/$INT_ID" >/dev/null 2>&1 || true
 # Browser CORS preflights (guito-api#9): OPTIONS must reach the app's CORS
 # middleware, not $default's authorizer (a targetless route 401s — the route
@@ -309,4 +316,4 @@ aws --region "$REGION" apigatewayv2 update-stage --api-id "$API_ID" --stage-name
 aws --region "$REGION" apigatewayv2 create-deployment --api-id "$API_ID" --stage-name '$default' >/dev/null
 
 echo "Deployed. Endpoint: $(aws --region "$REGION" apigatewayv2 get-api --api-id "$API_ID" --query ApiEndpoint --output text)"
-echo "Smoke test: /healthz → 200; no credentials → 401/403; wrong key → 403; valid key (from secret) → 200; garbage x-google-idtoken → 403; valid Google ID token (GOOGLE_CLIENT_ID configured) → 200; POST /Auth/token → 200/400."
+echo "Smoke test: /healthz → 200; GET /warm → 200; no credentials → 401/403; wrong key → 403; valid key (from secret) → 200; garbage x-google-idtoken → 403; valid Google ID token (GOOGLE_CLIENT_ID configured) → 200; POST /Auth/token → 200/400."
