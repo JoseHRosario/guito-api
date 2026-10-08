@@ -37,6 +37,7 @@ namespace GuitoApi.Middleware
             // stay independent — ADR-0003: this only skips the token check).
             if (httpContext.Request.Path.StartsWithSegments(ApiKeyMiddleware.PublicPathKey) ||
                 httpContext.Request.Path.StartsWithSegments(ApiKeyMiddleware.PublicTokenExchangePathKey) ||
+                httpContext.Request.Path.StartsWithSegments(ApiKeyMiddleware.PublicWarmPathKey) ||
                 httpContext.Items.ContainsKey(ApiKeyMiddleware.AgentAuthedKey))
             {
                 await _next(httpContext);

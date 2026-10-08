@@ -259,6 +259,41 @@ public class DeployedAuthContractTests
             "preflight must carry Access-Control-Allow-Origin or the browser blocks the sign-out");
     }
 
+    [Fact]
+    public async Task WarmEndpoint_ShouldReturnOk_WhenCalledWithoutCredentials()
+    {
+        // Arrange — /warm is public by design (issue #109): anonymous 200 proves
+        // the route exemption at BOTH layers (gateway route + in-app middlewares).
+        using var client = DeployedEndpointFixture.CreateAnonymousClient();
+
+        // Act
+        var response = await client.GetAsync("/warm");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task WarmEndpoint_ShouldAnswerCorsPreflight_WhenBrowserSendsOne()
+    {
+        // Arrange — the UI's fire-and-forget warm-up fetch is cross-origin
+        // (issue #59): a 401/403 preflight silently kills the wake on every
+        // app open, and HttpClient-only tests can never surface it.
+        using var client = DeployedEndpointFixture.CreateAnonymousClient();
+        var request = new HttpRequestMessage(HttpMethod.Options, "/warm");
+        request.Headers.Add("Origin", "https://guito.web.kerumirembora.com");
+        request.Headers.Add("Access-Control-Request-Method", "GET");
+
+        // Act
+        var response = await client.SendAsync(request);
+
+        // Assert
+        Assert.True((int)response.StatusCode >= 200 && (int)response.StatusCode < 300,
+            $"preflight must be 2xx, got {(int)response.StatusCode}");
+        Assert.True(response.Headers.Contains("Access-Control-Allow-Origin"),
+            "preflight must carry Access-Control-Allow-Origin or the browser blocks the warm-up");
+    }
+
     /// <summary>
     /// Deliberately omits X-Api-Key while presenting the valid staging key as the
     /// raw Authorization value: the edge authorizer accepts it, and the request

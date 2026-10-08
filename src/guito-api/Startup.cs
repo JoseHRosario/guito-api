@@ -16,6 +16,7 @@ using GuitoApi.Services.Category;
 using GuitoApi.Services.Auth;
 using GuitoApi.Services.Expense;
 using GuitoApi.Services.BankTransactions;
+using GuitoApi.Services.Warm;
 using Microsoft.Extensions.Options;
 using Serilog;
 
@@ -148,6 +149,8 @@ namespace GuitoApi
             services.AddSingleton<IAmazonRDSDataService, AmazonRDSDataServiceClient>();
             services.AddScoped<PostgresTransactionContext>();
             services.AddScoped<IPostgresDataApiClient, DataApiClient>();
+            // /warm wake (issue #109): controller stays thin; SQL + cap live here.
+            services.AddScoped<IWarmUpService, WarmUpService>();
             services.AddScoped<IUnitOfWork, DataApiUnitOfWork>();
             // Bank Transactions aggregate (issue #88): ADR-0011 shape — interface in
             // Repositories/, Data API implementation here in Infrastructure/Postgres/.

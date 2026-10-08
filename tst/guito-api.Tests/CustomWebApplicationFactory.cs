@@ -1,5 +1,6 @@
 using GuitoApi.Infrastructure.AI;
 using GuitoApi.Infrastructure.EnableBanking;
+using GuitoApi.Infrastructure.Postgres;
 using GuitoApi.Infrastructure.Secrets;
 using GuitoApi.Infrastructure.Sheets;
 using GuitoApi.Repositories;
@@ -30,6 +31,13 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
     public FakeBankTransactionRepository BankTransactions { get; } = new();
 
     /// <summary>
+    /// Shared fake of the RDS Data API seam (issue #87): hermetic suites must
+    /// never construct the real DataApiClient (its AWS SDK client validates the
+    /// ambient AWS config — a CI runner without it throws on every resolution).
+    /// </summary>
+    public FakePostgresDataApiClient Postgres { get; } = new();
+
+    /// <summary>
     /// When true the bank provider stays EnableBanking (real adapter over the faked EB
     /// transport); the default keeps the Dummy provider, mirroring the default config.
     /// </summary>
@@ -54,6 +62,8 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
             var openRouter = OpenRouterHandler;
             Replace<IGooglesheetsClientProvider>(services, sp => new FakeGooglesheetsClientProvider(sheets));
             Replace<IOpenRouterClientProvider>(services, _ => new FakeOpenRouterClientProvider(openRouter));
+            var postgres = Postgres;
+            Replace<IPostgresDataApiClient>(services, _ => postgres);
             if (!UseEnableBankingProvider)
                 Replace<IListTransactionsService>(services, _ => new ListTransactionsDummyService());
             // Canned secrets: the repo has no real ones (gitignored by design).
