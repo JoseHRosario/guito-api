@@ -92,4 +92,41 @@ public class BankTransactionPendingBoundaryTests
         var row = Assert.Single(rows);
         Assert.Equal(JsonValueKind.Null, row.GetProperty("remittanceInformation").ValueKind);
     }
+
+    [Fact]
+    public async Task Get_ShouldReturnSuggestedCategory_WhenRowCarriesOne()
+    {
+        // Arrange (issue #112): the suggestion travels as {id, name} — the mirror key.
+        using var factory = FactoryWithPending(PendingRow(id: 9, bookingDate: "2026-10-05") with
+        {
+            SuggestedCategory = new BankSuggestedCategory(3, "Restaurants"),
+        });
+        var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync("/banktransaction");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var row = Assert.Single(await response.Content.ReadFromJsonAsync<JsonElement[]>());
+        var suggestion = row.GetProperty("suggestedCategory");
+        Assert.Equal(3, suggestion.GetProperty("id").GetInt64());
+        Assert.Equal("Restaurants", suggestion.GetProperty("name").GetString());
+    }
+
+    [Fact]
+    public async Task Get_ShouldReturnNullSuggestedCategory_WhenRowHasNoSuggestion()
+    {
+        // Arrange
+        using var factory = FactoryWithPending(PendingRow());
+        var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync("/banktransaction");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var row = Assert.Single(await response.Content.ReadFromJsonAsync<JsonElement[]>());
+        Assert.Equal(JsonValueKind.Null, row.GetProperty("suggestedCategory").ValueKind);
+    }
 }

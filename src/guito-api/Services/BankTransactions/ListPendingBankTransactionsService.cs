@@ -23,5 +23,8 @@ public class ListPendingBankTransactionsService(IBankTransactionRepository trans
         BookingDate: transaction.BookingDate,
         Amount: transaction.Amount,
         Currency: transaction.Currency,
-        RemittanceInformation: transaction.RemittanceInformation);
+        RemittanceInformation: transaction.RemittanceInformation,
+        SuggestedCategory: transaction.SuggestedCategory is { } suggestion
+            ? new SuggestedCategory(suggestion.Id, suggestion.Name)
+            : null);
 }

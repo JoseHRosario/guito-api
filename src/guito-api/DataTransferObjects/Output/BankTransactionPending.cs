@@ -10,4 +10,5 @@ public sealed record BankTransactionPending(
     DateOnly BookingDate,
     decimal Amount,
     string Currency,
-    string? RemittanceInformation);
+    string? RemittanceInformation,
+    SuggestedCategory? SuggestedCategory);

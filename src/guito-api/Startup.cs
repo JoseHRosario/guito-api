@@ -155,6 +155,9 @@ namespace GuitoApi
             // Bank Transactions aggregate (issue #88): ADR-0011 shape — interface in
             // Repositories/, Data API implementation here in Infrastructure/Postgres/.
             services.AddScoped<IBankTransactionRepository, DataApiPostgresBankTransactionRepository>();
+            // Categories mirror (issue #112, ADR-0014): seeded from Sheets, Sheets still
+            // the source of truth for category writes.
+            services.AddScoped<ICategoriesRepository, DataApiPostgresCategoriesRepository>();
             // Bank sync (issue #90): fetch from EB + idempotent store, per-request.
             services.AddScoped<ISyncBankTransactionsService, SyncBankTransactionsService>();
             services.AddScoped<IListPendingBankTransactionsService, ListPendingBankTransactionsService>();

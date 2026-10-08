@@ -30,6 +30,9 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
     /// <summary>Shared fake of the bank-transactions store (issue #90).</summary>
     public FakeBankTransactionRepository BankTransactions { get; } = new();
 
+    /// <summary>Shared fake of the Postgres categories mirror (issue #112).</summary>
+    public FakeCategoriesRepository Categories { get; } = new();
+
     /// <summary>
     /// Shared fake of the RDS Data API seam (issue #87): hermetic suites must
     /// never construct the real DataApiClient (its AWS SDK client validates the
@@ -75,6 +78,7 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
                 Replace<IEnableBankingTransport>(services, _ => EnableBankingTransport);
                 Replace<IBankAccountRepository>(services, _ => BankAccounts);
                 Replace<IBankTransactionRepository>(services, _ => BankTransactions);
+                Replace<ICategoriesRepository>(services, _ => Categories);
             }
         });
     }

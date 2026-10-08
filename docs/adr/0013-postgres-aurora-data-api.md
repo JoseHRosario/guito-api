@@ -36,3 +36,8 @@ Enable Banking facts that shaped the design (from the EB API reference):
 - The `_migrations` ledger makes schema drift between environments explicit; numbered scripts in `db/migrations/` are the single source of schema truth.
 - Idle cost is near-zero but not zero (per-ACU-hour floor plus storage); acceptable for a single user.
 - If Expenses move to Postgres later, the matching flow (#83+) simplifies from a cross-store join to a local one — deliberately not decided here.
+
+> **Amended by ADR-0014 (2026-10-08):** the "no data migration" scope claim is superseded
+> for categories — a *categories mirror* table (seeded from Sheets, Sheets still the
+> source of truth) now lives in Postgres to back `bank_transactions.suggested_category_id`.
+> Expenses themselves remain Sheets-only. See ADR-0014.
