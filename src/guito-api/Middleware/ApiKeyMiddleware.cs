@@ -22,6 +22,10 @@ namespace GuitoApi.Middleware
         public const string PublicTokenExchangePathKey = "/Auth/token";
         /// <summary>Third public path (issue #109): the warm endpoint is anonymous by design — it fires the stack's wake-up work.</summary>
         public const string PublicWarmPathKey = "/warm";
+        /// <summary>Fourth public path (issue #116): EB redirects the user's BROWSER to the
+        /// consent callback with no credentials — the code is the credential, same precedent
+        /// as the token exchange.</summary>
+        public const string PublicBankAuthCallbackPathKey = "/BankAuth/callback";
         private const string GoogleTokenHeaderName = GoogleIdTokenMiddleware.IdTokenHeaderKey;
         private const string BearerPrefix = "Bearer ";
 
@@ -51,7 +55,8 @@ namespace GuitoApi.Middleware
             {
                 if (httpContext.Request.Path.StartsWithSegments(PublicPath) ||
                     httpContext.Request.Path.StartsWithSegments(PublicTokenExchangePathKey) ||
-                    httpContext.Request.Path.StartsWithSegments(PublicWarmPathKey))
+                    httpContext.Request.Path.StartsWithSegments(PublicWarmPathKey) ||
+                    httpContext.Request.Path.StartsWithSegments(PublicBankAuthCallbackPathKey))
                 {
                     await _next(httpContext);
                     return;

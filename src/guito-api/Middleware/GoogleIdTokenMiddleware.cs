@@ -38,6 +38,7 @@ namespace GuitoApi.Middleware
             if (httpContext.Request.Path.StartsWithSegments(ApiKeyMiddleware.PublicPathKey) ||
                 httpContext.Request.Path.StartsWithSegments(ApiKeyMiddleware.PublicTokenExchangePathKey) ||
                 httpContext.Request.Path.StartsWithSegments(ApiKeyMiddleware.PublicWarmPathKey) ||
+                httpContext.Request.Path.StartsWithSegments(ApiKeyMiddleware.PublicBankAuthCallbackPathKey) ||
                 httpContext.Items.ContainsKey(ApiKeyMiddleware.AgentAuthedKey))
             {
                 await _next(httpContext);
