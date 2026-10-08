@@ -23,17 +23,38 @@ CLUSTER_ARN="${CLUSTER_ARN:-arn:aws:rds:${REGION}:497087877832:cluster:db-cluste
 ADMIN_SECRET_ARN="$(aws secretsmanager describe-secret --secret-id guito-api/db-admin --region "$REGION" --query ARN --output text)"
 SQL_DIR="$(cd "$(dirname "$0")/../db/migrations" && pwd)"
 
-# sanity: admin credentials work (also resumes an auto-paused cluster before DDL)
-aws rds-data execute-statement --resource-arn "$CLUSTER_ARN" --secret-arn "$ADMIN_SECRET_ARN" \
-  --database "$DB" --sql "SELECT 1" --no-cli-pager >/dev/null
+# Every Data API statement goes through this retry wrapper: an auto-paused Aurora
+# cluster answers DatabaseResumingException for a few seconds while waking (hit
+# LIVE in CI on PR #117 — the deploy died on the first SELECT 1). Same policy as
+# the app-side DataApiClient retry (PR #108).
+rds_exec () { # <sql> [query-flags...] — retries while the cluster resumes
+  local sql="$1"; shift
+  local attempt=1 max=12 delay=5
+  while true; do
+    if out=$(aws rds-data execute-statement --resource-arn "$CLUSTER_ARN" --secret-arn "$ADMIN_SECRET_ARN" \
+      --database "$DB" --sql "$sql" "$@" 2>&1); then
+      printf '%s' "$out"
+      return 0
+    fi
+    if echo "$out" | grep -q DatabaseResumingException && [ "$attempt" -lt "$max" ]; then
+      echo "  cluster resuming (attempt $attempt/$max) — waiting ${delay}s ..."
+      sleep "$delay"
+      attempt=$((attempt + 1))
+    else
+      echo "$out" >&2
+      return 1
+    fi
+  done
+}
 
-APPLIED="$(aws rds-data execute-statement --resource-arn "$CLUSTER_ARN" --secret-arn "$ADMIN_SECRET_ARN" \
-  --database "$DB" --sql "SELECT name FROM _migrations" --no-cli-pager 2>/dev/null || true)"
+# sanity: admin credentials work (also resumes an auto-paused cluster before DDL)
+rds_exec "SELECT 1" --no-cli-pager >/dev/null
+
+APPLIED="$(rds_exec "SELECT name FROM _migrations" --no-cli-pager 2>/dev/null || true)"
 # A fresh database has no _migrations ledger yet — 001_init.sql creates it and the
 # loop below applies everything; the guard only protects against a CORRUPTED ledger.
 if [ -z "$APPLIED" ]; then
-  aws rds-data execute-statement --resource-arn "$CLUSTER_ARN" --secret-arn "$ADMIN_SECRET_ARN" \
-    --database "$DB" --sql "SELECT 1 FROM information_schema.tables WHERE table_name='_migrations'" --no-cli-pager 2>/dev/null | grep -q stringValue \
+  rds_exec "SELECT 1 FROM information_schema.tables WHERE table_name='_migrations'" --no-cli-pager 2>/dev/null | grep -q stringValue \
     && { echo "FATAL: _migrations ledger exists but is unreadable in $DB." >&2; exit 1; }
   echo "No _migrations ledger in $DB — fresh database, applying all migrations."
 fi
@@ -46,20 +67,32 @@ for SQL_FILE in "$SQL_DIR"/*.sql; do
   fi
   echo "Applying $NAME to $DB ..."
   python3 - "$SQL_FILE" "$CLUSTER_ARN" "$ADMIN_SECRET_ARN" "$DB" "$REGION" <<'PYEOF'
-import sys, re, subprocess
+import sys, re, subprocess, time
 sql_file, cluster, secret, db, region = sys.argv[1:6]
 sql = re.sub(r'--[^\n]*', '', open(sql_file).read())
 statements = [p.strip() for p in sql.split(';') if p.strip()]
+def run(s):
+    # Retry while the auto-paused cluster resumes (DatabaseResumingException) —
+    # same policy as the app-side DataApiClient (PR #108) and rds_exec above.
+    for attempt in range(12):
+        r = subprocess.run(["aws", "rds-data", "execute-statement", "--resource-arn", cluster,
+                            "--secret-arn", secret, "--database", db, "--sql", s, "--no-cli-pager"],
+                           capture_output=True, text=True)
+        if r.returncode == 0:
+            return None
+        if "DatabaseResumingException" in (r.stderr or ""):
+            print(f"  cluster resuming (attempt {attempt + 1}/12) — waiting 5s ...", flush=True)
+            time.sleep(5)
+            continue
+        return r.stderr.strip()
+    return "DatabaseResumingException persisted after 12 attempts"
 for s in statements:
-    r = subprocess.run(["aws", "rds-data", "execute-statement", "--resource-arn", cluster,
-                        "--secret-arn", secret, "--database", db, "--sql", s, "--no-cli-pager"],
-                       capture_output=True, text=True)
-    if r.returncode != 0:
-        sys.exit(f"FAILED statement: {s[:80]}\n{r.stderr.strip()}")
+    err = run(s)
+    if err:
+        sys.exit(f"FAILED statement: {s[:80]}\n{err}")
 print(f"  {len(statements)} statement(s) ok")
 PYEOF
-  aws rds-data execute-statement --resource-arn "$CLUSTER_ARN" --secret-arn "$ADMIN_SECRET_ARN" \
-    --database "$DB" --sql "INSERT INTO _migrations (name) VALUES ('$NAME')" --no-cli-pager >/dev/null
+  rds_exec "INSERT INTO _migrations (name) VALUES ('$NAME')" --no-cli-pager >/dev/null
   echo "$NAME applied ✓"
 done
 
@@ -68,13 +101,9 @@ done
 # made, plus default privileges so future migrations need no manual grant (issue #91:
 # hit live — bank_accounts was permission-denied for the app role).
 echo "Granting app-role privileges on $DB to $DB ..."
-aws rds-data execute-statement --resource-arn "$CLUSTER_ARN" --secret-arn "$ADMIN_SECRET_ARN" \
-  --database "$DB" --sql "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO $DB" --no-cli-pager >/dev/null
-aws rds-data execute-statement --resource-arn "$CLUSTER_ARN" --secret-arn "$ADMIN_SECRET_ARN" \
-  --database "$DB" --sql "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO $DB" --no-cli-pager >/dev/null
-aws rds-data execute-statement --resource-arn "$CLUSTER_ARN" --secret-arn "$ADMIN_SECRET_ARN" \
-  --database "$DB" --sql "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO $DB" --no-cli-pager >/dev/null
-aws rds-data execute-statement --resource-arn "$CLUSTER_ARN" --secret-arn "$ADMIN_SECRET_ARN" \
-  --database "$DB" --sql "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO $DB" --no-cli-pager >/dev/null
+rds_exec "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO $DB" --no-cli-pager >/dev/null
+rds_exec "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO $DB" --no-cli-pager >/dev/null
+rds_exec "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO $DB" --no-cli-pager >/dev/null
+rds_exec "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO $DB" --no-cli-pager >/dev/null
 
 echo "db-apply done ($ENVIRONMENT → $DB)"
