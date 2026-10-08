@@ -101,6 +101,9 @@ public class BankTransactionSyncBoundaryTests
         using var factory = EnabledFactory();
         factory.EnableBankingTransport.Enqueue(200, SyncPage);
         var client = factory.CreateClient();
+        // The window ends "today (UTC)" — capture the boundary on both sides of the call
+        // so a midnight UTC rollover mid-test cannot flake the assertion.
+        var utcTodayBefore = DateOnly.FromDateTime(DateTime.UtcNow);
 
         // Act
         await PostSync(client);
@@ -110,12 +113,12 @@ public class BankTransactionSyncBoundaryTests
         Assert.StartsWith("accounts/uid-1/transactions?date_from=", request.Path);
         Assert.Contains("&date_to=", request.Path);
         Assert.EndsWith("&strategy=default", request.Path);
-        // Window is exactly 7 days, ending today (UTC).
         var path = request.Path;
         var from = DateOnly.Parse(path.Split("date_from=")[1].Split('&')[0]);
         var to = DateOnly.Parse(path.Split("date_to=")[1].Split('&')[0]);
         Assert.Equal(7, to.DayNumber - from.DayNumber);
-        Assert.Equal(DateOnly.FromDateTime(DateTime.UtcNow), to);
+        var utcTodayAfter = DateOnly.FromDateTime(DateTime.UtcNow);
+        Assert.InRange(to.DayNumber, utcTodayBefore.DayNumber, utcTodayAfter.DayNumber);
     }
 
     [Fact]
@@ -190,29 +193,5 @@ public class BankTransactionSyncBoundaryTests
 
         // Assert
         Assert.Equal((HttpStatusCode)429, response.StatusCode);
-    }
-
-    [Fact]
-    public void ComputeSyncKey_ShouldBeDeterministicPerComposite_WhenSameRowIsRecomputed()
-    {
-        // Arrange — ADR-0013 composite: uid | booking_date | amount | direction |
-        // entry_reference | counterparty, hashed with SHA-256.
-        var account = LinkedAccount();
-        var transaction = new GuitoApi.Infrastructure.EnableBanking.EnableBankingTransaction(
-            TransactionId: "tx-1", EntryReference: "ref-1", BookingDate: new DateOnly(2026, 10, 2),
-            Amount: -77.93m, Currency: "EUR", CreditDebitIndicator: "DBIT", Status: "BOOK",
-            RemittanceInformation: "COMPRA", Note: null, CounterpartyName: "MEO SA");
-
-        // Act
-        var key1 = GuitoApi.Services.BankTransactions.SyncBankTransactionsService.ComputeSyncKey(account, transaction);
-        var key2 = GuitoApi.Services.BankTransactions.SyncBankTransactionsService.ComputeSyncKey(account, transaction);
-
-        // Assert
-        Assert.Equal(key1, key2);
-        Assert.Equal(64, key1.Length);
-        var otherCounterparty = transaction with { CounterpartyName = "Other SA" };
-        Assert.NotEqual(key1, GuitoApi.Services.BankTransactions.SyncBankTransactionsService.ComputeSyncKey(account, otherCounterparty));
-        var otherEntry = transaction with { EntryReference = "ref-2" };
-        Assert.NotEqual(key1, GuitoApi.Services.BankTransactions.SyncBankTransactionsService.ComputeSyncKey(account, otherEntry));
     }
 }

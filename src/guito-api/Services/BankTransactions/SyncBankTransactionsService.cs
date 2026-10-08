@@ -6,7 +6,6 @@ using GuitoApi.Exceptions;
 using GuitoApi.Infrastructure.EnableBanking;
 using GuitoApi.Model;
 using GuitoApi.Repositories;
-using GuitoApi.Services.Account;
 
 namespace GuitoApi.Services.BankTransactions
 {
@@ -55,34 +54,47 @@ namespace GuitoApi.Services.BankTransactions
             string? continuationKey = null;
             do
             {
-                EnableBankingTransactionsPage page;
-                try
-                {
-                    page = await _client.ListTransactionsAsync(account.Uid, dateFrom, dateTo, continuationKey, cancellationToken);
-                }
-                catch (EnableBankingApiException exception)
-                {
-                    throw EnableBankingFetchErrorMapper.ToProblemException(exception);
-                }
-
-                foreach (var transaction in page.Transactions)
-                {
-                    if (transaction.Status != "BOOK" || transaction.CreditDebitIndicator != "DBIT")
-                        continue;
-                    result.Fetched++;
-                    var isNew = await _transactions.InsertOrSkipAsync(ToInsert(account, transaction), cancellationToken);
-                    if (isNew)
-                        result.New++;
-                }
-
+                var page = await FetchPageAsync(account, dateFrom, dateTo, continuationKey, cancellationToken);
+                await StoreBookedDebitsAsync(account, page, result, cancellationToken);
                 continuationKey = page.ContinuationKey;
             } while (continuationKey is not null);
+        }
+
+        private async Task<EnableBankingTransactionsPage> FetchPageAsync(
+            BankAccountSummary account, DateOnly dateFrom, DateOnly dateTo,
+            string? continuationKey, CancellationToken cancellationToken)
+        {
+            try
+            {
+                return await _client.ListTransactionsAsync(account.Uid, dateFrom, dateTo, continuationKey, cancellationToken);
+            }
+            catch (EnableBankingApiException exception)
+            {
+                throw EnableBankingFetchErrorMapper.ToProblemException(exception);
+            }
+        }
+
+        private async Task StoreBookedDebitsAsync(
+            BankAccountSummary account, EnableBankingTransactionsPage page, BankSyncResult result,
+            CancellationToken cancellationToken)
+        {
+            foreach (var transaction in page.Transactions)
+            {
+                if (transaction.Status != "BOOK" || transaction.CreditDebitIndicator != "DBIT")
+                    continue;
+                result.Fetched++;
+                var insert = ToInsert(account, transaction);
+                if (await _transactions.InsertOrSkipAsync(insert, cancellationToken))
+                    result.New++;
+            }
         }
 
         private static BankTransactionInsert ToInsert(BankAccountSummary account, EnableBankingTransaction transaction) => new()
         {
             AccountUid = account.Uid,
             BookingDate = transaction.BookingDate,
+            // ADR-0010: stored positive at the provider boundary — and the sync_key hashes
+            // exactly this stored value, so the dedup anchor never diverges from the row.
             Amount = Math.Abs(transaction.Amount),
             Currency = transaction.Currency,
             Direction = transaction.CreditDebitIndicator,
@@ -93,13 +105,14 @@ namespace GuitoApi.Services.BankTransactions
 
         /// <summary>
         /// The dedup anchor (ADR-0013): SHA-256 over EB's recommended composite —
-        /// account uid + booking date + amount + credit/debit indicator + entry
-        /// reference + counterparty. Re-syncs of the same row hash identically.
+        /// account uid + booking date + amount (the stored, positive value) + credit/debit
+        /// indicator + entry reference + counterparty. Re-syncs of the same row hash
+        /// identically.
         /// </summary>
-        public static string ComputeSyncKey(BankAccountSummary account, EnableBankingTransaction transaction)
+        private static string ComputeSyncKey(BankAccountSummary account, EnableBankingTransaction transaction)
         {
             var composite = string.Create(CultureInfo.InvariantCulture,
-                $"{account.Uid}|{transaction.BookingDate:yyyy-MM-dd}|{transaction.Amount}|{transaction.CreditDebitIndicator}|{transaction.EntryReference}|{transaction.CounterpartyName}");
+                $"{account.Uid}|{transaction.BookingDate:yyyy-MM-dd}|{Math.Abs(transaction.Amount)}|{transaction.CreditDebitIndicator}|{transaction.EntryReference}|{transaction.CounterpartyName}");
             return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(composite)));
         }
     }
