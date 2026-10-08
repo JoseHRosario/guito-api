@@ -1,6 +1,6 @@
 namespace GuitoApi.Infrastructure.EnableBanking;
 
-/// <summary>One EB transaction row (subset of the EB Transaction schema, issue #89).</summary>
+/// <summary>One EB transaction row (subset of the EB Transaction schema, issue #89/#90).</summary>
 public record EnableBankingTransaction(
     string? TransactionId,
     string? EntryReference,
@@ -10,4 +10,5 @@ public record EnableBankingTransaction(
     string CreditDebitIndicator,
     string Status,
     string? RemittanceInformation,
-    string? Note);
+    string? Note,
+    string? CounterpartyName);
