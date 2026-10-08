@@ -137,6 +137,7 @@ namespace GuitoApi
             services.AddScoped<IBankAccountRepository, DataApiPostgresBankAccountRepository>();
             services.AddScoped<IGetBankAuthUrlService, GetBankAuthUrlService>();
             services.AddScoped<IFinishBankAuthService, FinishBankAuthService>();
+            services.AddScoped<GuitoApi.Services.BankConnections.IListBankConnectionsService, GuitoApi.Services.BankConnections.ListBankConnectionsService>();
             services.AddScoped<IGooglesheetsClientProvider, GooglesheetsClientProvider>();
             services.AddScoped<IExtractMethodService, ExtractMethodService>();
             services.AddScoped<IExpenseExtractionRepository, OpenRouterExpenseExtractionRepository>();

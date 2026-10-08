@@ -182,21 +182,23 @@ public class EnableBankingBoundaryTests
             ]
         }
         """);
-        var client = factory.CreateClient();
+        var client = factory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false,
+        });
 
         // Act
         var response = await client.GetAsync("/bankauth/callback?code=the-code");
 
-        // Assert
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal(1, body.GetProperty("accountsLinked").GetInt32());
+        // Assert — issue #116: the callback 302s back to the SPA's Bank page; no JSON body.
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal("https://guito.web.kerumirembora.com/bank?linked=1", response.Headers.Location?.ToString());
         var upsert = Assert.Single(factory.BankAccounts.Upserts);
         Assert.Equal("uid-1", upsert.Uid);
         Assert.Equal("sess-9", upsert.SessionId);
         Assert.Equal("VALID", upsert.ConsentStatus);
-        // Consent/session ids stay adapter internals — the response must not carry them.
-        Assert.DoesNotContain("sess-9", response.Content.ToString() ?? string.Empty);
+        // Consent/session ids stay adapter internals — the redirect must not carry them.
+        Assert.DoesNotContain("sess-9", response.Headers.Location?.ToString() ?? string.Empty);
     }
 
     [Fact]
