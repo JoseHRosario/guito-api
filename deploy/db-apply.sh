@@ -3,7 +3,8 @@
 # cluster via the RDS Data API (issue #80, ADR-0012). Idempotent: an applied script is
 # recorded in the `_migrations` ledger and skipped on re-run.
 #
-# Usage: ENV=dev|staging|prod deploy/db-apply.sh
+# Usage: ENV=dev|staging|prod|production deploy/db-apply.sh   ('production' is the
+# deploy.sh spelling — an alias of prod — so deploy can pass ENV straight through)
 #
 # Requires the caller's IAM identity to have rds-data:* on the cluster and
 # secretsmanager:GetSecretValue on guito-api/db-admin and guito-api/db-<env>.
@@ -13,8 +14,8 @@ ENVIRONMENT="${ENV:-dev}"
 case "$ENVIRONMENT" in
   dev) DB="guito_dev" ;;
   staging) DB="guito_staging" ;;
-  prod) DB="guito_prod" ;;
-  *) echo "Unknown ENV '$ENVIRONMENT' (use dev|staging|prod)"; exit 1 ;;
+  prod|production) DB="guito_prod"; ENVIRONMENT="prod" ;;
+  *) echo "Unknown ENV '$ENVIRONMENT' (use dev|staging|prod|production)" >&2; exit 1 ;;
 esac
 
 REGION="${REGION:-eu-west-1}"
