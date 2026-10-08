@@ -81,6 +81,14 @@ if ! aws --region "$REGION" secretsmanager describe-secret --secret-id "$SECRET_
   fi
 fi
 
+# --- 0.1 Database migrations (issue #114): pending migrations run as part of the
+# deploy — never a manual step. Applied BEFORE the new code serves traffic; a
+# migration failure aborts the deploy (fail-closed, same as the version guard).
+# Idempotent: the `_migrations` ledger skips already-applied scripts, so a deploy
+# with nothing pending is a no-op.
+echo "--- Applying pending DB migrations ($ENV) ..."
+"$REPO_ROOT/deploy/db-apply.sh"
+
 # --- 1. IAM role + policies ---------------------------------------------------
 aws --region "$REGION" iam get-role --role-name "$ROLE" >/dev/null 2>&1 || {
   cat > /tmp/guito-trust.json <<'EOF'
