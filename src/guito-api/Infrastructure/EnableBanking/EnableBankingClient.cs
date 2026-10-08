@@ -1,16 +1,21 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using GuitoApi.Exceptions;
+using GuitoApi.Model;
+using GuitoApi.Repositories;
 
 namespace GuitoApi.Infrastructure.EnableBanking
 {
     /// <summary>
-    /// Typed operations over the Enable Banking HTTP API (issue #89, ADR-0004): start auth
-    /// (POST /auth), finish auth (POST /sessions), session status, and transaction pages
-    /// (GET /accounts/{uid}/transactions with continuation_key pagination). Errors surface
-    /// as EnableBankingApiException carrying the upstream status.
+    /// Enable Banking adapter implementing the application-layer provider ports
+    /// (issues #89/#90, ADR-0004/0011): IBankConsentProvider (POST /auth, POST /sessions)
+    /// and IBankTransactionProvider (GET /accounts/{uid}/transactions with continuation_key
+    /// pagination, strategy=default). EB wire JSON is parsed here and mapped onto Model
+    /// types — the application layer never sees an EB type. Failures surface at the port
+    /// boundary as ProblemException (classified by the mappers below), never as EB types.
     /// </summary>
-    public class EnableBankingClient : IEnableBankingClient
+    public class EnableBankingClient : IBankConsentProvider, IBankTransactionProvider
     {
         private readonly IEnableBankingTransport _transport;
 
@@ -24,7 +29,7 @@ namespace GuitoApi.Infrastructure.EnableBanking
             _transport = transport;
         }
 
-        public async Task<EnableBankingStartAuthorization> StartAuthorizationAsync(
+        public async Task<BankConsentStart> StartAuthorizationAsync(
             string aspspName, string aspspCountry, string state, string redirectUrl,
             CancellationToken cancellationToken = default)
         {
@@ -34,21 +39,19 @@ namespace GuitoApi.Infrastructure.EnableBanking
                 state,
                 redirect_url = redirectUrl,
             }, JsonOptions);
-            var response = await _transport.SendAsync(new(HttpMethod.Post, "auth", body), cancellationToken);
-            EnsureSuccess(response);
+            var response = await SendAsync(new(HttpMethod.Post, "auth", body), cancellationToken);
             var root = Parse(response.Body);
-            return new EnableBankingStartAuthorization(root.GetProperty("url").GetString() ?? string.Empty);
+            return new BankConsentStart(root.GetProperty("url").GetString() ?? string.Empty);
         }
 
-        public async Task<EnableBankingSession> AuthorizeSessionAsync(string code, CancellationToken cancellationToken = default)
+        public async Task<BankConsentSession> FinishAuthorizationAsync(string code, CancellationToken cancellationToken = default)
         {
             var body = JsonSerializer.Serialize(new { code }, JsonOptions);
-            var response = await _transport.SendAsync(new(HttpMethod.Post, "sessions", body), cancellationToken);
-            EnsureSuccess(response);
+            var response = await SendAsync(new(HttpMethod.Post, "sessions", body), cancellationToken);
             return ParseSession(Parse(response.Body));
         }
 
-        public async Task<EnableBankingTransactionsPage> ListTransactionsAsync(
+        public async Task<BankTransactionSourcePage> ListTransactionsAsync(
             string accountUid, DateOnly? dateFrom, DateOnly? dateTo, string? continuationKey,
             CancellationToken cancellationToken = default)
         {
@@ -63,10 +66,31 @@ namespace GuitoApi.Infrastructure.EnableBanking
             query.Add("strategy=default");
 
             var path = $"accounts/{Uri.EscapeDataString(accountUid)}/transactions{(query.Count > 0 ? $"?{string.Join('&', query)}" : string.Empty)}";
-            var response = await _transport.SendAsync(new(HttpMethod.Get, path, null), cancellationToken);
-            EnsureSuccess(response);
+            var response = await SendAsync(new(HttpMethod.Get, path, null), cancellationToken);
             return ParseTransactionsPage(Parse(response.Body));
         }
+
+        /// <summary>
+        /// Single error boundary: EB failures are classified here so ports only ever
+        /// throw ProblemException — fetch semantics (409 reconnect / 429 rate limit /
+        /// 502) vs consent-flow semantics (rejected request/code → 400 / 502) differ.
+        /// </summary>
+        private async Task<EnableBankingApiResponse> SendAsync(
+            EnableBankingApiRequest request, CancellationToken cancellationToken)
+        {
+            var response = await _transport.SendAsync(request, cancellationToken);
+            if (response.StatusCode is < 200 or >= 300)
+            {
+                var exception = EnableBankingApiException.FromResponse(response);
+                throw IsConsentRequest(request.Path)
+                    ? EnableBankingConsentErrorMapper.ToProblemException(exception)
+                    : EnableBankingFetchErrorMapper.ToProblemException(exception);
+            }
+
+            return response;
+        }
+
+        private static bool IsConsentRequest(string path) => path is "auth" or "sessions";
 
         private static JsonElement Parse(string body)
         {
@@ -76,17 +100,11 @@ namespace GuitoApi.Infrastructure.EnableBanking
             }
             catch (JsonException exception)
             {
-                throw new EnableBankingApiException(502, $"Enable Banking returned malformed JSON: {exception.Message}");
+                throw new ProblemException(502, $"Enable Banking returned malformed JSON: {exception.Message}");
             }
         }
 
-        private static void EnsureSuccess(EnableBankingApiResponse response)
-        {
-            if (response.StatusCode is < 200 or >= 300)
-                throw EnableBankingApiException.FromResponse(response);
-        }
-
-        private static EnableBankingSession ParseSession(JsonElement root) => new(
+        private static BankConsentSession ParseSession(JsonElement root) => new(
             SessionId: root.GetProperty("session_id").GetString() ?? string.Empty,
             AspspName: root.GetProperty("aspsp").GetProperty("name").GetString() ?? string.Empty,
             AspspCountry: root.GetProperty("aspsp").GetProperty("country").GetString() ?? string.Empty,
@@ -101,9 +119,9 @@ namespace GuitoApi.Infrastructure.EnableBanking
                 ? parsed
                 : null;
 
-        private static IReadOnlyList<EnableBankingSessionAccount> ParseAccounts(JsonElement root)
+        private static IReadOnlyList<BankConsentAccount> ParseAccounts(JsonElement root)
         {
-            var accounts = new List<EnableBankingSessionAccount>();
+            var accounts = new List<BankConsentAccount>();
             foreach (var account in root.GetProperty("accounts").EnumerateArray())
             {
                 var iban = account.TryGetProperty("account_id", out var accountId)
@@ -113,7 +131,7 @@ namespace GuitoApi.Infrastructure.EnableBanking
                 var currency = account.TryGetProperty("currency", out var currencyElement)
                     ? currencyElement.GetString()
                     : null;
-                accounts.Add(new EnableBankingSessionAccount(
+                accounts.Add(new BankConsentAccount(
                     Uid: account.GetProperty("uid").GetString() ?? string.Empty,
                     Iban: iban,
                     Name: account.TryGetProperty("name", out var nameElement) ? nameElement.GetString() ?? string.Empty : string.Empty,
@@ -123,9 +141,9 @@ namespace GuitoApi.Infrastructure.EnableBanking
             return accounts;
         }
 
-        private static EnableBankingTransactionsPage ParseTransactionsPage(JsonElement root)
+        private static BankTransactionSourcePage ParseTransactionsPage(JsonElement root)
         {
-            var transactions = new List<EnableBankingTransaction>();
+            var transactions = new List<BankTransactionSource>();
             if (root.TryGetProperty("transactions", out var transactionArray))
             {
                 foreach (var element in transactionArray.EnumerateArray())
@@ -137,7 +155,7 @@ namespace GuitoApi.Infrastructure.EnableBanking
                     if (bookingDate is null || !DateOnly.TryParseExact(bookingDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsedDate))
                         continue;
 
-                    transactions.Add(new EnableBankingTransaction(
+                    transactions.Add(new BankTransactionSource(
                         TransactionId: GetStringOrNull(element, "transaction_id"),
                         EntryReference: GetStringOrNull(element, "entry_reference"),
                         BookingDate: parsedDate,
@@ -155,7 +173,7 @@ namespace GuitoApi.Infrastructure.EnableBanking
                 && continuation.ValueKind == JsonValueKind.String
                 ? continuation.GetString()
                 : null;
-            return new EnableBankingTransactionsPage(transactions, continuationKey);
+            return new BankTransactionSourcePage(transactions, continuationKey);
         }
 
         private static string? GetStringOrNull(JsonElement element, string property) =>

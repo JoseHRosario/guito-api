@@ -1,11 +1,14 @@
 using System.Net;
+using GuitoApi.Exceptions;
 using GuitoApi.Infrastructure.EnableBanking;
+using GuitoApi.Model;
 
 namespace GuitoApi.Tests;
 
 /// <summary>
-/// EnableBankingClient behavior over the faked EB transport (issue #89): request shapes,
-/// payload parsing, pagination fields, and upstream error mapping.
+/// EnableBankingClient behavior over the faked EB transport (issues #89/#103): request
+/// shapes, payload parsing onto Model types, pagination fields, and the port-boundary
+/// error contract (ProblemException only — EB types never cross the ports).
 /// </summary>
 public class EnableBankingClientTests
 {
@@ -53,7 +56,7 @@ public class EnableBankingClientTests
         """);
 
         // Act
-        var session = await _client.AuthorizeSessionAsync("auth-code");
+        var session = await _client.FinishAuthorizationAsync("auth-code");
 
         // Assert
         var request = Assert.Single(_transport.Requests);
@@ -146,17 +149,32 @@ public class EnableBankingClientTests
     }
 
     [Fact]
-    public async Task ListTransactionsAsync_ShouldThrowUpstreamException_WhenApiErrors()
+    public async Task ListTransactionsAsync_ShouldThrowClassifiedProblemException_WhenApiErrorsOnFetch()
     {
-        // Arrange
+        // Arrange — EB 401 on a fetch = dead session → classified to 409 reconnect.
         _transport.Enqueue(401, """{"status": 401, "message": "Authorization failed", "details": []}""");
 
         // Act
-        var exception = await Assert.ThrowsAsync<EnableBankingApiException>(
+        var exception = await Assert.ThrowsAsync<BankReconnectionRequiredException>(
             () => _client.ListTransactionsAsync("uid-1", null, null, null));
 
         // Assert
-        Assert.Equal(401, exception.StatusCode);
-        Assert.Contains("Authorization failed", exception.Message);
+        Assert.Equal(409, exception.HttpStatusCode);
+        Assert.Contains("reconnect", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task FinishAuthorizationAsync_ShouldThrow400ProblemException_WhenEbRejectsTheCode()
+    {
+        // Arrange — consent-flow semantics: a rejected auth code is a client-side 400.
+        _transport.Enqueue(401, """{"status": 401, "message": "Invalid authorization code", "details": []}""");
+
+        // Act
+        var exception = await Assert.ThrowsAsync<ProblemException>(
+            () => _client.FinishAuthorizationAsync("bad-code"));
+
+        // Assert
+        Assert.Equal(400, exception.HttpStatusCode);
+        Assert.Contains("Invalid authorization code", exception.Message);
     }
 }
