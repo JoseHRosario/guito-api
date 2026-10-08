@@ -39,6 +39,11 @@ public class FakeRdsDataServiceClient : AmazonRDSDataServiceClient
     public Queue<Exception?> ExecuteExceptionScript { get; } = [];
 
     public int ExecuteCallCount { get; private set; }
+    public int BeginCallCount { get; private set; }
+
+    /// <summary>Sequential exception script for BeginTransactionAsync (same shape as the execute one).</summary>
+    public Queue<Exception?> BeginExceptionScript { get; } = [];
+
 
     public override Task<ExecuteStatementResponse> ExecuteStatementAsync(ExecuteStatementRequest request, CancellationToken cancellationToken = default)
     {
@@ -57,6 +62,12 @@ public class FakeRdsDataServiceClient : AmazonRDSDataServiceClient
     public override Task<BeginTransactionResponse> BeginTransactionAsync(BeginTransactionRequest request, CancellationToken cancellationToken = default)
     {
         LastBeginRequest = request;
+        BeginCallCount++;
+        if (BeginExceptionScript.Count > 0)
+        {
+            var scripted = BeginExceptionScript.Dequeue();
+            if (scripted is not null) throw scripted;
+        }
         return Task.FromResult(new BeginTransactionResponse { TransactionId = NextTransactionId });
     }
 

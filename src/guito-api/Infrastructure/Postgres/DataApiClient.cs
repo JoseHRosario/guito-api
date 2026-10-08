@@ -15,24 +15,23 @@ namespace GuitoApi.Infrastructure.Postgres;
 /// </summary>
 public class DataApiClient : IPostgresDataApiClient
 {
-    private static readonly TimeSpan DefaultResumeRetryDelay = TimeSpan.FromSeconds(5);
-    private const int MaxResumeRetries = 2;
+    private static readonly TimeSpan[] ResumeRetryDelays = [TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(5)];
 
     private readonly IAmazonRDSDataService _sdk;
     private readonly DatabaseOptions _options;
     private readonly PostgresTransactionContext _transactionContext;
-    private readonly TimeSpan _resumeRetryDelay;
+    private readonly TimeSpan[] _resumeRetryDelays;
 
     public DataApiClient(
         IAmazonRDSDataService sdk,
         IOptions<DatabaseOptions> options,
         PostgresTransactionContext transactionContext,
-        TimeSpan? resumeRetryDelay = null)
+        TimeSpan[]? resumeRetryDelays = null)
     {
         _sdk = sdk;
         _options = options.Value;
         _transactionContext = transactionContext;
-        _resumeRetryDelay = resumeRetryDelay ?? DefaultResumeRetryDelay;
+        _resumeRetryDelays = resumeRetryDelays ?? ResumeRetryDelays;
     }
 
     public async Task<PostgresResult> ExecuteAsync(
@@ -60,31 +59,42 @@ public class DataApiClient : IPostgresDataApiClient
         var attempt = 0;
         while (true)
         {
-            ExecuteStatementResponse response;
             try
             {
-                response = await _sdk.ExecuteStatementAsync(request, cancellationToken);
+                var response = await _sdk.ExecuteStatementAsync(request, cancellationToken);
                 return FromSdk(response);
             }
-            catch (DatabaseResumingException) when (attempt < MaxResumeRetries)
+            catch (DatabaseResumingException) when (attempt < _resumeRetryDelays.Length)
             {
-                attempt++;
                 // Aurora resumes in a few seconds; a fresh error class (or a still-paused
                 // cluster past the retries) surfaces to the caller unchanged.
-                await Task.Delay(_resumeRetryDelay, cancellationToken);
+                await Task.Delay(_resumeRetryDelays[attempt], cancellationToken);
+                attempt++;
             }
         }
     }
 
     public async Task<string> BeginTransactionAsync(CancellationToken cancellationToken = default)
     {
-        var response = await _sdk.BeginTransactionAsync(new BeginTransactionRequest
+        var attempt = 0;
+        while (true)
         {
-            ResourceArn = _options.ResourceArn,
-            SecretArn = _options.SecretArn,
-            Database = _options.DatabaseName,
-        }, cancellationToken);
-        return response.TransactionId;
+            try
+            {
+                var response = await _sdk.BeginTransactionAsync(new BeginTransactionRequest
+                {
+                    ResourceArn = _options.ResourceArn,
+                    SecretArn = _options.SecretArn,
+                    Database = _options.DatabaseName,
+                }, cancellationToken);
+                return response.TransactionId;
+            }
+            catch (DatabaseResumingException) when (attempt < _resumeRetryDelays.Length)
+            {
+                await Task.Delay(_resumeRetryDelays[attempt], cancellationToken);
+                attempt++;
+            }
+        }
     }
 
     public Task CommitAsync(string transactionId, CancellationToken cancellationToken = default) =>

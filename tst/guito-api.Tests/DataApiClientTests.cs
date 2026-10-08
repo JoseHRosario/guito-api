@@ -19,14 +19,14 @@ public class DataApiClientTests
         DatabaseName = "guito_dev",
     };
 
-    private static DataApiClient Client(FakeRdsDataServiceClient fake, TimeSpan? resumeRetryDelay = null) =>
-        new(fake, Microsoft.Extensions.Options.Options.Create(Options()), new PostgresTransactionContext(), resumeRetryDelay);
+    private static DataApiClient Client(FakeRdsDataServiceClient fake, TimeSpan[]? resumeRetryDelays = null) =>
+        new(fake, Microsoft.Extensions.Options.Options.Create(Options()), new PostgresTransactionContext(), resumeRetryDelays);
 
     [Fact]
     public async Task ExecuteAsync_ShouldRetryAndSucceed_WhenAuroraIsResuming()
     {
         // Arrange — staging hit live: the first statement after an auto-pause fails with
-        // DatabaseResumingException; a retry a few seconds later succeeds.
+        // DatabaseResumingException; a retry a moment later succeeds.
         var fake = new FakeRdsDataServiceClient();
         fake.ExecuteExceptionScript.Enqueue(new DatabaseResumingException("resuming"));
         fake.NextExecuteResponse = new ExecuteStatementResponse
@@ -34,7 +34,7 @@ public class DataApiClientTests
             ColumnMetadata = [new ColumnMetadata { Name = "n" }],
             Records = [[new Field { LongValue = 7 }]],
         };
-        var client = Client(fake, resumeRetryDelay: TimeSpan.Zero);
+        var client = Client(fake, resumeRetryDelays: [TimeSpan.Zero]);
 
         // Act
         var result = await client.ExecuteAsync("SELECT 1");
@@ -45,18 +45,48 @@ public class DataApiClientTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_ShouldThrowAfterMaxRetries_WhenAuroraKeepsResuming()
+    public async Task ExecuteAsync_ShouldThrowAfterAllRetries_WhenAuroraKeepsResuming()
     {
-        // Arrange
+        // Arrange — two scripted retries (the 1s/5s default schedule) both fail.
         var fake = new FakeRdsDataServiceClient();
         fake.ExecuteExceptionScript.Enqueue(new DatabaseResumingException("resuming 1"));
         fake.ExecuteExceptionScript.Enqueue(new DatabaseResumingException("resuming 2"));
         fake.ExecuteExceptionScript.Enqueue(new DatabaseResumingException("resuming 3"));
-        var client = Client(fake, resumeRetryDelay: TimeSpan.Zero);
+        var client = Client(fake, resumeRetryDelays: [TimeSpan.Zero, TimeSpan.Zero]);
 
         // Act / Assert — 1 initial attempt + 2 retries, then the last exception surfaces.
         await Assert.ThrowsAsync<DatabaseResumingException>(() => client.ExecuteAsync("SELECT 1"));
         Assert.Equal(3, fake.ExecuteCallCount);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ShouldSurfaceTheExceptionImmediately_WhenNoRetriesAreConfigured()
+    {
+        // Arrange — empty schedule: DatabaseResumingException surfaces unchanged.
+        var fake = new FakeRdsDataServiceClient();
+        fake.ExecuteExceptionScript.Enqueue(new DatabaseResumingException("resuming"));
+        var client = Client(fake, resumeRetryDelays: []);
+
+        // Act / Assert
+        await Assert.ThrowsAsync<DatabaseResumingException>(() => client.ExecuteAsync("SELECT 1"));
+        Assert.Equal(1, fake.ExecuteCallCount);
+    }
+
+    [Fact]
+    public async Task BeginTransactionAsync_ShouldRetryAndSucceed_WhenAuroraIsResuming()
+    {
+        // Arrange — the first BEGIN after an idle pause hits the same exception.
+        var fake = new FakeRdsDataServiceClient();
+        fake.BeginExceptionScript.Enqueue(new DatabaseResumingException("resuming"));
+        fake.NextTransactionId = "tx-1";
+        var client = Client(fake, resumeRetryDelays: [TimeSpan.Zero]);
+
+        // Act
+        var transactionId = await client.BeginTransactionAsync();
+
+        // Assert
+        Assert.Equal("tx-1", transactionId);
+        Assert.Equal(2, fake.BeginCallCount);
     }
 
     [Fact]
