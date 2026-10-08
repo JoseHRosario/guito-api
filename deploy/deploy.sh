@@ -97,6 +97,40 @@ aws --region "$REGION" iam put-role-policy --role-name "$ROLE" --policy-name gui
 # human-auth secret (issue #52) — never interpolate a per-env SECRET_NAME here
 # (a staging run would overwrite prod-scoped policies with env-specific ARNs).
 
+# Data API + bank credentials (issues #87/#89, hit live in staging 2026-10-08):
+# the Postgres repositories execute through the RDS Data API and the EB adapter
+# reads its dedicated key secret — without these the API 500s on every bank route
+# (AccessDenied on rds-data:ExecuteStatement / secrets not covered above).
+cat > /tmp/guito-data-api.json <<'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DataApiExecute",
+      "Effect": "Allow",
+      "Action": [
+        "rds-data:ExecuteStatement",
+        "rds-data:BeginTransaction",
+        "rds-data:CommitTransaction",
+        "rds-data:RollbackTransaction"
+      ],
+      "Resource": "arn:aws:rds:eu-west-1:497087877832:cluster:db-cluster"
+    },
+    {
+      "Sid": "ReadDbAndEbSecrets",
+      "Effect": "Allow",
+      "Action": ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
+      "Resource": [
+        "arn:aws:secretsmanager:eu-west-1:497087877832:secret:guito-api/db-*",
+        "arn:aws:secretsmanager:eu-west-1:497087877832:secret:guito-api/eb-*"
+      ]
+    }
+  ]
+}
+EOF
+aws --region "$REGION" iam put-role-policy --role-name "$ROLE" --policy-name guito-api-data-api \
+  --policy-document file:///tmp/guito-data-api.json >/dev/null
+
 # --- 2. Package (arm64 — matches the deployed functions; ARCH=x64 to override) ---
 # Version stamp (issue #77, amends #75): the version is DECLARED in the csproj
 # (<Version>) — no git tags, no manual steps. The deploy appends build metadata
