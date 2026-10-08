@@ -15,7 +15,7 @@ public class DataApiPostgresBankTransactionRepository(IPostgresDataApiClient cli
         INSERT INTO bank_transactions
             (account_uid, booking_date, amount, currency, direction, remittance_information, status, sync_key)
         VALUES
-            (:account_uid, :booking_date, :amount, :currency, :direction, :remittance_information, :status, :sync_key)
+            (:account_uid, :booking_date::date, :amount, :currency, :direction, :remittance_information, :status, :sync_key)
         ON CONFLICT (sync_key) DO NOTHING
         RETURNING id
         """;
