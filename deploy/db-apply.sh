@@ -28,10 +28,13 @@ aws rds-data execute-statement --resource-arn "$CLUSTER_ARN" --secret-arn "$ADMI
 
 APPLIED="$(aws rds-data execute-statement --resource-arn "$CLUSTER_ARN" --secret-arn "$ADMIN_SECRET_ARN" \
   --database "$DB" --sql "SELECT name FROM _migrations" --no-cli-pager 2>/dev/null || true)"
-if [ -z "$APPLIED" ] && ! aws rds-data execute-statement --resource-arn "$CLUSTER_ARN" --secret-arn "$ADMIN_SECRET_ARN" \
-  --database "$DB" --sql "SELECT 1 FROM _migrations LIMIT 1" --no-cli-pager >/dev/null 2>&1; then
-  echo "FATAL: _migrations ledger missing in $DB — apply the ledger migration first (db/migrations/001_init.sql)." >&2
-  exit 1
+# A fresh database has no _migrations ledger yet — 001_init.sql creates it and the
+# loop below applies everything; the guard only protects against a CORRUPTED ledger.
+if [ -z "$APPLIED" ]; then
+  aws rds-data execute-statement --resource-arn "$CLUSTER_ARN" --secret-arn "$ADMIN_SECRET_ARN" \
+    --database "$DB" --sql "SELECT 1 FROM information_schema.tables WHERE table_name='_migrations'" --no-cli-pager 2>/dev/null | grep -q stringValue \
+    && { echo "FATAL: _migrations ledger exists but is unreadable in $DB." >&2; exit 1; }
+  echo "No _migrations ledger in $DB — fresh database, applying all migrations."
 fi
 
 for SQL_FILE in "$SQL_DIR"/*.sql; do
