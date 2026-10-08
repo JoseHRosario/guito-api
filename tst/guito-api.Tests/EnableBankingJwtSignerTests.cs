@@ -82,9 +82,8 @@ public class EnableBankingJwtSignerTests
     [Fact]
     public async Task CreateTokenAsync_ShouldProduceVerifiableSignature_WhenRs256Requested()
     {
-        // Arrange — the live EB API reference (fetched 2026-10-08) says "alg: RS256 (only
-        // RS256 is supported)" while ADR-0004 says PS256; the signer supports both via
-        // config so the sandbox decides (flagged in the PR).
+        // Arrange — RS256 is the empirically verified default (EB sandbox, 2026-10-08:
+        // PS256 → 401 "Wrong signature", RS256 → 200); PS256 stays selectable via config.
         var signer = Signer("RS256");
         var token = await signer.CreateTokenAsync();
 

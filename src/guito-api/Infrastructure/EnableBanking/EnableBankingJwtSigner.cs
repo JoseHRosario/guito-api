@@ -9,12 +9,14 @@ using Microsoft.IdentityModel.Tokens;
 namespace GuitoApi.Infrastructure.EnableBanking
 {
     /// <summary>
-    /// PS256/RS256 JWT client-assertion signer for the Enable Banking API (issue #89,
+    /// RS256/PS256 JWT client-assertion signer for the Enable Banking API (issue #89,
     /// ADR-0004). Header {typ=JWT, alg, kid=&lt;application id&gt;}; body {iss=enablebanking.com,
     /// aud=api.enablebanking.com, iat, exp}. The private key comes from the per-environment
-    /// secrets payload (ADR-0008); the algorithm is configuration because the live EB API
-    /// reference (2026-10-08) states "only RS256 is supported" while ADR-0004/0013 record
-    /// PS256 "per EB docs" — see the issue #89 PR for the resolution path.
+    /// secrets payload (ADR-0008). Default algorithm RS256 — empirically verified against
+    /// the EB sandbox (2026-10-08): PS256 is rejected with 401 "Wrong signature"; ADR-0004's
+    /// PS256 claim needs an amendment. The key also fixes the drift: the staging secret
+    /// guito-api/eb-staging-pk stores the PEM flattened to one line — ImportFromPem needs
+    /// proper BEGIN/END newlines (proposed fix in the PR).
     /// </summary>
     public class EnableBankingJwtSigner : IEnableBankingJwtSigner
     {

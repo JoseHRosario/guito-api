@@ -7,10 +7,12 @@ namespace GuitoApi.Configuration;
 public class EnableBankingOptions
 {
     /// <summary>
-    /// JWT signature algorithm for the client assertion. ADR-0004 says PS256; the live EB
-    /// API reference (2026-10-08) says only RS256 — sandbox verification decides (#91/#92).
+    /// JWT signature algorithm for the client assertion. Empirically verified against
+    /// the EB sandbox (2026-10-08, GET /application): PS256 → 401 "Wrong signature",
+    /// RS256 → 200. ADR-0004/0013's PS256 claim was wrong — needs an ADR amendment.
+    /// PS256 stays selectable for if EB ever adds PSS support.
     /// </summary>
-    public string JwtAlgorithm { get; set; } = "PS256";
+    public string JwtAlgorithm { get; set; } = "RS256";
 
     /// <summary>
     /// Absolute callback URL registered in the EB Control Panel (e.g.
