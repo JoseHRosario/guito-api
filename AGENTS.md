@@ -32,6 +32,7 @@ dotnet run --project src/guito-api  # local dev server (Kestrel) — plain dotne
 dotnet test --filter "Category!=Integration"   # hermetic unit tests (bare `dotnet test` FAILS without env vars — sit/ suites are not hermetic)
 scripts/run-deployed-tests.sh       # deployed-staging SIT suites (business + auth contract); resolves secrets from AWS Secrets Manager
 dotnet tool restore   # if Lambda tools are needed for packaging checks
+ENV=staging deploy/db-apply.sh   # apply pending DB migrations to an environment (called automatically by deploy/deploy.sh since issue #114 — never run prod manually unless CI is broken)
 ```
 
 Lambda packaging happens in CI (Amazon.Lambda.Tools). Do not add local Lambda emulation tooling.
