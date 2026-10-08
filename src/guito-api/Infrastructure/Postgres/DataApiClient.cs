@@ -9,22 +9,30 @@ namespace GuitoApi.Infrastructure.Postgres;
 /// IPostgresDataApiClient over the RDS Data API SDK (issue #87, ADR-0013). Raw SQL in,
 /// mapped PostgresValue rows out — no EF/Dapper. One HTTPS call per statement; the Lambda
 /// stays VPC-less. SDK exceptions surface to the caller (translation belongs to the layer
-/// that knows the operation, starting with the repository in #88).
+/// that knows the operation, starting with the repository in #88). Exception: a fresh
+/// DatabaseResumingException is retried — Aurora Serverless v2 auto-pauses at min ACU and
+/// rejects the first statements while resuming (hit live in staging, issue #91).
 /// </summary>
 public class DataApiClient : IPostgresDataApiClient
 {
+    private static readonly TimeSpan DefaultResumeRetryDelay = TimeSpan.FromSeconds(5);
+    private const int MaxResumeRetries = 2;
+
     private readonly IAmazonRDSDataService _sdk;
     private readonly DatabaseOptions _options;
     private readonly PostgresTransactionContext _transactionContext;
+    private readonly TimeSpan _resumeRetryDelay;
 
     public DataApiClient(
         IAmazonRDSDataService sdk,
         IOptions<DatabaseOptions> options,
-        PostgresTransactionContext transactionContext)
+        PostgresTransactionContext transactionContext,
+        TimeSpan? resumeRetryDelay = null)
     {
         _sdk = sdk;
         _options = options.Value;
         _transactionContext = transactionContext;
+        _resumeRetryDelay = resumeRetryDelay ?? DefaultResumeRetryDelay;
     }
 
     public async Task<PostgresResult> ExecuteAsync(
@@ -49,8 +57,23 @@ public class DataApiClient : IPostgresDataApiClient
             ContinueAfterTimeout = true,
         };
 
-        var response = await _sdk.ExecuteStatementAsync(request, cancellationToken);
-        return FromSdk(response);
+        var attempt = 0;
+        while (true)
+        {
+            ExecuteStatementResponse response;
+            try
+            {
+                response = await _sdk.ExecuteStatementAsync(request, cancellationToken);
+                return FromSdk(response);
+            }
+            catch (DatabaseResumingException) when (attempt < MaxResumeRetries)
+            {
+                attempt++;
+                // Aurora resumes in a few seconds; a fresh error class (or a still-paused
+                // cluster past the retries) surfaces to the caller unchanged.
+                await Task.Delay(_resumeRetryDelay, cancellationToken);
+            }
+        }
     }
 
     public async Task<string> BeginTransactionAsync(CancellationToken cancellationToken = default)

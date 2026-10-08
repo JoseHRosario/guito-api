@@ -31,9 +31,25 @@ public class FakeRdsDataServiceClient : AmazonRDSDataServiceClient
     public RollbackTransactionRequest? LastRollbackRequest { get; private set; }
     public Exception? ExecuteException { get; set; }
 
+    /// <summary>
+    /// Sequential exception script: each ExecuteStatementAsync call dequeues one entry —
+    /// a non-null entry is thrown, null succeeds. Lets tests script "fails once, then
+    /// succeeds" (e.g. the Aurora auto-pause retry). Falls back to ExecuteException.
+    /// </summary>
+    public Queue<Exception?> ExecuteExceptionScript { get; } = [];
+
+    public int ExecuteCallCount { get; private set; }
+
     public override Task<ExecuteStatementResponse> ExecuteStatementAsync(ExecuteStatementRequest request, CancellationToken cancellationToken = default)
     {
         LastExecuteRequest = request;
+        ExecuteCallCount++;
+        if (ExecuteExceptionScript.Count > 0)
+        {
+            var scripted = ExecuteExceptionScript.Dequeue();
+            if (scripted is not null) throw scripted;
+            return Task.FromResult(NextExecuteResponse ?? new ExecuteStatementResponse());
+        }
         if (ExecuteException is not null) throw ExecuteException;
         return Task.FromResult(NextExecuteResponse ?? new ExecuteStatementResponse());
     }

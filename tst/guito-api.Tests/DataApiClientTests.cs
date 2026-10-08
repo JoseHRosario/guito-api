@@ -19,6 +19,46 @@ public class DataApiClientTests
         DatabaseName = "guito_dev",
     };
 
+    private static DataApiClient Client(FakeRdsDataServiceClient fake, TimeSpan? resumeRetryDelay = null) =>
+        new(fake, Microsoft.Extensions.Options.Options.Create(Options()), new PostgresTransactionContext(), resumeRetryDelay);
+
+    [Fact]
+    public async Task ExecuteAsync_ShouldRetryAndSucceed_WhenAuroraIsResuming()
+    {
+        // Arrange — staging hit live: the first statement after an auto-pause fails with
+        // DatabaseResumingException; a retry a few seconds later succeeds.
+        var fake = new FakeRdsDataServiceClient();
+        fake.ExecuteExceptionScript.Enqueue(new DatabaseResumingException("resuming"));
+        fake.NextExecuteResponse = new ExecuteStatementResponse
+        {
+            ColumnMetadata = [new ColumnMetadata { Name = "n" }],
+            Records = [[new Field { LongValue = 7 }]],
+        };
+        var client = Client(fake, resumeRetryDelay: TimeSpan.Zero);
+
+        // Act
+        var result = await client.ExecuteAsync("SELECT 1");
+
+        // Assert
+        Assert.Equal(7, result.Rows[0][0].LongValue);
+        Assert.Equal(2, fake.ExecuteCallCount);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ShouldThrowAfterMaxRetries_WhenAuroraKeepsResuming()
+    {
+        // Arrange
+        var fake = new FakeRdsDataServiceClient();
+        fake.ExecuteExceptionScript.Enqueue(new DatabaseResumingException("resuming 1"));
+        fake.ExecuteExceptionScript.Enqueue(new DatabaseResumingException("resuming 2"));
+        fake.ExecuteExceptionScript.Enqueue(new DatabaseResumingException("resuming 3"));
+        var client = Client(fake, resumeRetryDelay: TimeSpan.Zero);
+
+        // Act / Assert — 1 initial attempt + 2 retries, then the last exception surfaces.
+        await Assert.ThrowsAsync<DatabaseResumingException>(() => client.ExecuteAsync("SELECT 1"));
+        Assert.Equal(3, fake.ExecuteCallCount);
+    }
+
     [Fact]
     public async Task ExecuteAsync_ShouldMapStringAndLongFields_IntoResult()
     {
