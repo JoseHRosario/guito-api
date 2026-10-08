@@ -48,17 +48,6 @@ namespace GuitoApi.Infrastructure.EnableBanking
             return ParseSession(Parse(response.Body));
         }
 
-        public async Task<string> GetSessionStatusAsync(string sessionId, CancellationToken cancellationToken = default)
-        {
-            var response = await _transport.SendAsync(
-                new(HttpMethod.Get, $"sessions/{Uri.EscapeDataString(sessionId)}", null), cancellationToken);
-            EnsureSuccess(response);
-            var status = Parse(response.Body).TryGetProperty("status", out var property)
-                ? property.GetString()
-                : null;
-            return status ?? string.Empty;
-        }
-
         public async Task<EnableBankingTransactionsPage> ListTransactionsAsync(
             string accountUid, DateOnly? dateFrom, DateOnly? dateTo, string? continuationKey,
             CancellationToken cancellationToken = default)
@@ -97,7 +86,22 @@ namespace GuitoApi.Infrastructure.EnableBanking
                 throw EnableBankingApiException.FromResponse(response);
         }
 
-        private static EnableBankingSession ParseSession(JsonElement root)
+        private static EnableBankingSession ParseSession(JsonElement root) => new(
+            SessionId: root.GetProperty("session_id").GetString() ?? string.Empty,
+            AspspName: root.GetProperty("aspsp").GetProperty("name").GetString() ?? string.Empty,
+            AspspCountry: root.GetProperty("aspsp").GetProperty("country").GetString() ?? string.Empty,
+            AccessValidUntil: ParseValidUntil(root),
+            Accounts: ParseAccounts(root));
+
+        private static DateTime? ParseValidUntil(JsonElement root) =>
+            root.TryGetProperty("access", out var access)
+            && access.TryGetProperty("valid_until", out var validUntil)
+            && validUntil.ValueKind == JsonValueKind.String
+            && DateTime.TryParse(validUntil.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var parsed)
+                ? parsed
+                : null;
+
+        private static IReadOnlyList<EnableBankingSessionAccount> ParseAccounts(JsonElement root)
         {
             var accounts = new List<EnableBankingSessionAccount>();
             foreach (var account in root.GetProperty("accounts").EnumerateArray())
@@ -116,17 +120,7 @@ namespace GuitoApi.Infrastructure.EnableBanking
                     Currency: currency ?? string.Empty));
             }
 
-            return new EnableBankingSession(
-                SessionId: root.GetProperty("session_id").GetString() ?? string.Empty,
-                AspspName: root.GetProperty("aspsp").GetProperty("name").GetString() ?? string.Empty,
-                AspspCountry: root.GetProperty("aspsp").GetProperty("country").GetString() ?? string.Empty,
-                AccessValidUntil: root.TryGetProperty("access", out var access)
-                    && access.TryGetProperty("valid_until", out var validUntil)
-                    && validUntil.ValueKind == JsonValueKind.String
-                    && DateTime.TryParse(validUntil.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var parsed)
-                    ? parsed
-                    : null,
-                Accounts: accounts);
+            return accounts;
         }
 
         private static EnableBankingTransactionsPage ParseTransactionsPage(JsonElement root)

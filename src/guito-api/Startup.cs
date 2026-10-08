@@ -104,10 +104,8 @@ namespace GuitoApi
             // assertion per request, transport seam faked in tests, typed client on top.
             services.Configure<EnableBankingOptions>(Configuration.GetSection(AppConfigurationOptions.AppConfiguration).GetSection("EnableBanking"));
             services.AddScoped<IEnableBankingJwtSigner, EnableBankingJwtSigner>();
-            services.AddHttpClient(HttpEnableBankingTransport.HttpClientName, client =>
-                client.BaseAddress = new Uri(
-                    Configuration.GetSection(AppConfigurationOptions.AppConfiguration).GetSection("EnableBanking")
-                        .Get<EnableBankingOptions>()?.ApiBaseUrl ?? "https://api.enablebanking.com/"));
+            services.AddHttpClient(HttpEnableBankingTransport.HttpClientName, (sp, client) =>
+                client.BaseAddress = new Uri(sp.GetRequiredService<IOptions<EnableBankingOptions>>().Value.ApiBaseUrl));
             services.AddScoped<IEnableBankingTransport, HttpEnableBankingTransport>();
             services.AddScoped<IEnableBankingClient, EnableBankingClient>();
             services.AddScoped<IBankAccountRepository, DataApiPostgresBankAccountRepository>();

@@ -35,9 +35,7 @@ namespace GuitoApi.Services.BankAuth
             }
             catch (EnableBankingApiException exception)
             {
-                throw exception.StatusCode is 400 or 401 or 404 or 422
-                    ? new ProblemException(400, $"Enable Banking rejected the auth code: {exception.Message}")
-                    : new ProblemException(502, $"Enable Banking session request failed: {exception.Message}");
+                throw BankAuthErrorMapper.ToProblemException(exception);
             }
 
             foreach (var account in session.Accounts)

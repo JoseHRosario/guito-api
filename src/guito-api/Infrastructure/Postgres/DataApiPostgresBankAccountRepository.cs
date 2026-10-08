@@ -44,6 +44,9 @@ public class DataApiPostgresBankAccountRepository(IPostgresDataApiClient client)
         await client.ExecuteAsync(UpsertSql, ToParameters(account), cancellationToken: cancellationToken);
     }
 
+    // Positional access mirrors the SELECT column order above (same convention as the
+    // transactions repository, #88).
+
     private static IReadOnlyList<PostgresParameter> ToParameters(BankAccountUpsert account) =>
     [
         new("uid", PostgresValue.FromString(account.Uid)),

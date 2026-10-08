@@ -159,19 +159,4 @@ public class EnableBankingClientTests
         Assert.Equal(401, exception.StatusCode);
         Assert.Contains("Authorization failed", exception.Message);
     }
-
-    [Fact]
-    public async Task GetSessionStatusAsync_ShouldGetSessionPathAndReturnStatus_WhenCalled()
-    {
-        // Arrange
-        _transport.Enqueue(200, """{"status": "AUTHORIZED", "accounts": []}""");
-
-        // Act
-        var status = await _client.GetSessionStatusAsync("sess-1");
-
-        // Assert
-        Assert.Equal("AUTHORIZED", status);
-        var request = Assert.Single(_transport.Requests);
-        Assert.Equal("sessions/sess-1", request.Path);
-    }
 }

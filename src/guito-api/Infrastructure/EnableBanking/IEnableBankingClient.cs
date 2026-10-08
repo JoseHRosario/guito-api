@@ -9,8 +9,6 @@ namespace GuitoApi.Infrastructure.EnableBanking
 
         Task<EnableBankingSession> AuthorizeSessionAsync(string code, CancellationToken cancellationToken = default);
 
-        Task<string> GetSessionStatusAsync(string sessionId, CancellationToken cancellationToken = default);
-
         Task<EnableBankingTransactionsPage> ListTransactionsAsync(
             string accountUid, DateOnly? dateFrom, DateOnly? dateTo, string? continuationKey,
             CancellationToken cancellationToken = default);

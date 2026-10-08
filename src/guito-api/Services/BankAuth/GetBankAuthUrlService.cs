@@ -40,9 +40,7 @@ namespace GuitoApi.Services.BankAuth
             }
             catch (EnableBankingApiException exception)
             {
-                throw exception.StatusCode is 400 or 404 or 422
-                    ? new ProblemException(400, $"Enable Banking rejected the auth request: {exception.Message}")
-                    : new ProblemException(502, $"Enable Banking auth request failed: {exception.Message}");
+                throw BankAuthErrorMapper.ToProblemException(exception);
             }
 
             return new BankAuthUrl { Url = authorization.Url };

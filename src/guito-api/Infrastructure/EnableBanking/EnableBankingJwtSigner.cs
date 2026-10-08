@@ -20,7 +20,7 @@ namespace GuitoApi.Infrastructure.EnableBanking
     {
         private const string Issuer = "enablebanking.com";
         private const string Audience = "api.enablebanking.com";
-        private static readonly TimeSpan MaxTtl = TimeSpan.FromSeconds(86400);
+        // One hour — well under EB's 24h token cap; EB rejects longer TTLs.
         private static readonly TimeSpan DefaultTtl = TimeSpan.FromHours(1);
 
         private readonly IOptions<EnableBankingOptions> _options;
@@ -57,7 +57,7 @@ namespace GuitoApi.Infrastructure.EnableBanking
                 CryptoProviderFactory = new CryptoProviderFactory { CacheSignatureProviders = false },
             };
 
-            var ttl = DefaultTtl < MaxTtl ? DefaultTtl : MaxTtl;
+            var ttl = DefaultTtl;
             var now = DateTime.UtcNow;
             var jwt = new JwtSecurityToken(
                 issuer: Issuer,

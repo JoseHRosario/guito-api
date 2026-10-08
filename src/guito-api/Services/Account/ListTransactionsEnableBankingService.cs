@@ -60,15 +60,9 @@ namespace GuitoApi.Services.Account
 
                 foreach (var transaction in page.Transactions)
                 {
-                    if (transaction.Status != "BOOK" || transaction.CreditDebitIndicator != "DBIT")
-                        continue;
-                    details.Add(new TransactionListDetail
-                    {
-                        Id = transaction.TransactionId ?? transaction.EntryReference,
-                        Date = transaction.BookingDate.ToDateTime(TimeOnly.MinValue),
-                        Amount = Math.Abs(transaction.Amount),
-                        Description = transaction.RemittanceInformation ?? transaction.Note,
-                    });
+                    var detail = ToDetail(transaction);
+                    if (detail is not null)
+                        details.Add(detail);
                 }
 
                 continuationKey = page.ContinuationKey;
@@ -76,6 +70,21 @@ namespace GuitoApi.Services.Account
 
             return details;
         }
+
+        /// <summary>
+        /// Keeps only settled expense-direction rows (status=BOOK, DBIT — ADR-0010 keeps
+        /// amounts positive at the provider boundary; PDNG/INFO and income are dropped).
+        /// </summary>
+        private static TransactionListDetail? ToDetail(EnableBankingTransaction transaction) =>
+            transaction.Status != "BOOK" || transaction.CreditDebitIndicator != "DBIT"
+                ? null
+                : new TransactionListDetail
+                {
+                    Id = transaction.TransactionId ?? transaction.EntryReference,
+                    Date = transaction.BookingDate.ToDateTime(TimeOnly.MinValue),
+                    Amount = Math.Abs(transaction.Amount),
+                    Description = transaction.RemittanceInformation ?? transaction.Note,
+                };
 
         /// <summary>
         /// Upstream EB failures classify per ADR-0004: session lost/expired or unknown

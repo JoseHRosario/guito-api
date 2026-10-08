@@ -27,7 +27,10 @@ namespace GuitoApi.Infrastructure.EnableBanking
             var client = _httpClientFactory.CreateClient(HttpClientName);
             using var message = new HttpRequestMessage(request.Method, request.Path);
             if (request.JsonBody is not null)
-                message.Content = new StringContent(request.JsonBody, Encoding.UTF8, "application/json");
+            {
+                using var content = new StringContent(request.JsonBody, Encoding.UTF8, "application/json");
+                message.Content = content;
+            }
             message.Headers.Authorization =
                 new AuthenticationHeaderValue("Bearer", await _jwtSigner.CreateTokenAsync(cancellationToken));
 
