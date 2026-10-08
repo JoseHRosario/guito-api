@@ -62,6 +62,21 @@ public class EnableBankingCredentialsProviderTests
     }
 
     [Fact]
+    public async Task SecretsManagerProvider_ShouldReadRawPemSecret_WhenSecretIsNotJson()
+    {
+        // Arrange — the staging secret was re-stored as raw PEM (no {"pem": …} wrapper).
+        var provider = new SecretsManagerEnableBankingCredentialsProvider(
+            Microsoft.Extensions.Options.Options.Create(SecretsManagerOptions()),
+            (_, _) => Task.FromResult(FlatPem));
+
+        // Act
+        var credentials = await provider.GetAsync();
+
+        // Assert
+        Assert.Equal("-----BEGIN PRIVATE KEY-----", credentials.PrivateKey.Split('\n')[0]);
+    }
+
+    [Fact]
     public async Task SecretsManagerProvider_ShouldThrow_WhenApplicationIdMissing()
     {
         // Arrange

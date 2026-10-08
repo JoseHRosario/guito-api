@@ -40,12 +40,31 @@ namespace GuitoApi.Infrastructure.EnableBanking
                 throw new InvalidOperationException("AppConfiguration:EnableBanking:SecretsManagerSecretName is required.");
 
             var raw = await _getSecretValue(options.SecretsManagerSecretName, cancellationToken);
-            var pem = JsonDocument.Parse(raw).RootElement.GetProperty("pem").GetString()
-                ?? throw new InvalidOperationException($"Secret '{options.SecretsManagerSecretName}' has no 'pem' property.");
+            var pem = ExtractPem(raw)
+                ?? throw new InvalidOperationException(
+                    $"Secret '{options.SecretsManagerSecretName}' carries neither a raw PEM nor a '{{\"pem\": …}}' JSON object.");
 
             _cached = new EnableBankingCredentials(options.ApplicationId, NormalizePem(pem));
             _cachedAt = DateTimeOffset.UtcNow;
             return _cached;
+        }
+
+        /// <summary>Accepts both secret layouts: the raw PEM text, or JSON {"pem": …}.</summary>
+        private static string? ExtractPem(string raw)
+        {
+            if (raw.Contains("-----BEGIN PRIVATE KEY-----"))
+                return raw;
+            try
+            {
+                var document = JsonDocument.Parse(raw);
+                return document.RootElement.TryGetProperty("pem", out var pem)
+                    ? pem.GetString()
+                    : null;
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
         }
 
         /// <summary>
