@@ -26,11 +26,11 @@ namespace GuitoApi.Infrastructure.EnableBanking
         {
             var client = _httpClientFactory.CreateClient(HttpClientName);
             using var message = new HttpRequestMessage(request.Method, request.Path);
+            // No `using` on the content: HttpRequestMessage owns and disposes it when the
+            // message is disposed — a block-scoped using would dispose it BEFORE SendAsync
+            // (hit live: ObjectDisposedException on the first POST /auth).
             if (request.JsonBody is not null)
-            {
-                using var content = new StringContent(request.JsonBody, Encoding.UTF8, "application/json");
-                message.Content = content;
-            }
+                message.Content = new StringContent(request.JsonBody, Encoding.UTF8, "application/json");
             message.Headers.Authorization =
                 new AuthenticationHeaderValue("Bearer", await _jwtSigner.CreateTokenAsync(cancellationToken));
 

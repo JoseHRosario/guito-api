@@ -21,7 +21,7 @@ public class DataApiPostgresBankAccountRepository(IPostgresDataApiClient client)
         INSERT INTO bank_accounts
             (uid, session_id, iban, name, currency, aspsp_country, aspsp_name, consent_status, consent_expires_at)
         VALUES
-            (:uid, :session_id, :iban, :name, :currency, :aspsp_country, :aspsp_name, :consent_status, :consent_expires_at)
+            (:uid, :session_id, :iban, :name, :currency, :aspsp_country, :aspsp_name, :consent_status, :consent_expires_at::timestamptz)
         ON CONFLICT (uid) DO UPDATE SET
             session_id = EXCLUDED.session_id,
             iban = EXCLUDED.iban,
