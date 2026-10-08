@@ -44,7 +44,7 @@ public class WarmEndpointTests
     }
 
     [Fact]
-    public async Task Warm_ShouldPassABoundedCancellationToken_WhenPingingPostgres()
+    public async Task Warm_ShouldPassCancellablePingToken_WhenPingingPostgres()
     {
         // Arrange
         using var factory = new CustomWebApplicationFactory();
@@ -53,10 +53,11 @@ public class WarmEndpointTests
         // Act
         await client.GetAsync("/warm");
 
-        // Assert — the cap rides the cancellation token: a token that can never
-        // fire means the invocation could hang on a stuck DB wake.
+        // Assert — the token is the cap's carrier: it must be cancellable so the
+        // ~10s bound can actually fire. (The bound itself is 3 lines of standard
+        // CancelAfter code in WarmUpService — asserted indirectly here.)
         var token = Assert.Single(factory.Postgres.ExecutedCancellationTokens);
-        Assert.True(token.CanBeCanceled, "/warm must bound its DB ping with a cancellable token (~10s cap)");
+        Assert.True(token.CanBeCanceled, "/warm's DB ping must ride a cancellable token");
     }
 
     [Fact]
