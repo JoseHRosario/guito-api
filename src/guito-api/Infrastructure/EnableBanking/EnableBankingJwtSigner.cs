@@ -26,23 +26,24 @@ namespace GuitoApi.Infrastructure.EnableBanking
         private static readonly TimeSpan DefaultTtl = TimeSpan.FromHours(1);
 
         private readonly IOptions<EnableBankingOptions> _options;
-        private readonly ISecretsProvider _secretsProvider;
+        private readonly IEnableBankingCredentialsProvider _credentialsProvider;
 
-        public EnableBankingJwtSigner(IOptions<EnableBankingOptions> options, ISecretsProvider secretsProvider)
+        public EnableBankingJwtSigner(IOptions<EnableBankingOptions> options,
+            IEnableBankingCredentialsProvider credentialsProvider)
         {
             _options = options;
-            _secretsProvider = secretsProvider;
+            _credentialsProvider = credentialsProvider;
         }
 
         public async Task<string> CreateTokenAsync(CancellationToken cancellationToken = default)
         {
-            var secrets = (await _secretsProvider.GetAsync(cancellationToken)).EnableBanking;
-            if (string.IsNullOrWhiteSpace(secrets.ApplicationId) || string.IsNullOrWhiteSpace(secrets.PrivateKey))
+            var ebCredentials = await _credentialsProvider.GetAsync(cancellationToken);
+            if (string.IsNullOrWhiteSpace(ebCredentials.ApplicationId) || string.IsNullOrWhiteSpace(ebCredentials.PrivateKey))
                 throw new InvalidOperationException(
-                    "Enable Banking application id / private key missing from the secrets payload.");
+                    "Enable Banking application id / private key missing — check the credentials provider config.");
 
             using var rsa = RSA.Create();
-            rsa.ImportFromPem(secrets.PrivateKey);
+            rsa.ImportFromPem(ebCredentials.PrivateKey);
 
             var algorithm = _options.Value.JwtAlgorithm switch
             {
@@ -67,7 +68,7 @@ namespace GuitoApi.Infrastructure.EnableBanking
                 claims: [new Claim(JwtRegisteredClaimNames.Iat,EpochTime.GetIntDate(now).ToString(), ClaimValueTypes.Integer64)],
                 expires: now + ttl,
                 signingCredentials: credentials);
-            jwt.Header.Add("kid", secrets.ApplicationId);
+            jwt.Header.Add("kid", ebCredentials.ApplicationId);
 
             return new JwtSecurityTokenHandler().WriteToken(jwt);
         }

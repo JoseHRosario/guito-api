@@ -23,7 +23,8 @@ public class EnableBankingJwtSignerTests
 
     private static EnableBankingJwtSigner Signer(string algorithm) => new(
         Microsoft.Extensions.Options.Options.Create(new EnableBankingOptions { JwtAlgorithm = algorithm }),
-        new FakeSecretsProvider { Payload = { EnableBanking = Secrets() } });
+        new PayloadEnableBankingCredentialsProvider(
+            new FakeSecretsProvider { Payload = { EnableBanking = Secrets() } }));
 
     private static async Task<JwtSecurityToken> ReadToken(string algorithm)
     {

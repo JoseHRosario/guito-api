@@ -104,6 +104,27 @@ namespace GuitoApi
             // assertion per request, transport seam faked in tests, typed client on top.
             services.Configure<EnableBankingOptions>(Configuration.GetSection(AppConfigurationOptions.AppConfiguration).GetSection("EnableBanking"));
             services.AddScoped<IEnableBankingJwtSigner, EnableBankingJwtSigner>();
+            // EB credentials source (issue #89): the ADR-0008 runtime payload by default,
+            // or a dedicated Secrets Manager secret — staging uses that so the deploy
+            // script can re-seed the runtime payload without touching the bank key.
+            services.AddScoped<IEnableBankingCredentialsProvider>(sp =>
+            {
+                var options = sp.GetRequiredService<IOptions<EnableBankingOptions>>().Value;
+                return options.SecretsSource switch
+                {
+                    "SecretsManager" => new SecretsManagerEnableBankingCredentialsProvider(
+                        sp.GetRequiredService<IOptions<EnableBankingOptions>>(),
+                        async (secretId, ct) =>
+                        {
+                            using var client = new Amazon.SecretsManager.AmazonSecretsManagerClient(
+                                new Amazon.SecretsManager.AmazonSecretsManagerConfig());
+                            var response = await client.GetSecretValueAsync(
+                                new Amazon.SecretsManager.Model.GetSecretValueRequest { SecretId = secretId }, ct);
+                            return response.SecretString;
+                        }),
+                    _ => new PayloadEnableBankingCredentialsProvider(sp.GetRequiredService<ISecretsProvider>()),
+                };
+            });
             services.AddHttpClient(HttpEnableBankingTransport.HttpClientName, (sp, client) =>
                 client.BaseAddress = new Uri(sp.GetRequiredService<IOptions<EnableBankingOptions>>().Value.ApiBaseUrl));
             services.AddScoped<IEnableBankingTransport, HttpEnableBankingTransport>();
