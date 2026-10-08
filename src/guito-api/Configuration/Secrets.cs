@@ -16,5 +16,8 @@ namespace GuitoApi.Configuration
 
         /// <summary>OpenRouter API key for expense extraction (issue #69).</summary>
         public string OpenRouterApiKey { get; set; } = string.Empty;
+
+        /// <summary>Enable Banking application credentials (issue #89, ADR-0004).</summary>
+        public EnableBankingSecrets EnableBanking { get; set; } = new();
     }
 }
