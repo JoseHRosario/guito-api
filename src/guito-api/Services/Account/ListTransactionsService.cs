@@ -13,12 +13,12 @@ namespace GuitoApi.Services.Account
     /// normalized positive at the provider boundary (ADR-0010). Fetched rows are NOT
     /// stored here — that is the sync endpoint's job (#90).
     /// </summary>
-    public class ListTransactionsEnableBankingService : IListTransactionsService
+    public class ListTransactionsService : IListTransactionsService
     {
         private readonly IEnableBankingClient _client;
         private readonly IBankAccountRepository _accounts;
 
-        public ListTransactionsEnableBankingService(IEnableBankingClient client, IBankAccountRepository accounts)
+        public ListTransactionsService(IEnableBankingClient client, IBankAccountRepository accounts)
         {
             _client = client;
             _accounts = accounts;

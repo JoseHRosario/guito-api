@@ -94,7 +94,7 @@ namespace GuitoApi
                 return bankProvider switch
                 {
                     "Dummy" => new ListTransactionsDummyService(),
-                    "EnableBanking" => new ListTransactionsEnableBankingService(
+                    "EnableBanking" => new ListTransactionsService(
                         sp.GetRequiredService<IEnableBankingClient>(),
                         sp.GetRequiredService<IBankAccountRepository>()),
                     _ => throw new InvalidOperationException($"Unknown BankProvider '{bankProvider}'.")
