@@ -4,6 +4,8 @@ using GuitoApi.Infrastructure.Postgres;
 using GuitoApi.Infrastructure.Secrets;
 using GuitoApi.Infrastructure.Sheets;
 using GuitoApi.Infrastructure.AI;
+using GuitoApi.Infrastructure.EnableBanking;
+using GuitoApi.Services.BankAuth;
 using GuitoApi.Exceptions;
 using GuitoApi.Middleware;
 using GuitoApi.Repositories;
@@ -85,18 +87,51 @@ namespace GuitoApi
             services.AddScoped<ISheetScopeResolver, SheetScopeResolver>();
             services.AddScoped<IListCategoryService, ListCategoryGoogleApisSheetsService>();
             // Bank transaction provider selected by configuration (ADR-0004): EnableBanking is
-            // the PSD2 provider; Dummy serves canned data for local dev until the Enable
-            // Banking adapter lands (issue #5, first PR).
+            // the PSD2 provider (issue #89); Dummy serves canned data for local dev and CI.
             services.AddScoped<IListTransactionsService>(sp =>
             {
                 var bankProvider = sp.GetRequiredService<IOptions<AppConfigurationOptions>>().Value.BankProvider;
                 return bankProvider switch
                 {
                     "Dummy" => new ListTransactionsDummyService(),
-                    "EnableBanking" => new ListTransactionsDummyService(),
+                    "EnableBanking" => new ListTransactionsService(
+                        sp.GetRequiredService<IEnableBankingClient>(),
+                        sp.GetRequiredService<IBankAccountRepository>()),
                     _ => throw new InvalidOperationException($"Unknown BankProvider '{bankProvider}'.")
                 };
             });
+            // Enable Banking adapter internals (issue #89, ADR-0004): fresh JWT client
+            // assertion per request, transport seam faked in tests, typed client on top.
+            services.Configure<EnableBankingOptions>(Configuration.GetSection(AppConfigurationOptions.AppConfiguration).GetSection("EnableBanking"));
+            services.AddScoped<IEnableBankingJwtSigner, EnableBankingJwtSigner>();
+            // EB credentials source (issue #89): the ADR-0008 runtime payload by default,
+            // or a dedicated Secrets Manager secret — staging uses that so the deploy
+            // script can re-seed the runtime payload without touching the bank key.
+            services.AddScoped<IEnableBankingCredentialsProvider>(sp =>
+            {
+                var options = sp.GetRequiredService<IOptions<EnableBankingOptions>>().Value;
+                return options.SecretsSource switch
+                {
+                    "SecretsManager" => new SecretsManagerEnableBankingCredentialsProvider(
+                        sp.GetRequiredService<IOptions<EnableBankingOptions>>(),
+                        async (secretId, ct) =>
+                        {
+                            using var client = new Amazon.SecretsManager.AmazonSecretsManagerClient(
+                                new Amazon.SecretsManager.AmazonSecretsManagerConfig());
+                            var response = await client.GetSecretValueAsync(
+                                new Amazon.SecretsManager.Model.GetSecretValueRequest { SecretId = secretId }, ct);
+                            return response.SecretString;
+                        }),
+                    _ => new PayloadEnableBankingCredentialsProvider(sp.GetRequiredService<ISecretsProvider>()),
+                };
+            });
+            services.AddHttpClient(HttpEnableBankingTransport.HttpClientName, (sp, client) =>
+                client.BaseAddress = new Uri(sp.GetRequiredService<IOptions<EnableBankingOptions>>().Value.ApiBaseUrl));
+            services.AddScoped<IEnableBankingTransport, HttpEnableBankingTransport>();
+            services.AddScoped<IEnableBankingClient, EnableBankingClient>();
+            services.AddScoped<IBankAccountRepository, DataApiPostgresBankAccountRepository>();
+            services.AddScoped<IGetBankAuthUrlService, GetBankAuthUrlService>();
+            services.AddScoped<IFinishBankAuthService, FinishBankAuthService>();
             services.AddScoped<IGooglesheetsClientProvider, GooglesheetsClientProvider>();
             services.AddScoped<IExtractMethodService, ExtractMethodService>();
             services.AddScoped<IExpenseExtractionRepository, OpenRouterExpenseExtractionRepository>();
