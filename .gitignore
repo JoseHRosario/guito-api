@@ -408,3 +408,9 @@ human-auth.local.json
 
 # Runtime secrets (Local location; issue #69 adds the OpenRouter key field)
 secrets.local.json
+
+# codebase-memory-mcp (CBM) local index artifacts — never commit
+.cbm/
+.cbmignore
+*.cbm
+codebase-memory-mcp.log
