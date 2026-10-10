@@ -41,11 +41,8 @@ def main():
     secret = aws("secretsmanager", "describe-secret", "--secret-id", "guito-api/db-admin")["ARN"]
     common = ["--resource-arn", CLUSTER, "--secret-arn", secret, "--database", DATABASE]
 
-    def execute(sql, transaction=None):
-        args = ["rds-data", "execute-statement", *common, "--sql", sql]
-        if transaction:
-            args.extend(["--transaction-id", transaction])
-        return aws(*args)
+    def execute(sql):
+        return aws("rds-data", "execute-statement", *common, "--sql", sql)
 
     # Only the read-only wake probe retries Aurora resume errors. Destructive
     # operations and other failures are never blindly retried.
@@ -62,17 +59,15 @@ def main():
     if actual_database is None or actual_database["records"][0][0]["stringValue"] != DATABASE:
         raise SystemExit("Reset refused: database verification failed.")
 
-    transaction = aws("rds-data", "begin-transaction", *common)["transactionId"]
-    try:
-        # No CASCADE: any unexpected dependent table stops the reset safely.
-        execute("DROP TABLE IF EXISTS public.expenses", transaction)
-        execute(f"DELETE FROM public._migrations WHERE name = '{MIGRATION}'", transaction)
-        aws("rds-data", "commit-transaction", "--resource-arn", CLUSTER,
-            "--secret-arn", secret, "--transaction-id", transaction)
-    except Exception:
-        aws("rds-data", "rollback-transaction", "--resource-arn", CLUSTER,
-            "--secret-arn", secret, "--transaction-id", transaction)
-        raise
+    # One PostgreSQL DO statement is atomic under its implicit transaction and
+    # uses only ExecuteStatement, already allowed to the GitHub migration role.
+    # No CASCADE: unexpected dependencies fail without changing table or ledger.
+    execute(
+        "DO $reset$ BEGIN "
+        "DROP TABLE IF EXISTS public.expenses; "
+        f"DELETE FROM public._migrations WHERE name = '{MIGRATION}'; "
+        "END; $reset$"
+    )
 
     verification = execute(
         "SELECT to_regclass('public.expenses') IS NULL, "
@@ -85,4 +80,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except subprocess.CalledProcessError as error:
+        raise SystemExit(error.stderr or "AWS command failed; reset/redeployment aborted.") from error
