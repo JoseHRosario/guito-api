@@ -3,8 +3,8 @@ using System.Text.Json;
 namespace GuitoApi.Configuration
 {
     /// <summary>
-    /// Payload of the "guito-api/prod" Secrets Manager secret. Written via
-    /// `aws secretsmanager put-secret-value` as one JSON document; never committed.
+    /// Runtime payload stored in an environment's SSM SecureString parameter
+    /// or a gitignored local JSON file; never committed.
     /// </summary>
     public class SecretsPayload
     {
