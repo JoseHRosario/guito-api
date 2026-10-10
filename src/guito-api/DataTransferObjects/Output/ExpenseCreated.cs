@@ -7,6 +7,6 @@ namespace GuitoApi.DataTransferObjects.Output
     /// </summary>
     public class ExpenseCreated
     {
-        public int Id { get; set; }
+        public string Id { get; set; } = "";
     }
 }

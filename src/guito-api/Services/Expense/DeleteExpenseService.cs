@@ -1,5 +1,4 @@
 using GuitoApi.Repositories;
-using System.Globalization;
 
 namespace GuitoApi.Services.Expense
 {
@@ -17,7 +16,7 @@ namespace GuitoApi.Services.Expense
         public DeleteExpenseService(IExpenseRepository expenseRepository) =>
             _expenseRepository = expenseRepository;
 
-        public Task DeleteAsync(int id, CancellationToken cancellationToken = default) =>
-            _expenseRepository.DeleteAsync(id.ToString(CultureInfo.InvariantCulture), cancellationToken);
+        public Task DeleteAsync(string id, CancellationToken cancellationToken = default) =>
+            _expenseRepository.DeleteAsync(id, cancellationToken);
     }
 }

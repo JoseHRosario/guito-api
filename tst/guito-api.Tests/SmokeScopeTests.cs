@@ -1,4 +1,5 @@
 using System.Net;
+using Microsoft.Extensions.DependencyInjection;
 using System.Net.Http.Json;
 using GuitoApi.DataTransferObjects.Input;
 using GuitoApi.DataTransferObjects.Output;
@@ -14,6 +15,64 @@ namespace GuitoApi.Tests;
 /// </summary>
 public class SmokeScopeTests
 {
+    [Fact]
+    public async Task Latest_ShouldKeepAbsoluteRowIdentity_WhenBlankPositionsAreSkipped()
+    {
+        // Arrange
+        using var factory = new CustomWebApplicationFactory();
+        factory.SheetsHandler.LatestValuesJson = """
+            [[], ["2026-09-19", "", "", "45.00", "Groceries", "Groceries", "jose@example.test"],
+             ["2026-09-18", "", "", "8.90", "Bus", "Transport", "jose@example.test"]]
+            """;
+        using var client = factory.CreateClient();
+        var options = factory.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<GuitoApi.Configuration.AppConfigurationOptions>>().Value;
+        var firstRow = TestSheetsConfiguration.FirstDataRow(options);
+
+        // Act
+        var response = await client.GetAsync("/Expense/latest/10");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var latest = await response.Content.ReadFromJsonAsync<ExpenseListLatest>();
+        Assert.Equal(new[] { (firstRow + 1).ToString(), (firstRow + 2).ToString() }, latest!.Expenses.Select(expense => expense.Id));
+    }
+
+    [Fact]
+    public async Task CreateExpense_ShouldRefuseLossyTimestamp_WhenSheetsStillAuthoritative()
+    {
+        // Arrange
+        using var factory = new CustomWebApplicationFactory();
+        using var client = factory.CreateClient();
+        var expense = ValidExpense();
+        expense.OccurredAt = "2026-09-21T14:00:00+01:00";
+
+        // Act
+        var response = await client.PostAsJsonAsync("/Expense", expense);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Empty(factory.SheetsHandler.AppendBodies);
+    }
+
+    [Fact]
+    public async Task ListLatest_ShouldExposeAbsoluteIdentity_WhenReadingTailSlice()
+    {
+        // Arrange
+        using var factory = new CustomWebApplicationFactory();
+        using var client = factory.CreateClient();
+        var options = factory.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<GuitoApi.Configuration.AppConfigurationOptions>>().Value;
+        var lastRow = TestSheetsConfiguration.FirstDataRow(options) + 2;
+
+        // Act
+        var latest = await client.GetFromJsonAsync<ExpenseListLatest>("/Expense/latest/1");
+
+        // Assert
+        Assert.Equal(lastRow.ToString(), latest!.Expenses[0].Id);
+        Assert.Equal("EUR", latest.Expenses[0].Currency);
+        Assert.Equal(TimeSpan.FromHours(1), latest.Expenses[0].OccurredAt!.Value.Offset);
+        Assert.Null(latest.Expenses[0].CreationDate);
+    }
+
     private static ExpenseCreate ValidExpense() => new()
     {
         Date = new DateTime(2026, 9, 21),
@@ -56,7 +115,7 @@ public class SmokeScopeTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var created = await response.Content.ReadFromJsonAsync<ExpenseCreated>();
-        Assert.Equal(FakeSheetsHttpHandler.NextRowIndex, created!.Id);
+        Assert.Equal(FakeSheetsHttpHandler.NextRowIndex.ToString(), created!.Id);
     }
 
     [Fact]

@@ -11,8 +11,11 @@ namespace GuitoApi.DataTransferObjects.Input
     public class ExpenseCreate
     {
         public DateTime Date { get; set; }
+        public string? OccurredAt { get; set; }
+        [Required, RegularExpression("EUR", ErrorMessage = "Only EUR is supported.")]
+        public string Currency { get; set; } = "EUR";
 
-        [Range(typeof(decimal), "0.01", "79228162514264337593543950335",
+        [Range(typeof(decimal), "0.0000000000000000000000000001", "79228162514264337593543950335",
             ErrorMessage = "Amount must be a positive number.")]
         public decimal Amount { get; set; }
 

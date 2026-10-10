@@ -82,6 +82,16 @@ else
   echo "No custom-domain mapping for $API_NAME — using $GUITO_TARGET_BASE_URL."
 fi
 
+# Match the smoke payload to the deployed authority, not the shell's deploy flags.
+export GUITO_TARGET_EXPENSE_STORE
+GUITO_TARGET_EXPENSE_STORE=$(aws --region "$REGION" lambda get-function-configuration \
+  --function-name "$API_NAME" --query 'Environment.Variables.AppConfiguration__ExpenseStore' --output text)
+[ "$GUITO_TARGET_EXPENSE_STORE" = None ] && GUITO_TARGET_EXPENSE_STORE=Sheets
+case "$GUITO_TARGET_EXPENSE_STORE" in
+  Sheets|Postgres) ;;
+  *) echo "FATAL: unsupported deployed ExpenseStore" >&2; exit 1 ;;
+esac
+
 # --- Resolve both agent keys from SSM Parameter Store -----------------------------
 secret_key() {
   aws --region "$REGION" ssm get-parameter --with-decryption --name "$1" \

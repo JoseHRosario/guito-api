@@ -82,7 +82,14 @@ namespace GuitoApi
             services.AddScoped<IRevokeGoogleTokenService, RevokeGoogleTokenService>();
             services.AddHttpClient(RevokeGoogleTokenService.HttpClientName);
 
-            services.AddScoped<IExpenseRepository, GoogleSheetsExpenseRepository>();
+            services.AddScoped<IExpenseRepository>(sp =>
+                sp.GetRequiredService<IOptions<AppConfigurationOptions>>().Value.ExpenseStore switch
+                {
+                    "Sheets" => ActivatorUtilities.CreateInstance<GoogleSheetsExpenseRepository>(sp),
+                    "Postgres" when !sp.GetRequiredService<IWebHostEnvironment>().IsProduction() => ActivatorUtilities.CreateInstance<DataApiPostgresExpenseRepository>(sp),
+                    "Postgres" => throw new InvalidOperationException("Production Expense Postgres cutover is not yet approved."),
+                    _ => throw new InvalidOperationException("Unknown ExpenseStore; expected Sheets or Postgres.")
+                });
             services.AddScoped<ICategoryRepository, GoogleSheetsCategoryRepository>();
 
             services.AddScoped<ICreateExpenseService, CreateExpenseService>();

@@ -1,5 +1,5 @@
 using GuitoApi.Configuration;
-using GuitoApi.DataTransferObjects.Input;
+using GuitoApi.Model;
 using GuitoApi.Exceptions;
 using GuitoApi.Infrastructure.Sheets;
 using GuitoApi.Repositories;
@@ -15,15 +15,15 @@ public class GoogleSheetsExpenseRepositoryTests
     private GoogleSheetsExpenseRepository CreateRepository() =>
         new(Options.Create(_options),
             new FakeGooglesheetsClientProvider(_handler),
-            new FakeUserIdentityResolver(),
             new FakeSheetScopeResolver(_options));
 
-    private static ExpenseCreate AnExpense() => new()
+    private static ExpenseDraft AnExpense() => new()
     {
         Date = new DateTime(2026, 10, 2),
         Amount = 2.30m,
         Description = "morning coffee",
-        Category = "Restaurants"
+        Category = "Restaurants",
+        CreatorEmail = FakeUserIdentityResolver.Email
     };
 
     [Fact]

@@ -52,8 +52,8 @@ model; nothing crosses a boundary in a foreign layer's type):
 
 Boundaries translate mechanically between homes: controllers map wire DTO ↔ Model,
 services map external payloads (e.g. Enable Banking JSON) ↔ Model. A repository
-interface must not take a `DataTransferObjects/` type (known debt: `IExpenseRepository`
-currently takes `ExpenseCreate` — refactor tracked separately).
+interface must not take a `DataTransferObjects/` type. `IExpenseRepository`
+exchanges `ExpenseDraft` and `ExpenseSummary`, not request/response DTOs.
 
 ---
 

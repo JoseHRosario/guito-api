@@ -45,14 +45,16 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
     /// transport); the default keeps the Dummy provider, mirroring the default config.
     /// </summary>
     public bool UseEnableBankingProvider { get; set; }
+    public string ExpenseStore { get; set; } = "Sheets";
+    public string Environment { get; set; } = "Development";
 
     /// <summary>UI origin for the consent-callback 302 (issue #116) — lands in the test config as Cors:AllowedOrigins[0].</summary>
     public string UiOrigin { get; set; } = string.Empty;
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseEnvironment("Development");
-        var inMemory = new Dictionary<string, string?>();
+        builder.UseEnvironment(Environment);
+        var inMemory = new Dictionary<string, string?> { ["AppConfiguration:ExpenseStore"] = ExpenseStore };
         if (UseEnableBankingProvider)
         {
             inMemory["AppConfiguration:BankProvider"] = "EnableBanking";

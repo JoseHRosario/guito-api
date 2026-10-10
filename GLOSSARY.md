@@ -4,10 +4,13 @@ Personal expense-tracking system (API + webapp) used to control expenses and max
 
 ## Glossary
 
-- **Expense** — a spending record. Stored as a row in a Google Sheet; created manually, extracted by AI, or matched from a bank transaction.
+- **Expense** — a spending record. Stored in the environment-selected Expense Store (Sheets by default, opt-in Postgres); created manually, extracted by AI, or matched from a bank transaction.
 - **Expense Amount** — the Expense's value, stored and transmitted **positive**; that it is an outflow is implied by it being an Expense. See ADR 0010. _Avoid_: negative amounts, sign convention.
-- **Expense Id** — the opaque identifier of an Expense, returned by the API and never interpreted by callers. Today the row index in the spreadsheet; later a database key. _Avoid_: row, row index (in API payloads).
-- **Smoke scope** — the datastore override requested by the `X-Sheet-Scope: smoke` header: writes and list reads resolve to the Smoke Test tab instead of the real tabs. Intended only for deployed-endpoint integration tests; any authenticated caller may send it (it grants less than the agent key already does). See ADR 0009.
+- **Expense Id** — an opaque string passed unchanged by callers. In Postgres it is an immutable UUID text key independent of content and position. The compatibility Sheets adapter exposes a real absolute row ID, but it is transient and not durable across row movement. `storedOrder` is deprecated presentation metadata, never identity.
+- **Expense occurrence** — when spending happened, represented by `occurredAt` in Europe/Lisbon and stored as a timezone-aware instant. Legacy date-only records use midnight on their original Lisbon day, not UTC midnight.
+- **Expense audit timestamps** — `creation_date` and `update_date` (wire `creationDate` / `updateDate`) describe actual record lifecycle events, not purchase time. Sheets lacks these values and returns null; historical values are not fabricated.
+- **Expense Store** — one environment-controlled read/write authority, Sheets by default or opt-in Postgres outside Production. No equal-authority dual writes. See ADR-0015.
+- **Smoke scope** — the datastore override requested by the `X-Sheet-Scope: smoke` header: writes and list reads resolve to the Smoke Test tab in Sheets, or explicitly isolated smoke records in Postgres. Intended only for deployed-endpoint integration tests; any authenticated caller may send it (it grants less than the agent key already does). See ADR 0009.
 - **Smoke Test tab** — a bare, formula-free tab (anchor `B5`) in each environment's spreadsheet where the deployed integration suite exercises the write path. Real tabs are never written by tests. _Avoid_: dummy data, test sheet.
 - **Category** — label grouping expenses for analysis. Lives in its own sheet.
 - **Match** — the act of pairing a bank **Transaction** with an Expense (or creating an Expense from it).

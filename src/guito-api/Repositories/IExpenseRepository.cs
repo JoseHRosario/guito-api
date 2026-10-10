@@ -1,5 +1,4 @@
-using GuitoApi.DataTransferObjects.Input;
-using GuitoApi.DataTransferObjects.Output;
+using GuitoApi.Model;
 
 namespace GuitoApi.Repositories
 {
@@ -14,13 +13,13 @@ namespace GuitoApi.Repositories
     public interface IExpenseRepository
     {
         /// <summary>Persists the expense and returns its opaque Id.</summary>
-        Task<string> CreateAsync(ExpenseCreate value, CancellationToken cancellationToken = default);
+        Task<string> CreateAsync(ExpenseDraft value, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Lists the latest expenses in stored order (oldest first, matching the
-        /// datastore's read direction). Empty when the datastore holds none.
+        /// Lists recent expenses. Postgres orders occurrence and ID descending;
+        /// the compatibility Sheets adapter reads its configured tail slice.
         /// </summary>
-        Task<IReadOnlyList<ExpenseListLatestDetail>> ListLatestAsync(int limit, CancellationToken cancellationToken = default);
+        Task<IReadOnlyList<ExpenseSummary>> ListLatestAsync(int limit, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Deletes the expense with the given Id. Throws

@@ -44,12 +44,10 @@ namespace GuitoApi.Controllers
             return await _matchExpensesService.MatchExpensesAsync(cancellationToken);
         }
 
-        // ADR-0009: deletion is scoped to the Smoke Test tab by the route itself. It
-        // deletes one row by opaque Expense Id (today the sheet row index) — see
-        // IDeleteExpenseRowService. Not a general DELETE /Expense — that is rejected
-        // until guito-ui needs delete/edit as a product feature.
+        // Not a general expense-delete endpoint: each adapter pins smoke scope,
+        // independently of headers, and treats the ID as opaque (ADR-0015).
         [HttpDelete("/Smoke/{id}")]
-        public async Task DeleteSmokeAsync(int id, CancellationToken cancellationToken)
+        public async Task DeleteSmokeAsync(string id, CancellationToken cancellationToken)
         {
             await _deleteExpenseRowService.DeleteAsync(id, cancellationToken);
         }

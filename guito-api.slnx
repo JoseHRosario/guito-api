@@ -4,6 +4,7 @@
     <File Path="db/migrations/002_bank_transactions.sql" />
     <File Path="db/migrations/003_categories.sql" />
     <File Path="db/migrations/004_seed_categories.sql" />
+    <File Path="db/migrations/005_expenses.sql" />
   </Folder>
   <Folder Name="/docs/" Id="4a5e54fd-a648-58af-ffbf-706d32b5cdde">
     <File Path="docs/adr/0001-aws-serverless-deployment-target.md" />
@@ -17,6 +18,7 @@
     <File Path="docs/adr/0009-smoke-scope-quarantine-tab.md" />
     <File Path="docs/adr/0011-repository-pattern.md" />
     <File Path="docs/adr/0014-categories-mirror-postgres.md" />
+    <File Path="docs/adr/0015-postgres-expenses-and-lisbon-occurrence.md" />
     <File Path="docs/adr/0010-amounts-stored-positive.md" />
   </Folder>
   <Folder Name="/sit/">
