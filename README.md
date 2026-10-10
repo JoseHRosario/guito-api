@@ -52,10 +52,17 @@ Configuration comes from `appsettings.{Environment}.json` plus environment varia
 ## Expense contract and staged Postgres rollout
 
 `POST /Expense` accepts the existing `date` (`yyyy-MM-dd` or compatible datetime),
-positive exact-decimal `amount`, description and category. Optional `occurredAt`
-is ISO8601 with an explicit Europe/Lisbon offset, matching the date. Both valid
-fall-back offsets are supported; nonexistent spring times and mismatched offsets
-are rejected. Precision is at most microseconds (finer inputs return 400, not rounding).
+positive exact-decimal `amount` (a JSON number, including exponent notation, or an
+invariant decimal string), description and category. Amounts must be exactly
+representable by .NET decimal: a 96-bit coefficient and scale 0–28 after removing
+trailing zeros. Inputs requiring rounding, underflow or overflow return 400; equivalent
+trailing-zero representations are accepted. Responses keep numeric `amount` and add
+`amountExact` text for clients that cannot preserve decimal precision in JSON numbers.
+Optional `occurredAt` is ISO8601 with any explicit offset (including UTC `Z`). The
+server preserves the instant and normalizes it to Europe/Lisbon; its Lisbon day must
+match the supplied `date`. Naive local times (including unresolved DST gaps or
+repetitions) are rejected. Timestamp precision is at most microseconds (finer inputs
+return 400, not rounding).
 Without occurrence time, the original date means Lisbon midnight. Currency defaults
 to EUR; non-EUR values are rejected. Create returns `{ "id": "opaque-string" }`.
 

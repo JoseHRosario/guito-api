@@ -225,6 +225,89 @@ public class PostgresExpenseBoundaryTests
     }
 
     [Theory]
+    [InlineData("\"0.12345678901234567890123456789\"")]
+    [InlineData("0.12345678901234567890123456789")]
+    [InlineData("\"0.00000000000000000000000000011\"")]
+    [InlineData("0.00000000000000000000000000011")]
+    [InlineData("\"79228162514264337593543950335.1\"")]
+    [InlineData("79228162514264337593543950335.1")]
+    [InlineData("\"79228162514264337593543950336\"")]
+    [InlineData("79228162514264337593543950336")]
+    [InlineData("\"1e-29\"")]
+    [InlineData("1e-29")]
+    [InlineData("1e999999999999999999999999999999")]
+    [InlineData("1e-999999999999999999999999999999")]
+    public async Task CreateExpense_ShouldRejectRounding_WhenAmountTokenIsNotExactlyRepresentable(string amountToken)
+    {
+        // Arrange
+        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres" };
+        using var client = factory.CreateClient();
+        using var content = new StringContent($"{{\"date\":\"2026-07-02\",\"amount\":{amountToken}}}", System.Text.Encoding.UTF8, "application/json");
+
+        // Act
+        var response = await client.PostAsync("/Expense", content);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Empty(factory.Postgres.ExecutedSql);
+    }
+
+    [Theory]
+    [InlineData("\"0.1234567890123456789012345678000\"", "0.1234567890123456789012345678")]
+    [InlineData("0.1234567890123456789012345678000", "0.1234567890123456789012345678")]
+    [InlineData("\"1.230000000000000000000000000000000000\"", "1.23")]
+    [InlineData("1.230000000000000000000000000000000000", "1.23")]
+    [InlineData("\"123e-2\"", "1.23")]
+    [InlineData("123e-2", "1.23")]
+    [InlineData("1.23e+2", "123")]
+    [InlineData("10e-29", "0.0000000000000000000000000001")]
+    [InlineData("\"79228162514264337593543950335\"", "79228162514264337593543950335")]
+    [InlineData("79228162514264337593543950335", "79228162514264337593543950335")]
+    [InlineData("79228162514264337593543950335.000", "79228162514264337593543950335")]
+    [InlineData("\"0.0000000000000000000000000001\"", "0.0000000000000000000000000001")]
+    [InlineData("0.0000000000000000000000000001", "0.0000000000000000000000000001")]
+    public async Task CreateAndList_ShouldPreserveExactValue_WhenAmountTokenHasEquivalentRepresentation(string amountToken, string expected)
+    {
+        // Arrange
+        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres" };
+        factory.Postgres.PersistExpenses = true;
+        using var client = factory.CreateClient();
+        using var content = new StringContent($"{{\"date\":\"2026-07-02\",\"amount\":{amountToken}}}", System.Text.Encoding.UTF8, "application/json");
+
+        // Act
+        var response = await client.PostAsync("/Expense", content);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var latest = (await client.GetFromJsonAsync<JsonElement>("/Expense/latest/1")).GetProperty("expenses");
+        var expense = Assert.Single(latest.EnumerateArray());
+        Assert.Equal(expected, expense.GetProperty("amountExact").GetString());
+        Assert.Equal(decimal.Parse(expected, System.Globalization.CultureInfo.InvariantCulture), expense.GetProperty("amount").GetDecimal());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CreateAndList_ShouldPreserveExactValue_WhenAmountTokenSpansRequestBuffers(bool quoted)
+    {
+        // Arrange
+        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres" };
+        factory.Postgres.PersistExpenses = true;
+        using var client = factory.CreateClient();
+        var amount = $"1.23{new string('0', 20000)}";
+        var token = quoted ? JsonSerializer.Serialize(amount) : amount;
+        using var content = new StringContent($"{{\"date\":\"2026-07-02\",\"amount\":{token}}}", System.Text.Encoding.UTF8, "application/json");
+
+        // Act
+        var response = await client.PostAsync("/Expense", content);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var latest = (await client.GetFromJsonAsync<JsonElement>("/Expense/latest/1")).GetProperty("expenses");
+        Assert.Equal("1.23", Assert.Single(latest.EnumerateArray()).GetProperty("amountExact").GetString());
+    }
+
+    [Theory]
     [InlineData("1,23")]
     [InlineData("NaN")]
     [InlineData("0")]
