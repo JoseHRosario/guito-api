@@ -20,6 +20,17 @@ def policy(resources, actions=None, **extra):
         "Resource": resources, **extra}]}
 
 
+def fake_read(state, arguments, policy_name):
+    if arguments[0] == "sts":
+        return {"Account": iam.ACCOUNT, "Arn": f"arn:aws:sts::{iam.ACCOUNT}:assumed-role/MinervaAIAgent/test"}
+    role = arguments[arguments.index("--role-name") + 1]
+    if arguments[1] == "get-role-policy":
+        return {"PolicyDocument": copy.deepcopy(state[role][policy_name])}
+    if arguments[1] == "list-role-policies":
+        return {"PolicyNames": list(state[role])}
+    return None
+
+
 class ReconcileIamTests(unittest.TestCase):
     def test_broad_grant_is_database_only_and_idempotent(self):
         for resource in iam.BROAD:
@@ -35,6 +46,14 @@ class ReconcileIamTests(unittest.TestCase):
         result = iam.transform(document)
         self.assertEqual([iam.PREFIX + "db-*"], result["Statement"][0]["Resource"])
         self.assertEqual(document["Statement"][0]["Action"], result["Statement"][0]["Action"])
+
+    def test_concrete_retired_secret_arns_are_removed_without_touching_db_or_neighbors(self):
+        retained = [iam.PREFIX + "db-prod-AbCdEf", iam.PREFIX + "production-AbCdEf"]
+        for name in ("prod", "staging", "human-auth", "eb-prod-pk", "eb-staging-pk"):
+            document = policy([iam.PREFIX + name + "-AbCdEf", *retained])
+            result = iam.transform(document)
+            self.assertEqual(retained, result["Statement"][0]["Resource"])
+            self.assertEqual(result, iam.transform(result))
 
     def test_old_guito_read_secrets_policy_becomes_empty(self):
         self.assertEqual([], iam.transform(policy(iam.PREFIX + "prod-*"))["Statement"])
@@ -85,16 +104,13 @@ class ReconcileIamTests(unittest.TestCase):
 
             def fake_aws(*args):
                 calls.append(args)
-                if args[0] == "sts":
-                    return {"Account": iam.ACCOUNT, "Arn": f"arn:aws:sts::{iam.ACCOUNT}:assumed-role/MinervaAIAgent/test"}
+                result = fake_read(state, args, "old")
+                if result is not None:
+                    return result
                 role = args[args.index("--role-name") + 1]
-                if args[1] == "get-role-policy":
-                    return {"PolicyDocument": state[role]["old"]}
                 if args[1] == "delete-role-policy":
                     del state[role]["old"]
                     return {}
-                if args[1] == "list-role-policies":
-                    return {"PolicyNames": list(state[role])}
                 self.fail(args)
 
             with patch.object(iam, "aws", side_effect=fake_aws), patch.object(iam, "verify_consumers"), patch.object(iam, "inventory", side_effect=lambda: copy.deepcopy(state)):
@@ -116,11 +132,10 @@ class ReconcileIamTests(unittest.TestCase):
                 return copy.deepcopy(state)
 
             def fake_aws(*args):
-                if args[0] == "sts":
-                    return {"Account": iam.ACCOUNT, "Arn": f"arn:aws:sts::{iam.ACCOUNT}:assumed-role/MinervaAIAgent/test"}
+                result = fake_read(state, args, "broad")
+                if result is not None:
+                    return result
                 role = args[args.index("--role-name") + 1]
-                if args[1] == "get-role-policy":
-                    return {"PolicyDocument": copy.deepcopy(state[role]["broad"])}
                 if args[1] == "put-role-policy":
                     if scenario == "write-denied":
                         raise RuntimeError("AccessDenied")

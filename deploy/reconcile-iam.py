@@ -9,6 +9,7 @@ import argparse
 import copy
 import json
 import os
+import re
 import subprocess
 
 ACCOUNT = "497087877832"
@@ -26,6 +27,16 @@ def sequence(value):
     return value if isinstance(value, list) else [value]
 
 
+def obsolete_resource(resource):
+    if resource in OBSOLETE:
+        return True
+    if not resource.startswith(PREFIX):
+        return False
+    # AWS appends exactly six alphanumeric characters to a secret's ARN.
+    return re.fullmatch(r"(?:prod|staging|human-auth|eb-prod-pk|eb-staging-pk)-[A-Za-z0-9]{6}",
+                        resource[len(PREFIX):]) is not None
+
+
 def transform(document):
     """Remove only known legacy secret resource/action pairs, keeping all else."""
     result = copy.deepcopy(document)
@@ -33,7 +44,7 @@ def transform(document):
     for statement in sequence(document["Statement"]):
         resources = sequence(statement.get("Resource", []))
         if statement.get("Effect") != "Allow" or not any(
-                resource in BROAD | OBSOLETE for resource in resources):
+                resource in BROAD or obsolete_resource(resource) for resource in resources):
             statements.append(copy.deepcopy(statement))
             continue
         if "NotAction" in statement or "NotResource" in statement:
@@ -42,7 +53,7 @@ def transform(document):
         secret_actions = [a for a in actions if a.lower().startswith("secretsmanager:") or a == "*"]
         if not secret_actions or any(a not in READ_ACTIONS for a in secret_actions):
             raise ValueError("Legacy resource has unexpected actions; manual review required")
-        retained = [PREFIX + "db-*" if r in BROAD else r for r in resources if r not in OBSOLETE]
+        retained = [PREFIX + "db-*" if r in BROAD else r for r in resources if not obsolete_resource(r)]
         other_actions = [a for a in actions if a not in secret_actions]
         if other_actions:
             other = copy.deepcopy(statement)
