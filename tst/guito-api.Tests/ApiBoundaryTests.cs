@@ -24,7 +24,7 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task CreateExpense_ShouldReturnBadRequest_WhenAmountIsNegative()
+    public async Task CreateExpense_ShouldAppendExactAmount_WhenAmountIsNegative()
     {
         using var factory = new CustomWebApplicationFactory();
         var client = factory.CreateClient();
@@ -36,12 +36,13 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
             Category = "Restaurants",
         });
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Empty(factory.SheetsHandler.AppendBodies);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var body = JsonDocument.Parse(Assert.Single(factory.SheetsHandler.AppendBodies));
+        Assert.Equal(-42.50m, body.RootElement.GetProperty("values")[0][3].GetDecimal());
     }
 
     [Fact]
-    public async Task CreateExpense_ShouldReturnBadRequest_WhenAmountIsZero()
+    public async Task CreateExpense_ShouldAppendExactAmount_WhenAmountIsZero()
     {
         using var factory = new CustomWebApplicationFactory();
         var client = factory.CreateClient();
@@ -53,8 +54,9 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
             Category = "Restaurants",
         });
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Empty(factory.SheetsHandler.AppendBodies);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var body = JsonDocument.Parse(Assert.Single(factory.SheetsHandler.AppendBodies));
+        Assert.Equal(0m, body.RootElement.GetProperty("values")[0][3].GetDecimal());
     }
 
     [Fact]

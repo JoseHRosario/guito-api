@@ -5,62 +5,68 @@ using GuitoApi.Exceptions;
 
 namespace GuitoApi.Infrastructure.Postgres;
 
-public class DataApiPostgresExpenseRepository(IPostgresDataApiClient client, IHttpContextAccessor context) : IExpenseRepository
+public class DataApiPostgresExpenseRepository(IPostgresDataApiClient client) : IExpenseRepository
 {
     private const string CreateSql = """
-        INSERT INTO expenses (id, amount, currency, description, category, creator_email, occurred_at, scope)
-        VALUES (:id, CAST(:amount AS numeric), :currency, :description, :category,
-                :creator_email, CAST(:occurred_at AS timestamptz), :scope)
+        INSERT INTO expenses (amount, description, category_id, creator_email, booking_date)
+        VALUES (CAST(:amount AS numeric), :description, :category_id,
+                :creator_email, CAST(:booking_date AS timestamptz))
+        RETURNING id
         """;
     private const string LatestSql = """
-        SELECT id, CAST(occurred_at AS text), CAST(amount AS text), currency,
-               description, category, creator_email, CAST(creation_date AS text), CAST(update_date AS text)
-        FROM expenses WHERE scope = :scope
-        ORDER BY occurred_at DESC, id DESC LIMIT :limit
+        SELECT CAST(e.id AS text), CAST(e.booking_date AS text), CAST(e.amount AS text),
+               e.description, c.name, e.creator_email, CAST(e.create_date AS text), CAST(e.update_date AS text)
+        FROM expenses e JOIN categories c ON c.id = e.category_id
+        ORDER BY e.booking_date DESC, e.id DESC LIMIT :limit
         """;
 
     public async Task<string> CreateAsync(ExpenseDraft value, CancellationToken cancellationToken = default)
     {
-        var id = Guid.NewGuid().ToString("D");
-        await client.ExecuteAsync(CreateSql,
-            [Text("id", id), Text("amount", value.Amount.ToString(CultureInfo.InvariantCulture)),
-             Text("currency", value.Currency), Text("description", value.Description), Text("category", value.Category),
-             Text("creator_email", value.CreatorEmail), Text("occurred_at", value.OccurredAt.ToUniversalTime().ToString("O")), Text("scope", Scope)],
+        var categoryId = await ResolveCategoryIdAsync(value.Category, cancellationToken);
+        var result = await client.ExecuteAsync(CreateSql,
+            [Text("amount", value.Amount.ToString(CultureInfo.InvariantCulture)),
+             Text("description", value.Description), new("category_id", PostgresValue.FromLong(categoryId)),
+             Text("creator_email", value.CreatorEmail),
+             Text("booking_date", value.OccurredAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture))],
             cancellationToken: cancellationToken);
-        return id;
+        return result.Rows.Single()[0].LongValue!.Value.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private async Task<long> ResolveCategoryIdAsync(string name, CancellationToken cancellationToken)
+    {
+        // The mirror is seeded separately; a request must never invent a category.
+        var result = await client.ExecuteAsync("SELECT id FROM categories WHERE name = :name",
+            [Text("name", name)], cancellationToken: cancellationToken);
+        if (result.Rows.Count == 0)
+            throw new ProblemException(422, "Category is not present in the Postgres categories mirror.");
+        return result.Rows.Single()[0].LongValue!.Value;
     }
 
     public async Task<IReadOnlyList<ExpenseSummary>> ListLatestAsync(int limit, CancellationToken cancellationToken = default)
     {
-        var result = await client.ExecuteAsync(
-            LatestSql,
-            [Text("scope", Scope), new("limit", PostgresValue.FromLong(limit))], cancellationToken: cancellationToken);
+        var result = await client.ExecuteAsync(LatestSql,
+            [new("limit", PostgresValue.FromLong(limit))], cancellationToken: cancellationToken);
         return result.Rows.Select(ToSummary).ToList();
     }
 
     private static ExpenseSummary ToSummary(IReadOnlyList<PostgresValue> row)
     {
-        var occurredAt = ExpenseTime.InLisbon(DateTimeOffset.Parse(row[1].StringValue!, CultureInfo.InvariantCulture));
+        var occurredAt = ReadInstant(row[1])!.Value;
         return new ExpenseSummary
         {
             Id = row[0].StringValue!, Date = occurredAt.Date, OccurredAt = occurredAt,
-            Amount = decimal.Parse(row[2].StringValue!, CultureInfo.InvariantCulture), Currency = row[3].StringValue!,
-            Description = row[4].StringValue, Category = row[5].StringValue, CreatorEmail = row[6].StringValue,
-            CreationDate = ExpenseTime.InLisbon(DateTimeOffset.Parse(row[7].StringValue!, CultureInfo.InvariantCulture)),
-            UpdateDate = ExpenseTime.InLisbon(DateTimeOffset.Parse(row[8].StringValue!, CultureInfo.InvariantCulture))
+            Amount = decimal.Parse(row[2].StringValue!, CultureInfo.InvariantCulture), Currency = "EUR",
+            Description = row[3].StringValue, Category = row[4].StringValue, CreatorEmail = row[5].StringValue,
+            CreationDate = ReadInstant(row[6]), UpdateDate = ReadInstant(row[7])
         };
     }
 
-    public async Task DeleteAsync(string id, CancellationToken cancellationToken = default)
-    {
-        var result = await client.ExecuteAsync("DELETE FROM expenses WHERE id = :id AND scope = 'smoke'",
-            [Text("id", id)], cancellationToken: cancellationToken);
-        if (result.NumberOfRecordsUpdated == 0)
-            throw new ExpenseNotFoundException(id);
-    }
+    private static DateTimeOffset? ReadInstant(PostgresValue value) => value.IsNull ? null
+        : ExpenseTime.InLisbon(DateTimeOffset.Parse(value.StringValue!, CultureInfo.InvariantCulture));
 
-    private string Scope => string.Equals(context.HttpContext?.Request.Headers["X-Sheet-Scope"].ToString(),
-        "smoke", StringComparison.OrdinalIgnoreCase) ? "smoke" : "normal";
+    // Smoke cleanup is a Sheets-only capability, never a personal-record delete.
+    public Task DeleteAsync(string id, CancellationToken cancellationToken = default) =>
+        throw new ProblemException(409, "Postgres expenses cannot be deleted through Smoke cleanup.");
 
     private static PostgresParameter Text(string name, string value) => new(name, PostgresValue.FromString(value));
 }

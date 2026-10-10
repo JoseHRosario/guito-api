@@ -22,8 +22,9 @@ namespace GuitoApi.Repositories
         Task<IReadOnlyList<ExpenseSummary>> ListLatestAsync(int limit, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Deletes the expense with the given Id. Throws
-        /// <see cref="ExpenseNotFoundException"/> when the Id is absent or stale.
+        /// Cleans up only the Sheets smoke row with the given Id. Postgres does not
+        /// support deletion; personal records cannot be deleted through this port.
+        /// Throws <see cref="GuitoApi.Exceptions.ExpenseNotFoundException"/> when the smoke Id is absent or stale.
         /// </summary>
         Task DeleteAsync(string id, CancellationToken cancellationToken = default);
     }

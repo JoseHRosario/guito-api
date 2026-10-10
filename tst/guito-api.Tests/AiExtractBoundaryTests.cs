@@ -60,7 +60,7 @@ namespace GuitoApi.Tests
             Assert.Equal(JsonValueKind.Number, body.GetProperty("amount").ValueKind);
             Assert.Equal(123456789.1234567890123456789m, body.GetProperty("amount").GetDecimal());
             Assert.Equal("123456789.1234567890123456789", body.GetProperty("amountExact").GetString());
-            var created = await client.PostAsJsonAsync("/Expense", new { date = "2026-07-02", amount = body.GetProperty("amountExact").GetString() });
+            var created = await client.PostAsJsonAsync("/Expense", new { date = "2026-07-02", amount = body.GetProperty("amountExact").GetString(), category = body.GetProperty("category").GetString() });
             Assert.Equal(HttpStatusCode.OK, created.StatusCode);
             var latest = (await client.GetFromJsonAsync<JsonElement>("/Expense/latest/1")).GetProperty("expenses");
             Assert.Equal(body.GetProperty("amountExact").GetString(), Assert.Single(latest.EnumerateArray()).GetProperty("amountExact").GetString());

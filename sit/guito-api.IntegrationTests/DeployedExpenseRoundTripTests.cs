@@ -27,11 +27,9 @@ public class DeployedExpenseRoundTripTests
         client.DefaultRequestHeaders.Add("X-Sheet-Scope", "smoke");
         var marker = $"integration-test {DateTime.UtcNow:yyyyMMddHHmmss}";
         var lisbonNow = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Europe/Lisbon"));
-        var postgres = Environment.GetEnvironmentVariable("GUITO_TARGET_EXPENSE_STORE") == "Postgres";
         var expense = new ExpensePayload
         {
             Date = lisbonNow.Date,
-            OccurredAt = postgres ? lisbonNow.ToString("yyyy-MM-ddTHH:mm:sszzz") : null,
             Amount = 0.01m,
             Description = marker,
             Category = "Integration Tests",
@@ -89,9 +87,8 @@ public class DeployedExpenseRoundTripTests
         return expenses.Any(e =>
             e.Id == id &&
             e.Amount == expense.Amount &&
-            e.Category == expense.Category &&
-            (expense.OccurredAt is null || (e.OccurredAt == DateTimeOffset.Parse(expense.OccurredAt) &&
-                e.Currency == "EUR" && e.CreationDate is not null && e.UpdateDate is not null)));
+            e.Category == expense.Category && e.Date == expense.Date &&
+            string.Equals(e.Description, expense.Description, StringComparison.OrdinalIgnoreCase));
     }
 
     private static async Task<bool> IsIdentityListedAsync(HttpResponseMessage response, string id)
@@ -104,7 +101,6 @@ public class DeployedExpenseRoundTripTests
     private sealed class ExpensePayload
     {
         public DateTime Date { get; set; }
-        public string? OccurredAt { get; set; }
         public decimal Amount { get; set; }
         public string? Description { get; set; }
         public string? Category { get; set; }
@@ -123,10 +119,6 @@ public class DeployedExpenseRoundTripTests
     private sealed class ExpenseListLatestDetail
     {
         public string? Id { get; set; }
-        public DateTimeOffset? OccurredAt { get; set; }
-        public string? Currency { get; set; }
-        public DateTimeOffset? CreationDate { get; set; }
-        public DateTimeOffset? UpdateDate { get; set; }
         public DateTime? Date { get; set; }
         public decimal? Amount { get; set; }
         public string? Description { get; set; }

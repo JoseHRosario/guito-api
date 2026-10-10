@@ -44,7 +44,7 @@ namespace GuitoApi.Controllers
             return await _matchExpensesService.MatchExpensesAsync(cancellationToken);
         }
 
-        // Not a general expense-delete endpoint: each adapter pins smoke scope,
+        // Not a general expense-delete endpoint: cleanup always targets the Sheets smoke tab,
         // independently of headers, and treats the ID as opaque (ADR-0015).
         [HttpDelete("/Smoke/{id}")]
         public async Task DeleteSmokeAsync(string id, CancellationToken cancellationToken)

@@ -1,5 +1,9 @@
 # Amounts stored positive (outflow implied)
 
+> Expense API validation superseded by ADR-0015 / PR #137: exact zero and negative
+> amounts are accepted; the Expense numeric column has no positivity constraint.
+> UI manual-entry conventions and bank-provider normalization are not changed.
+
 Guito stores and transmits every Expense `Amount` as a **positive** number; that it is an outflow is implied by it being an Expense. Earlier the convention was negative-at-create (the UI negated the parsed amount and the list rendered the stored negative verbatim). The flip was decided 2026-10-02 alongside the Favorites feature: positive storage is what the future Postgres migration and any external consumer should expect, and a sign that only means "outflow" adds confusion, not information.
 
 ## Consequences
