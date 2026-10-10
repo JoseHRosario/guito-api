@@ -51,7 +51,26 @@ Configuration comes from `appsettings.{Environment}.json` plus environment varia
 
 ## Deployment
 
-Deployed by GitHub Actions to Lambda via OIDC role assumption (no long-lived AWS keys in GitHub). Two functions deploy independently from their own project folders: `src/guito-api` → `guito-api` (handler `guito-api::GuitoApi.LambdaEntryPoint::FunctionHandlerAsync`) and `src/guito-api-authorizer` → `guito-api-authorizer` (REQUEST authorizer for `guito-key-authorizer`, IAM-policy responses, TTL 0). Resources are prefixed `guito-` and tagged `Project=Guito`, account 497087877832, region eu-west-1. `deploy/deploy.sh` reproduces the stack locally (parameter preflight, IAM, functions, HTTP API, routes, access logs). Provision application parameters first using `uv run --with boto3 --with awscrt python deploy/migrate-secrets-to-ssm.py`; see [ADR 0008](docs/adr/0008-per-environment-secrets-payload.md) for rollout, database exceptions, and source-secret retirement.
+Deployed by GitHub Actions to Lambda via OIDC role assumption (no long-lived AWS keys in GitHub). Two functions deploy independently from their own project folders: `src/guito-api` → `guito-api` (handler `guito-api::GuitoApi.LambdaEntryPoint::FunctionHandlerAsync`) and `src/guito-api-authorizer` → `guito-api-authorizer` (REQUEST authorizer for `guito-key-authorizer`, IAM-policy responses, TTL 0). Resources are prefixed `guito-` and tagged `Project=Guito`, account 497087877832, region eu-west-1. `deploy/deploy.sh` reproduces the stack locally (parameter preflight, IAM, functions, HTTP API, routes, access logs). Application parameters are already provisioned; deployment validates their existence and never creates replacement credentials. SSM is the only deployed application-secret backend; local JSON files remain supported. The authorizer requires `SECRETS_LOCATION=AwsSsm` and an explicit `SECRETS_SECRET_NAME` parameter path. See [ADR 0008](docs/adr/0008-per-environment-secrets-payload.md) for completed retirement and the retained database-secret exception.
+
+### Post-merge IAM reconciliation
+
+After this cleanup is merged, production deploy succeeds, and deployed suites pass
+in both environments, reconcile the shared Guito runtime and deployment-role
+inline policies:
+
+```bash
+python3 deploy/reconcile-iam.py                         # dry-run plan, no writes
+python3 deploy/reconcile-iam.py --apply --rollout-verified
+python3 deploy/reconcile-iam.py                         # expect zero changes
+```
+
+The script uses the `minerva-agent` profile and verifies the MinervaAIAgent role,
+SSM consumer configuration and policy read-back. `--rollout-verified` is an
+explicit attestation of the merge/deployment/SIT gate; it does not run those
+checks. Database, SSM and unrelated permissions are preserved. Changes are not
+transactional: an error aborts; inspect any partial changes before retrying.
+Never run `--apply` before production rollout, and never change Minerva policies.
 
 ## Contributing
 

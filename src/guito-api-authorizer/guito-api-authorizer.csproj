@@ -15,7 +15,6 @@
     <PackageReference Include="Amazon.Lambda.Core" Version="2.2.0" />
     <PackageReference Include="Amazon.Lambda.APIGatewayEvents" Version="2.7.0" />
     <PackageReference Include="Amazon.Lambda.Serialization.SystemTextJson" Version="2.4.1" />
-    <PackageReference Include="AWSSDK.SecretsManager" Version="3.7.400" />
     <PackageReference Include="AWSSDK.SimpleSystemsManagement" Version="3.7.400" />
   </ItemGroup>
 

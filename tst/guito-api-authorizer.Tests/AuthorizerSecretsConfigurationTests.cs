@@ -1,48 +1,67 @@
-using System.Reflection;
-using GuitoApiAuthorizer.AgentKey;
-
 namespace GuitoApiAuthorizer.Tests;
 
 public class AuthorizerSecretsConfigurationTests
 {
     [Theory]
-    [InlineData("AwsSsm", "/guito-api/staging", typeof(SsmParameterStoreKeysLoader), "/guito-api/staging")]
-    [InlineData("AwsSsm", null, typeof(SsmParameterStoreKeysLoader), "/guito-api/prod")]
-    [InlineData(null, null, typeof(SecretsManagerKeysLoader), "guito-api/prod")]
-    [InlineData("Aws", "guito-api/staging", typeof(SecretsManagerKeysLoader), "guito-api/staging")]
-    [InlineData("unknown", null, typeof(SecretsManagerKeysLoader), "guito-api/prod")]
-    public void DefaultAgentKeyValidator_ShouldSelectConfiguredLoader_WhenSecretsEnvironmentIsSet(
-        string? location, string? secretName, Type expectedType, string expectedName)
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("Aws")]
+    [InlineData("unknown")]
+    [InlineData("awsssm")]
+    public void Constructor_ShouldRejectBackend_WhenLocationIsMissingOrUnsupported(string? location)
     {
         // Arrange
-        using var environment = new SecretsEnvironment(location, secretName);
+        using var environment = new SecretsEnvironment(location, "/guito-api/staging");
 
         // Act
-        var validator = typeof(Function).GetMethod("DefaultAgentKeyValidator",
-            BindingFlags.NonPublic | BindingFlags.Static)!.Invoke(null, null)!;
-        var loader = FieldsOf(validator).OfType<IKeysLoader>().Single();
-        using var client = FieldsOf(loader).OfType<IDisposable>().SingleOrDefault();
+        var error = Assert.Throws<InvalidOperationException>(() => new Function());
 
         // Assert
-        Assert.IsType(expectedType, loader);
-        Assert.Contains(expectedName, FieldsOf(loader).OfType<string>());
+        Assert.Contains("SECRETS_LOCATION", error.Message);
+        Assert.Contains("AwsSsm", error.Message);
     }
 
-    // Inspect composition without invoking either AWS provider or widening the production API.
-    private static IEnumerable<object?> FieldsOf(object target) =>
-        target.GetType().GetFields(BindingFlags.NonPublic | BindingFlags.Instance)
-            .Select(field => field.GetValue(target));
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    public void Constructor_ShouldRejectParameterName_WhenNameIsMissing(string? parameterName)
+    {
+        // Arrange
+        using var environment = new SecretsEnvironment("AwsSsm", parameterName);
+
+        // Act
+        var error = Assert.Throws<InvalidOperationException>(() => new Function());
+
+        // Assert
+        Assert.Contains("SECRETS_SECRET_NAME", error.Message);
+        Assert.Contains("SSM parameter name", error.Message);
+    }
+
+    [Fact]
+    public void Constructor_ShouldAcceptConfiguration_WhenSsmParameterIsExplicit()
+    {
+        // Arrange
+        using var environment = new SecretsEnvironment("AwsSsm", "/guito-api/staging");
+
+        // Act
+        var error = Record.Exception(() => new Function());
+
+        // Assert
+        Assert.Null(error);
+    }
 
     private sealed class SecretsEnvironment : IDisposable
     {
         private readonly Dictionary<string, string?> _original;
 
-        public SecretsEnvironment(string? location, string? secretName)
+        public SecretsEnvironment(string? location, string? parameterName)
         {
             var environment = new Dictionary<string, string?>
             {
                 ["SECRETS_LOCATION"] = location,
-                ["SECRETS_SECRET_NAME"] = secretName,
+                ["SECRETS_SECRET_NAME"] = parameterName,
                 ["AWS_REGION"] = "eu-west-1",
                 ["AWS_ACCESS_KEY_ID"] = "hermetic",
                 ["AWS_SECRET_ACCESS_KEY"] = "hermetic"

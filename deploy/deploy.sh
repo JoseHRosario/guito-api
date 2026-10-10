@@ -42,7 +42,7 @@ if [ "$ENV" = staging ]; then
   fi
 fi
 
-# --- 0. Parameters (provision via deploy/migrate-secrets-to-ssm.py first) -------
+# --- 0. Parameters (already provisioned; deployment never creates credentials) --
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEPLOY_WORK_DIR=$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:-$HOME/.cache}}/guito-deploy.XXXXXX")
 trap 'rm -rf "$DEPLOY_WORK_DIR"' EXIT
@@ -72,20 +72,13 @@ EOF
 }
 aws --region "$REGION" iam attach-role-policy --role-name "$ROLE" \
   --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole >/dev/null
-aws --region "$REGION" iam put-role-policy --role-name "$ROLE" --policy-name guito-api-secret-read \
-  --policy-document "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"secretsmanager:GetSecretValue\",\"Resource\":[\"arn:aws:secretsmanager:$REGION:*:secret:guito-api/*\"]}]}" >/dev/null
-# Prefix wildcard covers the whole guito-api family including the shared
-# human-auth secret (issue #52) — never interpolate a per-env SECRET_NAME here
-# (a staging run would overwrite prod-scoped policies with env-specific ARNs).
-
-# Add SSM access without removing old grants until the complete cutover.
+# Shared prod/staging role: never recreate application Secrets Manager grants.
+# Existing legacy policies are reconciled separately AFTER production rollout
+# with deploy/reconcile-iam.py; a staging deploy must not delete shared policies.
 aws --region "$REGION" iam put-role-policy --role-name "$ROLE" --policy-name guito-api-ssm-read \
   --policy-document "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"ssm:GetParameter\",\"Resource\":\"arn:aws:ssm:$REGION:$ACCOUNT_ID:parameter/guito-api/*\"}]}" >/dev/null
 
-# Data API + bank credentials (issues #87/#89, hit live in staging 2026-10-08):
-# the Postgres repositories execute through the RDS Data API and the EB adapter
-# reads its dedicated key secret — without these the API 500s on every bank route
-# (AccessDenied on rds-data:ExecuteStatement / secrets not covered above).
+# Data API requires database credentials in Secrets Manager; bank keys use SSM.
 cat > "$DEPLOY_WORK_DIR/guito-data-api.json" <<'EOF'
 {
   "Version": "2012-10-17",
@@ -102,12 +95,11 @@ cat > "$DEPLOY_WORK_DIR/guito-data-api.json" <<'EOF'
       "Resource": "arn:aws:rds:eu-west-1:497087877832:cluster:db-cluster"
     },
     {
-      "Sid": "ReadDbAndEbSecrets",
+      "Sid": "ReadDbSecrets",
       "Effect": "Allow",
       "Action": ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
       "Resource": [
-        "arn:aws:secretsmanager:eu-west-1:497087877832:secret:guito-api/db-*",
-        "arn:aws:secretsmanager:eu-west-1:497087877832:secret:guito-api/eb-*"
+        "arn:aws:secretsmanager:eu-west-1:497087877832:secret:guito-api/db-*"
       ]
     }
   ]

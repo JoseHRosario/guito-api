@@ -23,7 +23,7 @@ Personal expense-tracking system (API + webapp) used to control expenses and max
 - **Local dev** — running the API on a development machine (`dotnet run --project src`). Targets the dev/staging spreadsheet via base `appsettings.json`; never points at the prod sheet.
 - **Staging** — the deployed test environment: a full parallel AWS stack (`guito-api-staging` Lambda pair, its own API Gateway and `/guito-api/staging` parameter; see ADR 0007). Runs with full auth parity with prod but shares the dev/staging spreadsheet — the only non-prod sheet allowed for local dev. Target of the default deploy (`deploy/deploy.sh` with no `ENV`) and home of deployed-endpoint integration tests.
 - **Production** — the live environment: `guito-api` Lambda pair, `/guito-api/prod` parameter, its own spreadsheet with real financial data. Requires the explicit `ENV=production` deploy flag. Local dev must never target the prod sheet or secret.
-- **SecretsPayload** — unchanged runtime JSON payload shared by the API and authorizer. Deployed application secrets use SSM SecureString under `/guito-api/*` (`AwsSsm`); local files remain supported. Database credential secrets stay in Secrets Manager for RDS Data API (ADR 0008).
+- **SecretsPayload** — unchanged runtime JSON payload shared by the API and authorizer. Deployed application secrets use SSM SecureString under `/guito-api/*` (`AwsSsm`); local files remain supported. Legacy application Secrets Manager backends are retired; authorizer configuration requires explicit `AwsSsm` selection. Database credential secrets stay in Secrets Manager for RDS Data API (ADR 0008).
 
 ## Repos
 

@@ -1,33 +1,27 @@
 using System.Text.Json;
-using GuitoApi.Configuration;
-using Microsoft.Extensions.Options;
 
 namespace GuitoApi.Infrastructure.EnableBanking
 {
-    /// <summary>
-    /// Credentials from a dedicated Secrets Manager secret holding {"pem": …} (issue #89):
-    /// the EB key lives outside the runtime payload so the deploy script can re-seed that
-    /// payload without touching bank credentials. The application id comes from config
-    /// (it is public — the JWT "kid"). Caches for 5 minutes like AwsSecretsProvider.
-    /// </summary>
-    public class SecretsManagerEnableBankingCredentialsProvider : IEnableBankingCredentialsProvider
+    /// <summary>Backend-neutral dedicated PEM parsing and five-minute credential cache.</summary>
+    public class DedicatedPemEnableBankingCredentialsProvider : IEnableBankingCredentialsProvider
     {
         private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
 
-        private readonly IOptions<EnableBankingOptions> _options;
-        private readonly Func<string, CancellationToken, Task<string>> _getSecretValue;
+        private readonly string _applicationId;
+        private readonly string _sourceName;
+        private readonly Func<string, CancellationToken, Task<string>> _loadValueAsync;
         private EnableBankingCredentials? _cached;
         private DateTimeOffset _cachedAt;
         private readonly TimeProvider _timeProvider;
 
-        /// <param name="getSecretValue">secretId → raw secret string; wired to Secrets Manager in Startup.</param>
-        public SecretsManagerEnableBankingCredentialsProvider(
-            IOptions<EnableBankingOptions> options,
-            Func<string, CancellationToken, Task<string>> getSecretValue,
+        public DedicatedPemEnableBankingCredentialsProvider(
+            string applicationId, string sourceName,
+            Func<string, CancellationToken, Task<string>> loadValueAsync,
             TimeProvider? timeProvider = null)
         {
-            _options = options;
-            _getSecretValue = getSecretValue;
+            _applicationId = applicationId;
+            _sourceName = sourceName;
+            _loadValueAsync = loadValueAsync;
             _timeProvider = timeProvider ?? TimeProvider.System;
         }
 
@@ -36,28 +30,32 @@ namespace GuitoApi.Infrastructure.EnableBanking
             if (_cached is not null && _timeProvider.GetUtcNow() - _cachedAt < CacheTtl)
                 return _cached;
 
-            var options = _options.Value;
-            if (string.IsNullOrWhiteSpace(options.ApplicationId))
-                throw new InvalidOperationException("AppConfiguration:EnableBanking:ApplicationId is required.");
-            if (string.IsNullOrWhiteSpace(options.SecretsManagerSecretName))
-                throw new InvalidOperationException("AppConfiguration:EnableBanking:SecretsManagerSecretName is required.");
+            ValidateConfiguration();
 
-            var raw = await _getSecretValue(options.SecretsManagerSecretName, cancellationToken);
+            var raw = await _loadValueAsync(_sourceName, cancellationToken);
             var pem = ExtractPem(raw)
                 ?? throw new InvalidOperationException(
-                    $"Secret '{options.SecretsManagerSecretName}' carries neither a raw PEM nor a '{{\"pem\": …}}' JSON object.");
+                    $"Key source '{_sourceName}' carries neither a raw PEM nor a '{{\"pem\": …}}' JSON object.");
 
-            _cached = new EnableBankingCredentials(options.ApplicationId, NormalizePem(pem));
+            _cached = new EnableBankingCredentials(_applicationId, NormalizePem(pem));
             _cachedAt = _timeProvider.GetUtcNow();
             return _cached;
         }
 
-        /// <summary>Accepts both secret layouts: JSON {"pem": …} (parsed first), or the raw PEM text.</summary>
+        private void ValidateConfiguration()
+        {
+            if (string.IsNullOrWhiteSpace(_applicationId))
+                throw new InvalidOperationException("AppConfiguration:EnableBanking:ApplicationId is required.");
+            if (string.IsNullOrWhiteSpace(_sourceName))
+                throw new InvalidOperationException("AppConfiguration:EnableBanking:dedicated key source name is required.");
+        }
+
+        /// <summary>Accepts both key layouts: JSON {"pem": …} (parsed first), or the raw PEM text.</summary>
         private static string? ExtractPem(string raw)
         {
             try
             {
-                var document = JsonDocument.Parse(raw);
+                using var document = JsonDocument.Parse(raw);
                 if (document.RootElement.TryGetProperty("pem", out var pem))
                     return pem.GetString();
             }
@@ -73,7 +71,7 @@ namespace GuitoApi.Infrastructure.EnableBanking
         /// Tolerates PEMs stored flattened to one line (the staging key arrived that way):
         /// RSA.ImportFromPem needs BEGIN/END on their own lines and 64-char base64 rows.
         /// </summary>
-        public static string NormalizePem(string pem)
+        private static string NormalizePem(string pem)
         {
             var base64 = string.Concat(pem
                 .Replace("-----BEGIN PRIVATE KEY-----", " ")

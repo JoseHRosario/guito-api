@@ -24,6 +24,23 @@ public class SsmEnableBankingCredentialsProviderTests
         Assert.Equal(0, client.Calls);
     }
 
+    [Fact]
+    public async Task GetAsync_ShouldReportMissingApplicationId_WhenDedicatedIdIsUnsetAsync()
+    {
+        // Arrange
+        using var client = new SsmFakeClient();
+        var options = Microsoft.Extensions.Options.Options.Create(new GuitoApi.Configuration.EnableBankingOptions
+            { SsmParameterName = "/guito-api/eb-staging-pk" });
+        IEnableBankingCredentialsProvider provider = new SsmParameterStoreEnableBankingCredentialsProvider(options, client);
+
+        // Act
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => provider.GetAsync());
+
+        // Assert
+        Assert.Contains("ApplicationId", exception.Message);
+        Assert.Equal(0, client.Calls);
+    }
+
     private static byte[] ImportPublicKey(string pem)
     {
         using var imported = RSA.Create();
