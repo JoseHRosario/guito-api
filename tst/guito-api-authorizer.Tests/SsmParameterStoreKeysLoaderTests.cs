@@ -32,10 +32,8 @@ public class SsmParameterStoreKeysLoaderTests
         // Arrange
         using var client = new FakeSsmClient();
         var clock = new FakeTimeProvider();
-        var loader = new SsmParameterStoreKeysLoader("/guito-api/staging", client, clock);
-        var original = await loader.LoadAsync();
-        client.Value = """{"ApiKeys":["rotated"]}""";
-        clock.Advance(TimeSpan.FromMinutes(5) - TimeSpan.FromTicks(1));
+        IKeysLoader loader = new SsmParameterStoreKeysLoader("/guito-api/staging", client, clock);
+        var original = await WarmAndRotateAsync(loader, client, clock);
 
         // Act
         var cached = await loader.LoadAsync();
@@ -106,10 +104,8 @@ public class SsmParameterStoreKeysLoaderTests
         // Arrange
         using var client = new FakeSsmClient();
         var clock = new FakeTimeProvider();
-        var loader = new SsmParameterStoreKeysLoader("/guito-api/staging", client, clock);
-        await loader.LoadAsync();
-        clock.Advance(TimeSpan.FromMinutes(5));
-        client.Error = new ParameterNotFoundException("Parameter not found");
+        IKeysLoader loader = new SsmParameterStoreKeysLoader("/guito-api/staging", client, clock);
+        await WarmAndExpireAsync(loader, client, clock);
 
         // Act
         var denied = await new AgentKeyValidator(loader).ValidateAsync("alpha");
@@ -121,6 +117,21 @@ public class SsmParameterStoreKeysLoaderTests
         Assert.False(denied.Valid);
         Assert.Equal(new[] { "rotated" }, refreshed);
         Assert.Equal(3, client.Calls);
+    }
+
+    private static async Task<IReadOnlyList<string>> WarmAndRotateAsync(IKeysLoader loader, FakeSsmClient client, FakeTimeProvider clock)
+    {
+        var original = await loader.LoadAsync();
+        client.Value = """{"ApiKeys":["rotated"]}""";
+        clock.Advance(TimeSpan.FromMinutes(5) - TimeSpan.FromTicks(1));
+        return original;
+    }
+
+    private static async Task WarmAndExpireAsync(IKeysLoader loader, FakeSsmClient client, FakeTimeProvider clock)
+    {
+        await loader.LoadAsync();
+        clock.Advance(TimeSpan.FromMinutes(5));
+        client.Error = new ParameterNotFoundException("Parameter not found");
     }
 
     private sealed class FakeTimeProvider : TimeProvider

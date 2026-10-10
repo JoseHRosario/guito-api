@@ -14,23 +14,20 @@ public class SsmProviderContractTests
     public async Task GetAsync_ShouldRefreshAtFiveMinutesAcrossScopes_WhenValueIsCachedAsync(string kind)
     {
         // Arrange
-        using var client = new SsmFakeClient { Value = Payload(kind) };
-        var clock = new SsmFakeTimeProvider();
-        using var services = CreateServices(client, clock);
-        using var firstScope = services.CreateScope();
-        await GetAsync(firstScope.ServiceProvider, kind);
-        using var secondScope = services.CreateScope();
+        using var fixture = new ProviderFixture(kind);
+        await fixture.WarmAsync(kind);
+        using var secondScope = fixture.CreateScope();
 
         // Act
-        clock.Advance(TimeSpan.FromMinutes(5) - TimeSpan.FromTicks(1));
+        fixture.Clock.Advance(TimeSpan.FromMinutes(5) - TimeSpan.FromTicks(1));
         await GetAsync(secondScope.ServiceProvider, kind);
-        var cachedCalls = client.Calls;
-        clock.Advance(TimeSpan.FromTicks(1));
+        var cachedCalls = fixture.Client.Calls;
+        fixture.Clock.Advance(TimeSpan.FromTicks(1));
         await GetAsync(secondScope.ServiceProvider, kind);
 
         // Assert
         Assert.Equal(1, cachedCalls);
-        Assert.Equal(2, client.Calls);
+        Assert.Equal(2, fixture.Client.Calls);
     }
 
     [Theory]
@@ -40,19 +37,17 @@ public class SsmProviderContractTests
     public async Task GetAsync_ShouldHonorCancellation_WhenValueIsCachedAsync(string kind)
     {
         // Arrange
-        using var client = new SsmFakeClient { Value = Payload(kind) };
-        using var services = CreateServices(client);
-        using var scope = services.CreateScope();
-        await GetAsync(scope.ServiceProvider, kind);
+        using var fixture = new ProviderFixture(kind);
+        await fixture.WarmAsync(kind);
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
 
         // Act
-        var exception = await Record.ExceptionAsync(() => GetAsync(scope.ServiceProvider, kind, cancellation.Token));
+        var exception = await Record.ExceptionAsync(() => GetAsync(fixture.Services, kind, cancellation.Token));
 
         // Assert
         Assert.IsAssignableFrom<OperationCanceledException>(exception);
-        Assert.Equal(1, client.Calls);
+        Assert.Equal(1, fixture.Client.Calls);
     }
 
     [Theory]
@@ -104,20 +99,43 @@ public class SsmProviderContractTests
     public async Task GetAsync_ShouldRejectExpiredCache_WhenRefreshFailsAsync(string kind)
     {
         // Arrange
-        using var client = new SsmFakeClient { Value = Payload(kind) };
-        var clock = new SsmFakeTimeProvider();
-        using var services = CreateServices(client, clock);
-        using var scope = services.CreateScope();
-        await GetAsync(scope.ServiceProvider, kind);
-        clock.Advance(TimeSpan.FromMinutes(5));
-        client.Failure = new InvalidOperationException("hermetic upstream failure");
+        using var fixture = new ProviderFixture(kind);
+        await fixture.WarmAsync(kind);
+        fixture.Clock.Advance(TimeSpan.FromMinutes(5));
+        fixture.Client.Failure = new InvalidOperationException("hermetic upstream failure");
 
         // Act
-        var exception = await Record.ExceptionAsync(() => GetAsync(scope.ServiceProvider, kind));
+        var exception = await Record.ExceptionAsync(() => GetAsync(fixture.Services, kind));
 
         // Assert
         Assert.IsType<InvalidOperationException>(exception);
-        Assert.Equal(2, client.Calls);
+        Assert.Equal(2, fixture.Client.Calls);
+    }
+
+    private sealed class ProviderFixture : IDisposable
+    {
+        public SsmFakeClient Client { get; }
+        public SsmFakeTimeProvider Clock { get; } = new();
+        private readonly ServiceProvider _services;
+        private readonly IServiceScope _scope;
+        public IServiceProvider Services => _scope.ServiceProvider;
+
+        public ProviderFixture(string kind, string? payload = null)
+        {
+            Client = new SsmFakeClient { Value = payload ?? Payload(kind) };
+            _services = CreateServices(Client, Clock);
+            _scope = _services.CreateScope();
+        }
+
+        public async Task WarmAsync(string kind) => await GetAsync(Services, kind);
+        public IServiceScope CreateScope() => _services.CreateScope();
+
+        public void Dispose()
+        {
+            _scope.Dispose();
+            _services.Dispose();
+            Client.Dispose();
+        }
     }
 
     private static Task GetAsync(IServiceProvider services, string kind, CancellationToken cancellationToken = default) => kind switch

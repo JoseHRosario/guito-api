@@ -24,31 +24,55 @@ public class SsmEnableBankingCredentialsProviderTests
         Assert.Equal(0, client.Calls);
     }
 
+    private static byte[] ImportPublicKey(string pem)
+    {
+        using var imported = RSA.Create();
+        imported.ImportFromPem(pem);
+        return imported.ExportRSAPublicKey();
+    }
+
+    private sealed class BankFixture : IDisposable
+    {
+        public RSA Key { get; } = RSA.Create(2048);
+        public SsmFakeClient Client { get; }
+        private readonly ServiceProvider _services;
+        private readonly IServiceScope _scope;
+        public IEnableBankingCredentialsProvider Provider => _scope.ServiceProvider.GetRequiredService<IEnableBankingCredentialsProvider>();
+
+        public BankFixture(bool jsonWrapped)
+        {
+            var flattened = Key.ExportPkcs8PrivateKeyPem().Replace('\n', ' ');
+            Client = new SsmFakeClient { Value = jsonWrapped ? JsonSerializer.Serialize(new { pem = flattened }) : flattened };
+            _services = CreateServices(Client);
+            _scope = _services.CreateScope();
+        }
+
+        public void Dispose()
+        {
+            _scope.Dispose();
+            _services.Dispose();
+            Client.Dispose();
+            Key.Dispose();
+        }
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task GetAsync_ShouldNormalizeDedicatedKey_WhenSourceIsAwsSsmAsync(bool jsonWrapped)
     {
         // Arrange
-        using var key = RSA.Create(2048);
-        var pem = key.ExportPkcs8PrivateKeyPem();
-        var flattened = pem.Replace('\n', ' ');
-        using var client = new SsmFakeClient { Value = jsonWrapped ? JsonSerializer.Serialize(new { pem = flattened }) : flattened };
-        using var services = CreateServices(client);
-        using var scope = services.CreateScope();
+        using var fixture = new BankFixture(jsonWrapped);
         using var cancellation = new CancellationTokenSource();
-        var provider = scope.ServiceProvider.GetRequiredService<IEnableBankingCredentialsProvider>();
 
         // Act
-        var credentials = await provider.GetAsync(cancellation.Token);
+        var credentials = await fixture.Provider.GetAsync(cancellation.Token);
 
         // Assert
         Assert.Equal("hermetic-app", credentials.ApplicationId);
-        using var imported = RSA.Create();
-        imported.ImportFromPem(credentials.PrivateKey);
-        Assert.Equal(key.ExportRSAPublicKey(), imported.ExportRSAPublicKey());
-        Assert.Equal("/guito-api/eb-staging-pk", client.Request!.Name);
-        Assert.True(client.Request.WithDecryption);
-        Assert.Equal(cancellation.Token, client.CancellationToken);
+        Assert.Equal(fixture.Key.ExportRSAPublicKey(), ImportPublicKey(credentials.PrivateKey));
+        Assert.Equal("/guito-api/eb-staging-pk", fixture.Client.Request!.Name);
+        Assert.True(fixture.Client.Request.WithDecryption);
+        Assert.Equal(cancellation.Token, fixture.Client.CancellationToken);
     }
 }

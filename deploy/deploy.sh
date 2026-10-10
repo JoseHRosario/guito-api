@@ -48,7 +48,8 @@ DEPLOY_WORK_DIR=$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:-$HOME/.cache}}/guito-deplo
 trap 'rm -rf "$DEPLOY_WORK_DIR"' EXIT
 # Fail closed on missing parameters or denied access; never generate replacement
 # credentials during a deploy or overwrite an existing runtime payload.
-for parameter in "$SECRET_NAME" /guito-api/human-auth; do
+BANK_PARAMETER="/guito-api/eb-$([ "$ENV" = production ] && printf prod || printf staging)-pk"
+for parameter in "$SECRET_NAME" /guito-api/human-auth "$BANK_PARAMETER"; do
   aws --region "$REGION" ssm get-parameter --name "$parameter" \
     --with-decryption >/dev/null
 done

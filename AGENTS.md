@@ -89,7 +89,7 @@ Request path: **Controller → Service → Data access**. Each layer has one job
 
 ### Testing (`tst/guito-api.Tests/`)
 - **Unit tests only — they run in CI.** No network, no credentials, no real Sheets access; the suite must pass on a machine with zero Google setup (verified by removing the key file). Anything needing the real spreadsheet or a bank provider is out of scope for this project.
-- External behavior only: HTTP boundary via `WebApplicationFactory<Program>` (`CustomWebApplicationFactory`), never internals.
+- External behavior only: HTTP boundary via `WebApplicationFactory<Program>` (`CustomWebApplicationFactory`), never internals. Explicit issue #95 exception (José-approved test seams): secret-provider contract tests may call `ISecretsProvider`, `IHumanAuthSecretProvider`, and `IEnableBankingCredentialsProvider` directly with hermetic AWS fakes to verify decryption, caching, cancellation, and backend selection. Authorizer key-loading tests likewise exercise `IKeysLoader`. Live auth and business behavior remains covered by the deployed SIT suites.
 - The Sheets seam is faked at the HTTP level: `FakeGooglesheetsService` builds a real Google client whose transport is `FakeSheetsHttpHandler` (canned Sheets JSON responses + recorded writes). Tests therefore cover controller → service → real Google-client serialization, without network or credentials.
 - Compositions get replaced via DI in the test factory (`IListTransactionsService` → dummy), mirroring the service-seam pattern.
 
