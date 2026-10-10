@@ -32,7 +32,7 @@ The MVP is complete when the app is deployed and usable end-to-end:
 - **Runtime**: API bumped to **.NET 10** on the managed dotnet10 Lambda runtime (matches Minerva), done in the same pass as the auth refactor.
 - **URL**: default `*.cloudfront.net` domain for the MVP; custom domain is a later add.
 - **Workflow**: **feature branches + PRs**; José reviews and merges. Revisit once CI/CD hard gates exist. Agent commits authored as `Meireles`.
-- **Secrets**: runtime secrets (Google service account and provider secrets if/when needed) in **AWS Secrets Manager**; GitHub Actions deploys via **OIDC role assumption** — no long-lived keys in GitHub.
+- **Secrets**: application secrets (Google service account, API keys and provider credentials) in **SSM Parameter Store SecureString**; database credentials stay in **Secrets Manager** for RDS Data API (ADR-0008); GitHub Actions deploys via **OIDC role assumption** — no long-lived keys in GitHub.
 - **CI**: replace the legacy `master_guito-api.yml` with API deployment workflow (Amazon.Lambda.Tools + OIDC); strip Azure packages (Serilog Azure sink, Azure.Storage) as part of API modernization.
 - **AI extraction**: `AIController`/`ExtractMethodService` stubbed (501) until a separate OpenRouter implementation is planned; not part of the MVP.
 

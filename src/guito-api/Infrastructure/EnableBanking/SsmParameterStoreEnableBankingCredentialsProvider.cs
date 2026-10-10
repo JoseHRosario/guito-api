@@ -9,19 +9,13 @@ public sealed class SsmParameterStoreEnableBankingCredentialsProvider : IEnableB
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly string _parameterName;
-    private readonly SecretsManagerEnableBankingCredentialsProvider _credentials;
+    private readonly DedicatedPemEnableBankingCredentialsProvider _credentials;
 
     public SsmParameterStoreEnableBankingCredentialsProvider(IOptions<EnableBankingOptions> options, IAmazonSimpleSystemsManagement client, TimeProvider? timeProvider = null)
     {
         var value = options.Value;
         _parameterName = value.SsmParameterName;
-        var dedicatedOptions = Options.Create(new EnableBankingOptions
-        {
-            ApplicationId = value.ApplicationId,
-            SecretsManagerSecretName = value.SsmParameterName
-        });
-        // Reuse the existing dedicated-key seam so raw and JSON PEM normalization cannot drift.
-        _credentials = new(dedicatedOptions, async (name, cancellationToken) =>
+        _credentials = new(value.ApplicationId, value.SsmParameterName, async (name, cancellationToken) =>
         {
             var response = await client.GetParameterAsync(new GetParameterRequest { Name = name, WithDecryption = true }, cancellationToken);
             return response.Parameter.Value;

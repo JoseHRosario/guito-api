@@ -6,7 +6,7 @@ Accepted (2026-09-25, found live during T8.3 prod regression proof — issue #23
 
 ## Context
 
-Each deployed environment (prod, staging) reads its Google Sheets credential and
+Originally, each deployed environment (prod, staging) read its Google Sheets credential and
 agent API keys from one AWS Secrets Manager secret named `guito-api/<env>`
 (payload shape `SecretsPayload { GoogleServiceAccount, ApiKeys }`). The
 `GoogleServiceAccount` in the secret must be the service account **of that
@@ -40,8 +40,9 @@ cannot overwrite them. There is currently no `guito-api/dev` runtime secret;
 local development remains file-backed, and `AwsSsm` is opt-in.
 
 `AppConfiguration:Secrets:Location=AwsSsm` selects the SSM implementation behind
-the existing interfaces (ADR 0011). Names include the leading slash. `Aws` remains
-available during rollout; neither backend changes the JSON payload contract.
+the existing interfaces (ADR 0011). Names include the leading slash. The legacy
+`Aws` application backend was retained during rollout, then retired under #124;
+the SSM implementation preserves the JSON payload contract.
 Providers decrypt reads, propagate cancellation, and retain the five-minute cache.
 
 **Database exception, approved by José:** `guito-api/db-admin`, `db-dev`,
@@ -56,29 +57,33 @@ personal scale and establishes SSM as the default application-secret mechanism.
 It does not eliminate the database-secret charges. Migration rejects payloads
 above the 4 KB standard limit; advanced-tier adoption needs an explicit decision.
 
-### Rollout and retirement
+### Completed rollout and retirement — issue #95
 
-1. `uv run --with boto3 --with awscrt python deploy/migrate-secrets-to-ssm.py`
-   copies application payloads without printing values. It refuses conflicting
-   destinations and verifies decrypted read-back byte-for-byte, logging names and
-   field names only. It never deletes sources or touches database credentials.
-2. Grant `ssm:GetParameter` on `parameter/guito-api/*` to Lambda and deploy roles;
-   retain old Secrets Manager grants during cutover.
-3. Deploy staging and run `scripts/run-deployed-tests.sh staging`, covering agent
-   and live Google-token auth plus sandbox business writes. Exercise
-   `ENV=dev deploy/db-apply.sh` to prove the database exception still works.
-4. Merge the PR to master; the normal production CI deploy selects SSM. Run the
-   same deployed suites against production before retiring its source secrets.
-5. Only after both environments are proven, verify all five source/parameter
-   pairs still match, then explicitly delete the five **application** source
-   secrets with `--force-delete-without-recovery`. Never delete `db-*` secrets.
-   IAM cleanup is a separate follow-up. Until production cutover, retain all
-   source secrets so rollback to `Aws` stays possible.
+Both environments cut over to SSM and passed deployed auth/business suites. The
+five application source secrets were deleted without recovery after exact
+source/parameter comparison; the four database secrets remained active. See
+[retirement evidence](https://github.com/JoseHRosario/guito-api/issues/95#issuecomment-6100301274).
 
-Rollback before retirement: restore the old build and `Aws` location/names in
-both API and authorizer configuration; preserve Google policy and DB references.
-After irreversible source deletion, rollback requires recreating application
-secrets from SSM first; never roll back to an `Aws` build against absent sources.
+The historical sequence was a non-destructive byte-for-byte copy to SecureString,
+decrypted read-back without logging values, SSM read grants, staging deployment
+and live tests, a dev database migration check, then production deployment and
+live tests before irreversible application-source deletion. The completed
+one-time migration script is removed under #124; normal deployments validate
+existing parameters and never recreate credentials.
+
+### Post-cutover cleanup — issue #124
+
+SSM is the only deployed application-secret backend. Local file-backed providers
+remain supported; the authorizer requires explicit `AwsSsm` selection and a
+parameter name. Legacy application Secrets Manager code and SDK dependencies
+are removed where unused. Bank-key normalization and caching are backend-neutral.
+Deployment policies retain SSM access and Secrets Manager access to `db-*` only;
+live Guito deployment-role reconciliation follows production rollout and must
+preserve unrelated statements and all Data API permissions.
+
+Rollback must use an SSM-capable build. Returning to a pre-migration build that
+requires the deleted application secrets is not supported by this cleanup;
+never deploy one against absent sources.
 
 ## Consequences
 

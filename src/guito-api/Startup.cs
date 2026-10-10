@@ -67,7 +67,7 @@ namespace GuitoApi
 
             services.Configure<AppConfigurationOptions>(Configuration.GetSection(AppConfigurationOptions.AppConfiguration));
 
-            // Runtime secrets: Aws retains Secrets Manager; AwsSsm selects Parameter Store; local files stay unchanged.
+            // Deployed secrets use Parameter Store; local files stay unchanged.
             var secretsLocation = Configuration.GetValue<string>("AppConfiguration:Secrets:Location");
             services.AddSingleton<TimeProvider>(TimeProvider.System);
             services.AddSingleton<IAmazonSimpleSystemsManagement, AmazonSimpleSystemsManagementClient>();
@@ -109,9 +109,7 @@ namespace GuitoApi
             // assertion per request, transport seam faked in tests, typed client on top.
             services.Configure<EnableBankingOptions>(Configuration.GetSection(AppConfigurationOptions.AppConfiguration).GetSection("EnableBanking"));
             services.AddScoped<IEnableBankingJwtSigner, EnableBankingJwtSigner>();
-            // EB credentials source (issue #89): the ADR-0008 runtime payload by default,
-            // or a dedicated Secrets Manager secret — staging uses that so the deploy
-            // script can re-seed the runtime payload without touching the bank key.
+            // Dedicated SSM bank keys stay separate from the runtime payload.
             services.AddSingleton<SsmParameterStoreEnableBankingCredentialsProvider>();
             services.AddScoped<IEnableBankingCredentialsProvider>(sp =>
             {
@@ -119,16 +117,7 @@ namespace GuitoApi
                 return options.SecretsSource switch
                 {
                     SecretsConfig.LocationAwsSsm => sp.GetRequiredService<SsmParameterStoreEnableBankingCredentialsProvider>(),
-                    "SecretsManager" => new SecretsManagerEnableBankingCredentialsProvider(
-                        sp.GetRequiredService<IOptions<EnableBankingOptions>>(),
-                        async (secretId, ct) =>
-                        {
-                            using var client = new Amazon.SecretsManager.AmazonSecretsManagerClient(
-                                new Amazon.SecretsManager.AmazonSecretsManagerConfig());
-                            var response = await client.GetSecretValueAsync(
-                                new Amazon.SecretsManager.Model.GetSecretValueRequest { SecretId = secretId }, ct);
-                            return response.SecretString;
-                        }),
+                    "SecretsManager" => throw new InvalidOperationException("EnableBanking:SecretsSource SecretsManager is retired; use AwsSsm or Payload."),
                     _ => new PayloadEnableBankingCredentialsProvider(sp.GetRequiredService<ISecretsProvider>()),
                 };
             });
@@ -171,8 +160,8 @@ namespace GuitoApi
 
         private ISecretsProvider CreateSecretsProvider(string? secretsLocation, IServiceProvider services) => secretsLocation switch
         {
-            SecretsConfig.LocationAws => new AwsSecretsProvider(RequiredAwsSecretName()),
-            SecretsConfig.LocationAwsSsm => new SsmParameterStoreSecretProvider(RequiredAwsSecretName(), services.GetRequiredService<IAmazonSimpleSystemsManagement>(), services.GetRequiredService<TimeProvider>()),
+            "Aws" => throw new InvalidOperationException("Secrets:Location Aws is retired; use AwsSsm or local files."),
+            SecretsConfig.LocationAwsSsm => new SsmParameterStoreSecretProvider(RequiredSsmParameterName(), services.GetRequiredService<IAmazonSimpleSystemsManagement>(), services.GetRequiredService<TimeProvider>()),
             // Non-AWS locations retain the file-backed local development provider.
             _ => new FileSecretsProvider(Configuration.GetValue<string>("AppConfiguration:Secrets:FilePath") ?? "secrets.local.json"),
         };
@@ -182,14 +171,14 @@ namespace GuitoApi
 
         private IHumanAuthSecretProvider CreateHumanAuthSecretProvider(string? secretsLocation, IServiceProvider services) => secretsLocation switch
         {
-            SecretsConfig.LocationAws => new AwsHumanAuthSecretProvider(Secrets.HumanAuthSecretName),
+            "Aws" => throw new InvalidOperationException("Secrets:Location Aws is retired; use AwsSsm or local files."),
             SecretsConfig.LocationAwsSsm => new SsmParameterStoreHumanAuthSecretProvider(Secrets.HumanAuthSecretName, services.GetRequiredService<IAmazonSimpleSystemsManagement>(), services.GetRequiredService<TimeProvider>()),
             _ => new FileHumanAuthSecretProvider(Secrets.HumanAuthFilePath),
         };
 
-        private string RequiredAwsSecretName() =>
+        private string RequiredSsmParameterName() =>
             Secrets.SecretName
-            ?? throw new InvalidOperationException("AppConfiguration:Secrets:SecretName is required when Secrets:Location is Aws");
+            ?? throw new InvalidOperationException("AppConfiguration:Secrets:SecretName is required when Secrets:Location is AwsSsm");
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env, ILoggerFactory loggerFactory)
         {

@@ -86,11 +86,14 @@ namespace GuitoApiAuthorizer
 
         private static AgentKeyValidator DefaultAgentKeyValidator()
         {
-            var secretName = Environment.GetEnvironmentVariable("SECRETS_SECRET_NAME");
-            IKeysLoader loader = Environment.GetEnvironmentVariable("SECRETS_LOCATION") == "AwsSsm"
-                ? new SsmParameterStoreKeysLoader(secretName ?? "/guito-api/prod",
-                    new AmazonSimpleSystemsManagementClient(new AmazonSimpleSystemsManagementConfig()))
-                : new SecretsManagerKeysLoader(secretName ?? "guito-api/prod");
+            if (Environment.GetEnvironmentVariable("SECRETS_LOCATION") != "AwsSsm")
+                throw new InvalidOperationException("SECRETS_LOCATION must explicitly be AwsSsm.");
+
+            var parameterName = Environment.GetEnvironmentVariable("SECRETS_SECRET_NAME");
+            if (string.IsNullOrWhiteSpace(parameterName))
+                throw new InvalidOperationException("SECRETS_SECRET_NAME must specify an SSM parameter name.");
+            var loader = new SsmParameterStoreKeysLoader(parameterName,
+                new AmazonSimpleSystemsManagementClient(new AmazonSimpleSystemsManagementConfig()));
             return new AgentKeyValidator(loader);
         }
 
