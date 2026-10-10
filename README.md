@@ -15,10 +15,10 @@ Google (ID token)            CLI / AI agents (X-Api-Key)
    │  guito-key-authorizer (REQUEST, one function)             │
    │      dispatches on header:                                │
    │        Bearer <jwt>  → Google ID-token validator  ────────│──▶ Google JWKS
-   │        raw Authorization → agent-key validator ────────────│──▶ AWS Secrets Manager
+   │        raw Authorization → agent-key validator ────────────│──▶ SSM Parameter Store
    │          │ (allowed)                                      │
    │          ▼                                                │
-   │  Lambda — guito-api (.NET 10, arm64)                      │──▶ AWS Secrets Manager
+   │  Lambda — guito-api (.NET 10, arm64)                      │──▶ SSM Parameter Store
    │          │ (GoogleIdTokenMiddleware / ApiKeyMiddleware)   │
    └──────────┼────────────────────────────────────────────────┘
               ▼
@@ -28,7 +28,7 @@ Google (ID token)            CLI / AI agents (X-Api-Key)
 - **Runtime**: .NET 10 on AWS Lambda (managed dotnet10 runtime, arm64, eu-west-1) behind API Gateway HTTP API; logs in CloudWatch. Two functions: `guito-api` (the app) and `guito-api-authorizer` (the edge auth gate).
 - **Datastore**: a Google Spreadsheet, accessed with a dedicated service account — no database, no migration.
 - **Auth**: dual scheme — a personal `X-Api-Key` for CLI/AI agents and Google ID tokens for the UI (issue #13/#8). API Gateway allows one CUSTOM authorizer per route, so the `guito-key-authorizer` REQUEST authorizer is a single function dispatching on the `Authorization` header (its sole identity source): `Bearer <jwt>` → Google ID-token validation (RS256 against Google's JWKS, issuer/audience/expiry/allowlisted-email checks), raw value → agent-key validation. The two validators are independent — neither path falls back into the other. The same checks repeat inside the API (`ApiKeyMiddleware` / `GoogleIdTokenMiddleware`) as defense-in-depth, and each middleware is path-aware: agent requests carry the key in **both** `X-Api-Key` and `Authorization`; human requests carry the ID token in **both** `Authorization: Bearer <token>` and `x-google-idtoken` (see the sample requests in `src/guito-api/Rest/guito-api.http`). Human-path config (`GOOGLE_CLIENT_ID`, `GOOGLE_ALLOWED_EMAILS`) arrives via Lambda env vars set in `deploy/deploy.sh` §3b; unset → human path deny-closed.
-- **Human-token smoke**: the OAuth consent happens once (OAuth Playground, `openid email` scope); the refresh token lives in Secrets Manager `guito-api/human-auth`, and fresh ID tokens are minted unattended via the Google token endpoint — so the live positive smoke needs no human in the loop.
+- **Human-token smoke**: the OAuth consent happens once (OAuth Playground, `openid email` scope); the refresh token lives in SSM SecureString `/guito-api/human-auth`, and fresh ID tokens are minted unattended via the Google token endpoint — so the live positive smoke needs no human in the loop.
 - **Bank sync**: PSD2 transaction retrieval behind `IListTransactionsService` — Enable Banking (free "Restricted Production" tier) is the provider, selected by `AppConfiguration:BankProvider`; consents are re-authenticated manually (~90 days). Provider adapter ships with the T4 Phase-2 work (issue #5 / ADR-0004).
 - **AI extraction**: endpoint stubbed (501) during the revival; a new implementation over OpenRouter is planned.
 
@@ -47,11 +47,11 @@ dotnet test --filter "Category!=Integration"   # hermetic unit tests (CI gate)
 scripts/run-deployed-tests.sh                 # deployed-staging integration tests (reads secrets from AWS)
 ```
 
-Configuration comes from `appsettings.{Environment}.json` plus environment variables (Google service account credentials, Sheets ids, bank-provider credentials). Secrets are stored in AWS Secrets Manager in deployed environments — never commit them. Base/`appsettings.json` targets the DEV spreadsheet; `appsettings.Production.json` targets prod.
+Configuration comes from `appsettings.{Environment}.json` plus environment variables (Google service account credentials, Sheets ids, bank-provider credentials). Application secrets are stored as SSM Parameter Store SecureStrings in deployed environments; database credentials remain in Secrets Manager because RDS Data API requires it (ADR 0008) — never commit either. Base/`appsettings.json` targets the DEV spreadsheet; `appsettings.Production.json` targets prod.
 
 ## Deployment
 
-Deployed by GitHub Actions to Lambda via OIDC role assumption (no long-lived AWS keys in GitHub). Two functions deploy independently from their own project folders: `src/guito-api` → `guito-api` (handler `guito-api::GuitoApi.LambdaEntryPoint::FunctionHandlerAsync`) and `src/guito-api-authorizer` → `guito-api-authorizer` (REQUEST authorizer for `guito-key-authorizer`, IAM-policy responses, TTL 0). Resources are prefixed `guito-` and tagged `Project=Guito`, account 497087877832, region eu-west-1. `deploy/deploy.sh` reproduces the full stack locally (secret, IAM, functions, HTTP API, routes, access logs).
+Deployed by GitHub Actions to Lambda via OIDC role assumption (no long-lived AWS keys in GitHub). Two functions deploy independently from their own project folders: `src/guito-api` → `guito-api` (handler `guito-api::GuitoApi.LambdaEntryPoint::FunctionHandlerAsync`) and `src/guito-api-authorizer` → `guito-api-authorizer` (REQUEST authorizer for `guito-key-authorizer`, IAM-policy responses, TTL 0). Resources are prefixed `guito-` and tagged `Project=Guito`, account 497087877832, region eu-west-1. `deploy/deploy.sh` reproduces the stack locally (parameter preflight, IAM, functions, HTTP API, routes, access logs). Provision application parameters first using `uv run --with boto3 --with awscrt python deploy/migrate-secrets-to-ssm.py`; see [ADR 0008](docs/adr/0008-per-environment-secrets-payload.md) for rollout, database exceptions, and source-secret retirement.
 
 ## Contributing
 

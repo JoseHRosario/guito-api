@@ -1,4 +1,5 @@
 using Amazon.RDSDataService;
+using Amazon.SimpleSystemsManagement;
 using GuitoApi.Configuration;
 using GuitoApi.Infrastructure.Postgres;
 using GuitoApi.Infrastructure.Secrets;
@@ -66,12 +67,14 @@ namespace GuitoApi
 
             services.Configure<AppConfigurationOptions>(Configuration.GetSection(AppConfigurationOptions.AppConfiguration));
 
-            // Runtime secrets (issue #3): Secrets Manager in production, gitignored local file in dev.
+            // Runtime secrets: Aws retains Secrets Manager; AwsSsm selects Parameter Store; local files stay unchanged.
             var secretsLocation = Configuration.GetValue<string>("AppConfiguration:Secrets:Location");
-            services.AddSingleton<ISecretsProvider>(CreateSecretsProvider(secretsLocation));
+            services.AddSingleton<TimeProvider>(TimeProvider.System);
+            services.AddSingleton<IAmazonSimpleSystemsManagement, AmazonSimpleSystemsManagementClient>();
+            services.AddSingleton<ISecretsProvider>(sp => CreateSecretsProvider(secretsLocation, sp));
 
             // Google human-auth client secret (issue #52): same location pattern as the runtime secrets.
-            services.AddSingleton<IHumanAuthSecretProvider>(CreateHumanAuthSecretProvider(secretsLocation));
+            services.AddSingleton<IHumanAuthSecretProvider>(sp => CreateHumanAuthSecretProvider(secretsLocation, sp));
             services.AddScoped<ITokenExchangeService, GoogleTokenExchangeService>();
             services.AddHttpClient(GoogleTokenExchangeService.HttpClientName);
 
@@ -109,11 +112,13 @@ namespace GuitoApi
             // EB credentials source (issue #89): the ADR-0008 runtime payload by default,
             // or a dedicated Secrets Manager secret — staging uses that so the deploy
             // script can re-seed the runtime payload without touching the bank key.
+            services.AddSingleton<SsmParameterStoreEnableBankingCredentialsProvider>();
             services.AddScoped<IEnableBankingCredentialsProvider>(sp =>
             {
                 var options = sp.GetRequiredService<IOptions<EnableBankingOptions>>().Value;
                 return options.SecretsSource switch
                 {
+                    SecretsConfig.LocationAwsSsm => sp.GetRequiredService<SsmParameterStoreEnableBankingCredentialsProvider>(),
                     "SecretsManager" => new SecretsManagerEnableBankingCredentialsProvider(
                         sp.GetRequiredService<IOptions<EnableBankingOptions>>(),
                         async (secretId, ct) =>
@@ -164,19 +169,21 @@ namespace GuitoApi
             services.AddScoped<IListPendingBankTransactionsService, ListPendingBankTransactionsService>();
         }
 
-        private ISecretsProvider CreateSecretsProvider(string? secretsLocation) => secretsLocation switch
+        private ISecretsProvider CreateSecretsProvider(string? secretsLocation, IServiceProvider services) => secretsLocation switch
         {
             SecretsConfig.LocationAws => new AwsSecretsProvider(RequiredAwsSecretName()),
-            // Anything other than "Aws" is a local dev checkout: file-backed secrets.
+            SecretsConfig.LocationAwsSsm => new SsmParameterStoreSecretProvider(RequiredAwsSecretName(), services.GetRequiredService<IAmazonSimpleSystemsManagement>(), services.GetRequiredService<TimeProvider>()),
+            // Non-AWS locations retain the file-backed local development provider.
             _ => new FileSecretsProvider(Configuration.GetValue<string>("AppConfiguration:Secrets:FilePath") ?? "secrets.local.json"),
         };
 
         /// <summary>The Secrets config section bound to SecretsConfig — defaults live there, not here.</summary>
         private SecretsConfig Secrets => Configuration.GetSection("AppConfiguration:Secrets").Get<SecretsConfig>() ?? new SecretsConfig();
 
-        private IHumanAuthSecretProvider CreateHumanAuthSecretProvider(string? secretsLocation) => secretsLocation switch
+        private IHumanAuthSecretProvider CreateHumanAuthSecretProvider(string? secretsLocation, IServiceProvider services) => secretsLocation switch
         {
             SecretsConfig.LocationAws => new AwsHumanAuthSecretProvider(Secrets.HumanAuthSecretName),
+            SecretsConfig.LocationAwsSsm => new SsmParameterStoreHumanAuthSecretProvider(Secrets.HumanAuthSecretName, services.GetRequiredService<IAmazonSimpleSystemsManagement>(), services.GetRequiredService<TimeProvider>()),
             _ => new FileHumanAuthSecretProvider(Secrets.HumanAuthFilePath),
         };
 

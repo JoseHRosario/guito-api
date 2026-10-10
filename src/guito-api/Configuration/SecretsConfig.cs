@@ -6,16 +6,18 @@ namespace GuitoApi.Configuration
         /// <summary>Secrets:Location value selecting AWS Secrets Manager.</summary>
         public const string LocationAws = "Aws";
 
-        /// <summary>"Aws" = AWS Secrets Manager; anything else = gitignored local JSON file.</summary>
+        public const string LocationAwsSsm = "AwsSsm";
+
+        /// <summary>"Aws" = Secrets Manager; "AwsSsm" = Parameter Store; otherwise a local JSON file.</summary>
         public string Location { get; set; } = string.Empty;
 
-        /// <summary>Secrets Manager secret name (e.g. guito-api/prod).</summary>
+        /// <summary>Secret name or SSM parameter name (e.g. /guito-api/prod for AwsSsm).</summary>
         public string SecretName { get; set; } = string.Empty;
 
         /// <summary>Local secrets file path, resolved against the project directory.</summary>
         public string FilePath { get; set; } = string.Empty;
 
-        /// <summary>Secrets Manager secret holding the Google human-auth client secret (issue #52).</summary>
+        /// <summary>Secret or SSM parameter holding the Google human-auth client secret.</summary>
         public string HumanAuthSecretName { get; set; } = "guito-api/human-auth";
 
         /// <summary>Local human-auth secret file path, resolved against the project directory (issue #52).</summary>

@@ -1,5 +1,6 @@
 using Amazon.Lambda.Core;
 using Amazon.Lambda.APIGatewayEvents;
+using Amazon.SimpleSystemsManagement;
 using GuitoApiAuthorizer.AgentKey;
 using GuitoApiAuthorizer.GoogleToken;
 
@@ -83,9 +84,15 @@ namespace GuitoApiAuthorizer
             return Deny(methodArn, "agent", result.FailureReason);
         }
 
-        private static AgentKeyValidator DefaultAgentKeyValidator() =>
-            new(new SecretsManagerKeysLoader(
-                Environment.GetEnvironmentVariable("SECRETS_SECRET_NAME") ?? "guito-api/prod"));
+        private static AgentKeyValidator DefaultAgentKeyValidator()
+        {
+            var secretName = Environment.GetEnvironmentVariable("SECRETS_SECRET_NAME");
+            IKeysLoader loader = Environment.GetEnvironmentVariable("SECRETS_LOCATION") == "AwsSsm"
+                ? new SsmParameterStoreKeysLoader(secretName ?? "/guito-api/prod",
+                    new AmazonSimpleSystemsManagementClient(new AmazonSimpleSystemsManagementConfig()))
+                : new SecretsManagerKeysLoader(secretName ?? "guito-api/prod");
+            return new AgentKeyValidator(loader);
+        }
 
         private static GoogleTokenValidator DefaultGoogleTokenValidator() =>
             new(new HttpJwksClient(),
