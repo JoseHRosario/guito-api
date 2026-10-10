@@ -42,6 +42,31 @@ namespace GuitoApi.Tests
         }
 
         [Fact]
+        public async Task Extract_ShouldExposeExactAmountText_WhenModelDecimalExceedsJavascriptPrecision()
+        {
+            // Arrange
+            using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres" };
+            factory.Postgres.PersistExpenses = true;
+            factory.OpenRouterHandler.ChatResponseContent =
+                "{\"date\": \"2026-07-02\", \"amount\": 123456789.1234567890123456789, \"description\": \"Cafe\"}";
+            using var client = factory.CreateClient();
+
+            // Act
+            var response = await client.PostAsJsonAsync("/AI/extract", new ExpenseExtract { Prompt = "cafe" });
+
+            // Assert
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(JsonValueKind.Number, body.GetProperty("amount").ValueKind);
+            Assert.Equal(123456789.1234567890123456789m, body.GetProperty("amount").GetDecimal());
+            Assert.Equal("123456789.1234567890123456789", body.GetProperty("amountExact").GetString());
+            var created = await client.PostAsJsonAsync("/Expense", new { date = "2026-07-02", amount = body.GetProperty("amountExact").GetString() });
+            Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+            var latest = (await client.GetFromJsonAsync<JsonElement>("/Expense/latest/1")).GetProperty("expenses");
+            Assert.Equal(body.GetProperty("amountExact").GetString(), Assert.Single(latest.EnumerateArray()).GetProperty("amountExact").GetString());
+        }
+
+        [Fact]
         public async Task Extract_ShouldReturnBadRequest_WhenPromptIsEmpty()
         {
             using var factory = new CustomWebApplicationFactory();

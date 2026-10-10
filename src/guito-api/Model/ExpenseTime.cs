@@ -19,10 +19,10 @@ public static class ExpenseTime
             throw new ProblemException(400, "occurredAt must be ISO8601 with an explicit offset.");
         if (instant.Ticks % 10 != 0)
             throw new ProblemException(400, "occurredAt precision must not exceed microseconds.");
-        var local = DateTime.SpecifyKind(instant.DateTime, DateTimeKind.Unspecified);
-        if (Lisbon.IsInvalidTime(local) || InLisbon(instant).DateTime != local || instant.Date != date.Date)
-            throw new ProblemException(400, "occurredAt must match date and the Europe/Lisbon offset, including DST.");
-        return instant;
+        var lisbonInstant = InLisbon(instant);
+        if (lisbonInstant.Date != date.Date)
+            throw new ProblemException(400, "occurredAt must match date in Europe/Lisbon.");
+        return lisbonInstant;
     }
 
     public static DateTimeOffset Midnight(DateTime date)

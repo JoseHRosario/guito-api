@@ -102,6 +102,33 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
         Assert.Contains($"{dateColumn}!C{FakeSheetsHttpHandler.NextRowIndex}", sheets.UpdateRanges.Last());
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CreateExpense_ShouldKeepLegacyDateOnlyContract_WhenProductionUsesDefaultSheets(bool amountAsString)
+    {
+        // Arrange
+        using var factory = new CustomWebApplicationFactory { Environment = "Production" };
+        factory.SheetsHandler.LatestValuesJson = """
+            [["2026-07-02", "", "", "42.50", "Coffee", "Restaurants", "user@example.test"]]
+            """;
+        using var client = factory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
+        client.DefaultRequestHeaders.Add("X-Api-Key", "test-agent-key");
+        object amount = amountAsString ? "42.50" : (object)42.50m;
+
+        // Act
+        var created = await client.PostAsJsonAsync("/Expense", new { date = "2026-07-02", amount });
+        var latest = (await client.GetFromJsonAsync<JsonElement>("/Expense/latest/1")).GetProperty("expenses");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        Assert.Contains("2026-07-02", Assert.Single(factory.SheetsHandler.AppendBodies));
+        Assert.Empty(factory.Postgres.ExecutedSql);
+        var expense = Assert.Single(latest.EnumerateArray());
+        Assert.Equal(JsonValueKind.Number, expense.GetProperty("amount").ValueKind);
+        Assert.Equal(expense.GetProperty("amount").GetDecimal().ToString(System.Globalization.CultureInfo.InvariantCulture), expense.GetProperty("amountExact").GetString());
+    }
+
     [Fact]
     public async Task ListLatestAsync_ShouldReadRowsFromSpreadsheet_WhenExpensesExist()
     {

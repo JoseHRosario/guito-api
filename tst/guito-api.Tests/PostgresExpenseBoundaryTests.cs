@@ -124,16 +124,41 @@ public class PostgresExpenseBoundaryTests
     }
 
     [Theory]
-    [InlineData("2026-03-29", "2026-03-29T01:30:00+00:00", HttpStatusCode.BadRequest)]
-    [InlineData("2026-03-29", "2026-03-29T01:30:00+01:00", HttpStatusCode.BadRequest)]
+    [InlineData("2026-07-01T23:30:00.123456Z", "2026-07-02T00:30:00.123456+01:00")]
+    [InlineData("2026-07-02T09:30:00.123456+10:00", "2026-07-02T00:30:00.123456+01:00")]
+    public async Task CreateAndList_ShouldNormalizeKnownInstant_WhenInputOffsetIsNotLisbon(string occurredAt, string expected)
+    {
+        // Arrange
+        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres" };
+        factory.Postgres.PersistExpenses = true;
+        using var client = factory.CreateClient();
+
+        // Act
+        var created = await client.PostAsJsonAsync("/Expense", new { date = "2026-07-02", occurredAt, amount = 1m });
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        var latest = (await client.GetFromJsonAsync<JsonElement>("/Expense/latest/1")).GetProperty("expenses");
+        var expense = Assert.Single(latest.EnumerateArray());
+        Assert.Equal(DateTimeOffset.Parse(occurredAt).UtcTicks, expense.GetProperty("occurredAt").GetDateTimeOffset().UtcTicks);
+        Assert.Equal(DateTimeOffset.Parse(expected).ToString("O"), expense.GetProperty("occurredAt").GetDateTimeOffset().ToString("O"));
+        Assert.Equal(new DateTime(2026, 7, 2), expense.GetProperty("date").GetDateTime());
+    }
+
+    [Theory]
+    [InlineData("2026-03-29", "2026-03-29T01:30:00+00:00", HttpStatusCode.OK)]
+    [InlineData("2026-03-29", "2026-03-29T01:30:00+01:00", HttpStatusCode.OK)]
     [InlineData("2026-10-25", "2026-10-25T01:30:00+01:00", HttpStatusCode.OK)]
     [InlineData("2026-10-25", "2026-10-25T01:30:00+00:00", HttpStatusCode.OK)]
-    [InlineData("2026-10-10", "2026-10-10T14:00:00Z", HttpStatusCode.BadRequest)]
+    [InlineData("2026-10-10", "2026-10-10T14:00:00Z", HttpStatusCode.OK)]
     [InlineData("2026-10-10", "2026-10-10T14:00:00", HttpStatusCode.BadRequest)]
     [InlineData("2026-10-10", "2026-10-11T14:00:00+01:00", HttpStatusCode.BadRequest)]
     [InlineData("2026-10-10", "2026-10-10T14:00:00.1234567+01:00", HttpStatusCode.BadRequest)]
     [InlineData("2026-10-10", "garbage", HttpStatusCode.BadRequest)]
-    public async Task CreateExpense_ShouldValidateLisbonLocalInterpretation_WhenOffsetTimestampReceived(string date, string occurredAt, HttpStatusCode expected)
+    [InlineData("2026-07-01", "2026-07-01T23:30:00.123456Z", HttpStatusCode.BadRequest)]
+    [InlineData("2026-03-29", "2026-03-29T01:30:00", HttpStatusCode.BadRequest)]
+    [InlineData("2026-10-25", "2026-10-25T01:30:00", HttpStatusCode.BadRequest)]
+    public async Task CreateExpense_ShouldValidateLisbonDayAndPrecision_WhenExplicitInstantReceived(string date, string occurredAt, HttpStatusCode expected)
     {
         // Arrange
         using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres" };
@@ -175,6 +200,48 @@ public class PostgresExpenseBoundaryTests
         Assert.Equal("Original description", expense.GetProperty("description").GetString());
         Assert.Equal("Original category", expense.GetProperty("category").GetString());
         Assert.Equal("xunga.meireles@gmail.com", expense.GetProperty("creatorEmail").GetString());
+    }
+
+    [Theory]
+    [InlineData("123456789.1234567890123456789")]
+    [InlineData("0.0000000000000000000000000001")]
+    public async Task CreateAndList_ShouldPreserveExactAmountText_WhenDecimalStringExceedsJavascriptPrecision(string amount)
+    {
+        // Arrange
+        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres" };
+        factory.Postgres.PersistExpenses = true;
+        using var client = factory.CreateClient();
+
+        // Act
+        var created = await client.PostAsJsonAsync("/Expense", new { date = "2026-07-02", amount });
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        var latest = (await client.GetFromJsonAsync<JsonElement>("/Expense/latest/1")).GetProperty("expenses");
+        var expense = Assert.Single(latest.EnumerateArray());
+        Assert.Equal(JsonValueKind.Number, expense.GetProperty("amount").ValueKind);
+        Assert.Equal(decimal.Parse(amount, System.Globalization.CultureInfo.InvariantCulture), expense.GetProperty("amount").GetDecimal());
+        Assert.Equal(amount, expense.GetProperty("amountExact").GetString());
+    }
+
+    [Theory]
+    [InlineData("1,23")]
+    [InlineData("NaN")]
+    [InlineData("0")]
+    [InlineData("-1")]
+    [InlineData("79228162514264337593543950336")]
+    public async Task CreateExpense_ShouldRejectInvalidAmountString_WhenNotSupportedPositiveDecimal(string amount)
+    {
+        // Arrange
+        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres" };
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.PostAsJsonAsync("/Expense", new { date = "2026-07-02", amount });
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Empty(factory.Postgres.ExecutedSql);
     }
 
     [Fact]

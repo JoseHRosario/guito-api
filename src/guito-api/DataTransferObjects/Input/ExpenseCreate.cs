@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 
 namespace GuitoApi.DataTransferObjects.Input
 {
@@ -17,6 +18,7 @@ namespace GuitoApi.DataTransferObjects.Input
 
         [Range(typeof(decimal), "0.0000000000000000000000000001", "79228162514264337593543950335",
             ErrorMessage = "Amount must be a positive number.")]
+        [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
         public decimal Amount { get; set; }
 
         public string Description { get; set; } = "";

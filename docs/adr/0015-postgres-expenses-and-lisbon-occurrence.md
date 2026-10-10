@@ -21,6 +21,12 @@ The text PK permits a future `bank_transactions.expense_id` FK without type conv
 this ticket does not add links or reconciliation. Repeated identical purchases get
 separate IDs. Amounts use unconstrained positive finite `numeric`; invariant decimal
 strings are explicitly cast on writes and read as text, never converted through double.
+Create accepts both the existing JSON numeric `amount` and an invariant decimal
+string, with positive .NET decimal validation unchanged. Latest and AI extraction
+responses retain numeric `amount` for existing clients and add invariant text
+`amountExact` so precision-preserving clients can prefill/resubmit without a JavaScript
+Number conversion. The text expresses the supported decimal value, not arbitrary
+precision beyond .NET decimal. Latest returns null text when amount is absent.
 EUR is explicit and the only supported currency in this slice. Category labels and
 creator attribution remain independent of the seeded category mirror.
 
@@ -28,9 +34,13 @@ creator attribution remain independent of the seeded category mirror.
 actual audit events (initial creation and update are equal); occurrence is never an
 audit timestamp. HTTP renders all instants in Europe/Lisbon. New time-enabled clients
 supply an explicit-offset ISO8601 `occurredAt` alongside the existing `date`. The
-instant must match the submitted Lisbon date, local clock and timezone offset. Spring
-DST gaps are rejected; autumn repetitions are accepted only with a valid explicit
-offset. Inputs finer than PostgreSQL microseconds are rejected rather than rounded.
+instant may use any valid explicit offset (including UTC `Z`); the server normalizes
+it to Europe/Lisbon without changing the instant or precision, then compares its
+Lisbon day with the submitted `date`, not the input offset's calendar day. A known
+instant is not reinterpreted as a Lisbon wall clock. Naive local times, including
+spring DST gaps and unresolved autumn repetitions, are rejected; time-enabled clients
+must resolve local input using Lisbon DST rules before submitting an explicit instant.
+Inputs finer than PostgreSQL microseconds are rejected rather than rounded.
 Date-only clients map to unambiguous Lisbon midnight, not midnight UTC or request time.
 Missing dates are invalid. Output keeps compatible date datetimes plus occurrence,
 currency and audit fields. Create and latest IDs are strings; latest orders occurrence
