@@ -18,19 +18,22 @@ namespace GuitoApi.Infrastructure.EnableBanking
         private readonly Func<string, CancellationToken, Task<string>> _getSecretValue;
         private EnableBankingCredentials? _cached;
         private DateTimeOffset _cachedAt;
+        private readonly TimeProvider _timeProvider;
 
         /// <param name="getSecretValue">secretId → raw secret string; wired to Secrets Manager in Startup.</param>
         public SecretsManagerEnableBankingCredentialsProvider(
             IOptions<EnableBankingOptions> options,
-            Func<string, CancellationToken, Task<string>> getSecretValue)
+            Func<string, CancellationToken, Task<string>> getSecretValue,
+            TimeProvider? timeProvider = null)
         {
             _options = options;
             _getSecretValue = getSecretValue;
+            _timeProvider = timeProvider ?? TimeProvider.System;
         }
 
         public async Task<EnableBankingCredentials> GetAsync(CancellationToken cancellationToken = default)
         {
-            if (_cached is not null && DateTimeOffset.UtcNow - _cachedAt < CacheTtl)
+            if (_cached is not null && _timeProvider.GetUtcNow() - _cachedAt < CacheTtl)
                 return _cached;
 
             var options = _options.Value;
@@ -45,7 +48,7 @@ namespace GuitoApi.Infrastructure.EnableBanking
                     $"Secret '{options.SecretsManagerSecretName}' carries neither a raw PEM nor a '{{\"pem\": …}}' JSON object.");
 
             _cached = new EnableBankingCredentials(options.ApplicationId, NormalizePem(pem));
-            _cachedAt = DateTimeOffset.UtcNow;
+            _cachedAt = _timeProvider.GetUtcNow();
             return _cached;
         }
 

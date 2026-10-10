@@ -36,7 +36,7 @@ public class EnableBankingConfigurationTests
         var app = doc.RootElement.GetProperty("AppConfiguration");
         Assert.Equal("EnableBanking", app.GetProperty("BankProvider").GetString());
         var eb = app.GetProperty("EnableBanking");
-        foreach (var key in new[] { "AuthCallbackUrl", "ApplicationId", "SecretsSource", "SecretsManagerSecretName" })
+        foreach (var key in new[] { "AuthCallbackUrl", "ApplicationId", "SecretsSource", "SsmParameterName" })
         {
             Assert.True(eb.TryGetProperty(key, out var value) && !string.IsNullOrWhiteSpace(value.GetString()),
                 $"{Path.GetFileName(path)}: EnableBanking.{key} is required for the bank auth flow.");

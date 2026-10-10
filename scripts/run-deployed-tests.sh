@@ -3,7 +3,7 @@
 # suite against the LIVE stack of a target environment.
 #   Usage: scripts/run-deployed-tests.sh [staging|production]   (default: staging)
 #
-# The suite needs four values this script resolves from AWS (Secrets Manager /
+# The suite needs four values this script resolves from AWS (SSM Parameter Store /
 # API Gateway / Lambda) at run time; no key or token is ever stored in the repo
 # or echoed:
 #   • GUITO_TARGET_BASE_URL        — ApiEndpoint of the target environment's API
@@ -27,13 +27,13 @@ PROJECTS=(
   "sit/guito-api.IntegrationTests/guito-api.IntegrationTests.csproj"
 )
 REGION=eu-west-1
-HUMAN_AUTH_SECRET=guito-api/human-auth
+HUMAN_AUTH_SECRET=/guito-api/human-auth
 PROD_AUTHORIZER=guito-api-authorizer   # GOOGLE_CLIENT_ID always read from prod (ADR-0007 parity)
 
 ENV_TARGET=${1:-staging}
 case "$ENV_TARGET" in
-  staging)    API_NAME=guito-api-staging; TARGET_SECRET=guito-api/staging; OTHER_SECRET=guito-api/prod ;;
-  production) API_NAME=guito-api;         TARGET_SECRET=guito-api/prod;    OTHER_SECRET=guito-api/staging ;;
+  staging)    API_NAME=guito-api-staging; TARGET_SECRET=/guito-api/staging; OTHER_SECRET=/guito-api/prod ;;
+  production) API_NAME=guito-api;         TARGET_SECRET=/guito-api/prod;    OTHER_SECRET=/guito-api/staging ;;
   *) echo "Usage: $0 [staging|production] (got '$ENV_TARGET')" >&2; exit 1 ;;
 esac
 
@@ -82,10 +82,10 @@ else
   echo "No custom-domain mapping for $API_NAME — using $GUITO_TARGET_BASE_URL."
 fi
 
-# --- Resolve both agent keys from Secrets Manager -----------------------------
+# --- Resolve both agent keys from SSM Parameter Store -----------------------------
 secret_key() {
-  aws --region "$REGION" secretsmanager get-secret-value --secret-id "$1" \
-    --query SecretString --output text \
+  aws --region "$REGION" ssm get-parameter --with-decryption --name "$1" \
+    --query Parameter.Value --output text \
     | python3 -c 'import json,sys; print(json.load(sys.stdin)["ApiKeys"][0])'
 }
 export GUITO_TARGET_AGENT_KEY
@@ -101,8 +101,8 @@ echo "$ENV_TARGET endpoint: $GUITO_TARGET_BASE_URL"
 # Same exchange as src/guito-api/Rest/guito-api.http "MintToken": refresh_token
 # grant against Google's token endpoint. The ID token lives ~1h — ample for a run.
 export GUITO_TARGET_GOOGLE_ID_TOKEN
-GUITO_TARGET_GOOGLE_ID_TOKEN=$(aws --region "$REGION" secretsmanager get-secret-value \
-  --secret-id "$HUMAN_AUTH_SECRET" --query SecretString --output text \
+GUITO_TARGET_GOOGLE_ID_TOKEN=$(aws --region "$REGION" ssm get-parameter --with-decryption \
+  --name "$HUMAN_AUTH_SECRET" --query Parameter.Value --output text \
   | GOOGLE_CLIENT_ID="$(aws --region "$REGION" lambda get-function-configuration \
       --function-name "$PROD_AUTHORIZER" \
       --query 'Environment.Variables.GOOGLE_CLIENT_ID' --output text)" \
@@ -136,7 +136,7 @@ cd "$REPO_ROOT"
 
 # --- Warm the edge authorizer off the test path ------------------------------
 # The FIRST agent-key request to a freshly-deployed authorizer pays a ~10s cold
-# Secrets Manager fetch that API Gateway won't wait for, so the first auth-contract
+# credential fetch that API Gateway may not wait for, so the first auth-contract
 # assertion 500s (the "500-where-401/403-expected" cold-start symptom; recurring
 # because every deploy cold-starts BOTH the authorizer and the app). A single
 # fire-and-forget warm-up is not enough: while the APP function is still mid-init,

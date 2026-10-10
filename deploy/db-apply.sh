@@ -6,6 +6,8 @@
 # Usage: ENV=dev|staging|prod|production deploy/db-apply.sh   ('production' is the
 # deploy.sh spelling — an alias of prod — so deploy can pass ENV straight through)
 #
+# Database credentials intentionally remain in Secrets Manager (issue #95):
+# RDS Data API requires a Secrets Manager secret ARN, not an SSM parameter.
 # Requires the caller's IAM identity to have rds-data:* on the cluster and
 # secretsmanager:GetSecretValue on guito-api/db-admin and guito-api/db-<env>.
 set -euo pipefail

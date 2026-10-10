@@ -12,8 +12,8 @@ ROLE=guito-api-lambda-role
 # low-risk target and can never hit production by accident; prod is explicit.
 ENV=${ENV:-staging}
 case "$ENV" in
-  production) SUFFIX="";              ASPNETCORE_ENV=Production; SECRET_NAME=guito-api/prod ;;
-  staging)    SUFFIX="-staging";      ASPNETCORE_ENV=Staging;    SECRET_NAME=guito-api/staging ;;
+  production) SUFFIX="";              ASPNETCORE_ENV=Production; SECRET_NAME=/guito-api/prod ;;
+  staging)    SUFFIX="-staging";      ASPNETCORE_ENV=Staging;    SECRET_NAME=/guito-api/staging ;;
   *) echo "ENV must be 'production' or 'staging' (got '$ENV')" >&2; exit 1 ;;
 esac
 API_NAME=guito-api$SUFFIX
@@ -42,44 +42,17 @@ if [ "$ENV" = staging ]; then
   fi
 fi
 
-# --- 0. Secrets (create only if missing; never echo values) -------------------
+# --- 0. Parameters (provision via deploy/migrate-secrets-to-ssm.py first) -------
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DEV_KEY_FILE="$REPO_ROOT/src/guito-api/google-spreadsheets-dev.json"
-PROD_SA_FILE="$REPO_ROOT/src/guito-api/google-spreadsheets.json"
-# Per-environment SA identity (ADR-0008): the seeded secret must carry the SA of
-# THAT environment's spreadsheet — prod seed uses the prod SA key file. Cheap
-# wrong-file guard: the dev file at the prod path would silently reproduce the
-# T8.3 wrong-SA 500 (auth green, business requests PERMISSION_DENIED).
-prod_sa_ok () { # <file> — true unless it carries the dev SA
-  [ -f "$1" ] || return 1
-  [ "$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['client_email'])" "$1")" != "svc-google-sheets-dev@kerumirembora.iam.gserviceaccount.com" ]
-}
-if ! aws --region "$REGION" secretsmanager describe-secret --secret-id "$SECRET_NAME" >/dev/null 2>&1; then
-  NEW_KEY=$(openssl rand -base64 32)
-  # Staging: fresh agent key + the dev/staging service-account key (the same SA
-  # local dev uses on the dev/staging spreadsheet) in one JSON payload, matching
-  # SecretsPayload {GoogleServiceAccount, ApiKeys}. Fails rather than
-  # half-provisioning a staging secret the stack cannot use.
-  if [ "$ENV" = staging ]; then
-    [ -f "$DEV_KEY_FILE" ] || { echo "FATAL: $DEV_KEY_FILE not found — it is gitignored; create it on this machine before a first staging deploy." >&2; exit 1; }
-    PAYLOAD=$(python3 -c \
-      "import json,sys; sa=json.load(open(sys.argv[2])); print(json.dumps({'GoogleServiceAccount':sa,'ApiKeys':[sys.argv[1]]}))" \
-      "$NEW_KEY" "$DEV_KEY_FILE")
-    aws --region "$REGION" secretsmanager create-secret --name "$SECRET_NAME" --secret-string "$PAYLOAD" >/dev/null
-    echo "Created secret $SECRET_NAME (fresh agent key + dev/staging SA key)."
-  else
-    if prod_sa_ok "$PROD_SA_FILE"; then
-      PAYLOAD=$(python3 -c \
-        "import json,sys; sa=json.load(open(sys.argv[2])); print(json.dumps({'GoogleServiceAccount':sa,'ApiKeys':[sys.argv[1]]}))" \
-        "$NEW_KEY" "$PROD_SA_FILE")
-      aws --region "$REGION" secretsmanager create-secret --name "$SECRET_NAME" --secret-string "$PAYLOAD" >/dev/null
-      echo "Created secret $SECRET_NAME (fresh agent key + prod SA key)."
-    else
-      echo "FATAL: $PROD_SA_FILE not found (or it carries the dev SA) — it is gitignored; create the prod SA key file on this machine before a first production deploy (ADR-0008: the prod secret must carry the prod SA)." >&2
-      exit 1
-    fi
-  fi
-fi
+DEPLOY_WORK_DIR=$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:-$HOME/.cache}}/guito-deploy.XXXXXX")
+trap 'rm -rf "$DEPLOY_WORK_DIR"' EXIT
+# Fail closed on missing parameters or denied access; never generate replacement
+# credentials during a deploy or overwrite an existing runtime payload.
+BANK_PARAMETER="/guito-api/eb-$([ "$ENV" = production ] && printf prod || printf staging)-pk"
+for parameter in "$SECRET_NAME" /guito-api/human-auth "$BANK_PARAMETER"; do
+  aws --region "$REGION" ssm get-parameter --name "$parameter" \
+    --with-decryption >/dev/null
+done
 
 # --- 0.1 Database migrations (issue #114): pending migrations run as part of the
 # deploy — never a manual step. Applied BEFORE the new code serves traffic; a
@@ -91,11 +64,11 @@ echo "--- Applying pending DB migrations ($ENV) ..."
 
 # --- 1. IAM role + policies ---------------------------------------------------
 aws --region "$REGION" iam get-role --role-name "$ROLE" >/dev/null 2>&1 || {
-  cat > /tmp/guito-trust.json <<'EOF'
+  cat > "$DEPLOY_WORK_DIR/guito-trust.json" <<'EOF'
 {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]}
 EOF
   aws --region "$REGION" iam create-role --role-name "$ROLE" \
-    --assume-role-policy-document file:///tmp/guito-trust.json >/dev/null
+    --assume-role-policy-document "file://$DEPLOY_WORK_DIR/guito-trust.json" >/dev/null
 }
 aws --region "$REGION" iam attach-role-policy --role-name "$ROLE" \
   --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole >/dev/null
@@ -105,11 +78,15 @@ aws --region "$REGION" iam put-role-policy --role-name "$ROLE" --policy-name gui
 # human-auth secret (issue #52) — never interpolate a per-env SECRET_NAME here
 # (a staging run would overwrite prod-scoped policies with env-specific ARNs).
 
+# Add SSM access without removing old grants until the complete cutover.
+aws --region "$REGION" iam put-role-policy --role-name "$ROLE" --policy-name guito-api-ssm-read \
+  --policy-document "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"ssm:GetParameter\",\"Resource\":\"arn:aws:ssm:$REGION:$ACCOUNT_ID:parameter/guito-api/*\"}]}" >/dev/null
+
 # Data API + bank credentials (issues #87/#89, hit live in staging 2026-10-08):
 # the Postgres repositories execute through the RDS Data API and the EB adapter
 # reads its dedicated key secret — without these the API 500s on every bank route
 # (AccessDenied on rds-data:ExecuteStatement / secrets not covered above).
-cat > /tmp/guito-data-api.json <<'EOF'
+cat > "$DEPLOY_WORK_DIR/guito-data-api.json" <<'EOF'
 {
   "Version": "2012-10-17",
   "Statement": [
@@ -137,7 +114,7 @@ cat > /tmp/guito-data-api.json <<'EOF'
 }
 EOF
 aws --region "$REGION" iam put-role-policy --role-name "$ROLE" --policy-name guito-api-data-api \
-  --policy-document file:///tmp/guito-data-api.json >/dev/null
+  --policy-document "file://$DEPLOY_WORK_DIR/guito-data-api.json" >/dev/null
 
 # --- 2. Package (arm64 — matches the deployed functions; ARCH=x64 to override) ---
 # Version stamp (issue #77, amends #75): the version is DECLARED in the csproj
@@ -152,10 +129,10 @@ ARCH=${ARCH:-arm64}
 # IncludeSourceRevisionInInformationalVersion=false: otherwise the SDK appends
 # the full commit SHA to the stamp (verified 2026-10-03), duplicating the
 # metadata above.
-dotnet publish src/guito-api -c Release -f net10.0 -r "linux-$ARCH" --self-contained false -p:InformationalVersion="$VERSION" -p:IncludeSourceRevisionInInformationalVersion=false -o /tmp/pub-api
-dotnet publish src/guito-api-authorizer -c Release -f net10.0 -r "linux-$ARCH" --self-contained false -o /tmp/pub-auth
-( cd /tmp/pub-api && zip -qr /tmp/guito-api.zip . )
-( cd /tmp/pub-auth && rm -f /tmp/guito-authorizer.zip && zip -qr /tmp/guito-authorizer.zip . )
+dotnet publish src/guito-api -c Release -f net10.0 -r "linux-$ARCH" --self-contained false -p:InformationalVersion="$VERSION" -p:IncludeSourceRevisionInInformationalVersion=false -o "$DEPLOY_WORK_DIR/pub-api"
+dotnet publish src/guito-api-authorizer -c Release -f net10.0 -r "linux-$ARCH" --self-contained false -o "$DEPLOY_WORK_DIR/pub-auth"
+( cd "$DEPLOY_WORK_DIR/pub-api" && zip -qr "$DEPLOY_WORK_DIR/guito-api.zip" . )
+( cd "$DEPLOY_WORK_DIR/pub-auth" && rm -f "$DEPLOY_WORK_DIR/guito-authorizer.zip" && zip -qr "$DEPLOY_WORK_DIR/guito-authorizer.zip" . )
 
 # --- 3. Functions -------------------------------------------------------------
 create_or_update () { # name handler memory timeout zip [extra env...]
@@ -191,8 +168,8 @@ create_or_update () { # name handler memory timeout zip [extra env...]
   aws --region "$REGION" lambda wait function-updated-v2 --function-name "$name"
 }
 
-create_or_update "$API_NAME" 'guito-api::GuitoApi.LambdaEntryPoint::FunctionHandlerAsync' 512 30 /tmp/guito-api.zip
-create_or_update "$AUTH_NAME" 'guito-api-authorizer::GuitoApiAuthorizer.Function::FunctionHandlerAsync' 128 30 /tmp/guito-authorizer.zip
+create_or_update "$API_NAME" 'guito-api::GuitoApi.LambdaEntryPoint::FunctionHandlerAsync' 512 30 "$DEPLOY_WORK_DIR/guito-api.zip"
+create_or_update "$AUTH_NAME" 'guito-api-authorizer::GuitoApiAuthorizer.Function::FunctionHandlerAsync' 128 30 "$DEPLOY_WORK_DIR/guito-authorizer.zip"
 
 # --- 3b. Function environment variables (secrets + Google human-auth config) --
 # Env updates REPLACE all variables, so values are MERGED into the current
@@ -205,9 +182,9 @@ apply_env () { # function-name vars-json-file
   cur=$(aws --region "$REGION" lambda get-function-configuration --function-name "$1" \
     --query 'Environment.Variables' --output json)
   python3 -c "import json,sys; d=json.loads(sys.argv[1]) or {}; d.update(json.load(open(sys.argv[2]))); print(json.dumps({'Variables': d}))" \
-    "$cur" "$2" > "/tmp/guito-env-$1.json"
+    "$cur" "$2" > "$DEPLOY_WORK_DIR/guito-env-$1.json"
   aws --region "$REGION" lambda update-function-configuration --function-name "$1" \
-    --environment "file:///tmp/guito-env-$1.json" >/dev/null
+    --environment "file://$DEPLOY_WORK_DIR/guito-env-$1.json" >/dev/null
   aws --region "$REGION" lambda wait function-updated-v2 --function-name "$1"
 }
 
@@ -215,24 +192,31 @@ export SECRET_NAME GOOGLE_CLIENT_ID GOOGLE_ALLOWED_EMAILS ASPNETCORE_ENV
 # Authorizer: secret name always; Google policy when provided.
 python3 -c "
 import json, os
-v = {'SECRETS_SECRET_NAME': os.environ['SECRET_NAME']}
+v = {'SECRETS_LOCATION': 'AwsSsm', 'SECRETS_SECRET_NAME': os.environ['SECRET_NAME']}
 for k in ('GOOGLE_CLIENT_ID', 'GOOGLE_ALLOWED_EMAILS'):
     if os.environ.get(k): v[k] = os.environ[k]
-print(json.dumps(v))" > /tmp/guito-auth-env.json
+print(json.dumps(v))" > "$DEPLOY_WORK_DIR/guito-auth-env.json"
 # API: environment value always; human-path policy (OAuth audience + JSON-array
 # allowlist) when provided.
 python3 -c "
 import json, os
-v = {'ASPNETCORE_ENVIRONMENT': os.environ['ASPNETCORE_ENV']}
+v = {
+    'ASPNETCORE_ENVIRONMENT': os.environ['ASPNETCORE_ENV'],
+    'AppConfiguration__Secrets__Location': 'AwsSsm',
+    'AppConfiguration__Secrets__SecretName': os.environ['SECRET_NAME'],
+    'AppConfiguration__Secrets__HumanAuthSecretName': '/guito-api/human-auth',
+    'AppConfiguration__EnableBanking__SecretsSource': 'AwsSsm',
+    'AppConfiguration__EnableBanking__SsmParameterName': '/guito-api/eb-' + ('prod' if os.environ['ASPNETCORE_ENV'] == 'Production' else 'staging') + '-pk',
+}
 if os.environ.get('GOOGLE_CLIENT_ID'):
     v['AppConfiguration__Authentication__OAuthAudience'] = os.environ['GOOGLE_CLIENT_ID']
     v['AppConfiguration__Authentication__GoogleClientId'] = os.environ['GOOGLE_CLIENT_ID']
 if os.environ.get('GOOGLE_ALLOWED_EMAILS'):
     v['AppConfiguration__Authentication__AllowedLogins'] = json.dumps(
         [e.strip() for e in os.environ['GOOGLE_ALLOWED_EMAILS'].split(',')])
-print(json.dumps(v))" > /tmp/guito-api-env.json
-apply_env "$AUTH_NAME" /tmp/guito-auth-env.json
-apply_env "$API_NAME" /tmp/guito-api-env.json
+print(json.dumps(v))" > "$DEPLOY_WORK_DIR/guito-api-env.json"
+apply_env "$AUTH_NAME" "$DEPLOY_WORK_DIR/guito-auth-env.json"
+apply_env "$API_NAME" "$DEPLOY_WORK_DIR/guito-api-env.json"
 [ -n "${GOOGLE_CLIENT_ID:-}" ] && [ -n "${GOOGLE_ALLOWED_EMAILS:-}" ] || \
   echo "NOTE: GOOGLE_CLIENT_ID/GOOGLE_ALLOWED_EMAILS not set — human auth path deployed deny-closed (agent key path unaffected)."
 

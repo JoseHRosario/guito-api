@@ -30,7 +30,8 @@ public class EnableBankingOptions
 
     /// <summary>
     /// Where the private key comes from: "Payload" (the ADR-0008 runtime secrets
-    /// payload's enableBanking block, default) or "SecretsManager" (a dedicated
+    /// payload's enableBanking block, default), "AwsSsm" (a dedicated SecureString),
+    /// or "SecretsManager" (a dedicated
     /// secret holding {"pem": …} — used where the key must survive the deploy
     /// script re-seeding the runtime payload, e.g. guito-api/eb-staging-pk).
     /// </summary>
@@ -38,4 +39,7 @@ public class EnableBankingOptions
 
     /// <summary>The dedicated secret name when SecretsSource is "SecretsManager".</summary>
     public string SecretsManagerSecretName { get; set; } = string.Empty;
+
+    /// <summary>The dedicated SecureString parameter name when SecretsSource is "AwsSsm".</summary>
+    public string SsmParameterName { get; set; } = string.Empty;
 }
