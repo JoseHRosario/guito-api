@@ -65,7 +65,7 @@ jobs:
           role-to-assume: arn:aws:iam::497087877832:role/guito-api-deploy
           aws-region: eu-west-1
       - name: Deploy API + authorizer (staging)
-        run: ENV=staging ./deploy/deploy.sh
+        run: ENV=staging EXPENSE_STORE=Postgres ./deploy/deploy.sh
       - name: Smoke — auth contract (Google token + agent key) and business round-trip
         run: ./scripts/run-deployed-tests.sh staging
 
