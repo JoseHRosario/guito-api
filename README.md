@@ -52,7 +52,7 @@ Configuration comes from `appsettings.{Environment}.json` plus environment varia
 ## Expense contract and staged Postgres rollout
 
 `POST /Expense` accepts the existing `date` (`yyyy-MM-dd` or compatible datetime),
-positive exact-decimal `amount` (a JSON number, including exponent notation, or an
+exact-decimal `amount` (positive, zero or negative; a JSON number, including exponent notation, or an
 invariant decimal string), description and category. Amounts must be exactly
 representable by .NET decimal: a 96-bit coefficient and scale 0–28 after removing
 trailing zeros. Inputs requiring rounding, underflow or overflow return 400; equivalent
@@ -68,17 +68,20 @@ to EUR; non-EUR values are rejected. Create returns `{ "id": "opaque-string" }`.
 
 `GET /Expense/latest/{count}` (1–100) returns `expenses` with `id`, compatible `date`,
 `occurredAt`, `currency`, `creationDate`, `updateDate`, amount, description, category
-and creatorEmail. Postgres orders occurrence then ID descending; audit timestamps
-are actual events rendered in Lisbon. `storedOrder` is optional/deprecated, not ID.
-`DELETE /Smoke/{id}` accepts the opaque string and never deletes normal-scope records.
-Use `X-Sheet-Scope: smoke` for isolated create/list verification.
+and creatorEmail. Postgres stores generated integer IDs (passed as opaque strings),
+`booking_date`, an exact numeric amount, `category_id` referencing the seeded categories
+mirror, `create_date`, and nullable `update_date`. No currency or test-scope column is
+stored. EUR remains a compatibility wire value. Latest orders booking date then integer
+ID descending; `updateDate` is null until an explicit update. Unknown category names
+not present in the mirror return 422; requests never seed categories.
+`storedOrder` is optional/deprecated, not ID.
+`X-Sheet-Scope: smoke` explicitly selects the dedicated Sheets smoke tab for create/list,
+regardless of the normal Expense Store. `DELETE /Smoke/{id}` is Sheets-only cleanup;
+it never deletes Postgres expenses.
 
-`AppConfiguration:ExpenseStore` selects the complete adapter (default `Sheets`).
-After coordinated staging API/UI readiness, deploy with:
-
-```bash
-ENV=staging EXPENSE_STORE=Postgres deploy/deploy.sh
-```
+`AppConfiguration:ExpenseStore` selects the normal adapter (default `Sheets`).
+GitHub Actions selects Postgres for staging and Sheets for production. Deployment and
+migration execution run only in the pipeline, not from an agent's local shell.
 
 The existing migration runner applies resumable `005_expenses.sql` before deployment.
 Omitting `EXPENSE_STORE` preserves any existing staging Lambda override. Production
@@ -86,9 +89,13 @@ is pinned to Sheets and runtime rejects Postgres there until a later cutover app
 No import, export, matching or production migration is included in #128. Reverting
 to stale Sheets after Postgres writes is not a valid rollback without reconciliation.
 
-The deployed-test runner reads the Lambda Expense Store override and exercises a
-timestamped smoke payload when Postgres is selected; cleanup always uses the returned
-ID and runs even if the first list assertion fails.
+The deployed-test runner always exercises date-only Sheets CRUD in the dedicated
+smoke tab; cleanup uses the returned ID and runs even if the first list assertion fails.
+For the unreleased issue-128 migration only, an explicit staging workflow dispatch with
+`reset_staging_expenses=true` resets the staging table and its `005_expenses.sql` ledger
+entry before applying the revised migration. The reset is guarded to this issue's feature
+branch, staging database and GitHub deployment role, with no CASCADE or production path.
+Normal redeploys never reset the table.
 
 **Compatibility gate:** the frozen Sheets schema retains date-only precision and
 transient absolute row IDs; audit timestamps are null. Legacy creates still work.

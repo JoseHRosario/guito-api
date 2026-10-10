@@ -29,7 +29,7 @@ public class DataApiPostgresExpenseRepository(IPostgresDataApiClient client) : I
              Text("creator_email", value.CreatorEmail),
              Text("booking_date", value.OccurredAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture))],
             cancellationToken: cancellationToken);
-        return result.Rows.Single()[0].LongValue!.Value.ToString(CultureInfo.InvariantCulture);
+        return ReadId(result.Rows.Single()[0]).ToString(CultureInfo.InvariantCulture);
     }
 
     private async Task<long> ResolveCategoryIdAsync(string name, CancellationToken cancellationToken)
@@ -39,8 +39,11 @@ public class DataApiPostgresExpenseRepository(IPostgresDataApiClient client) : I
             [Text("name", name)], cancellationToken: cancellationToken);
         if (result.Rows.Count == 0)
             throw new ProblemException(422, "Category is not present in the Postgres categories mirror.");
-        return result.Rows.Single()[0].LongValue!.Value;
+        return ReadId(result.Rows.Single()[0]);
     }
+
+    private static long ReadId(PostgresValue value) => value.StringValue is { } text
+        ? long.Parse(text, CultureInfo.InvariantCulture) : value.LongValue!.Value;
 
     public async Task<IReadOnlyList<ExpenseSummary>> ListLatestAsync(int limit, CancellationToken cancellationToken = default)
     {

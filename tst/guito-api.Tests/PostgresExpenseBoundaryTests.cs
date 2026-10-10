@@ -11,6 +11,26 @@ namespace GuitoApi.Tests;
 
 public class PostgresExpenseBoundaryTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task CreateExpense_ShouldReturnIntegerIdentity_WhenDataApiEncodesIdsAsTextOrLong(bool textIds)
+    {
+        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres" };
+        factory.Postgres.NextResults.Enqueue(new PostgresResult([], [[textIds
+            ? PostgresValue.FromString("2147483648") : PostgresValue.FromLong(2147483648L)]], 0));
+        factory.Postgres.NextResults.Enqueue(new PostgresResult([], [[textIds
+            ? PostgresValue.FromString("2147483647") : PostgresValue.FromLong(2147483647L)]], 1));
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync("/Expense", new { date = "2026-10-10", amount = "-1.25", category = "Test" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("2147483647", (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetString());
+        var categoryParameter = Assert.Single(factory.Postgres.ExecutedParameters[1]!, p => p.Name == "category_id");
+        Assert.Equal(2147483648L, categoryParameter.Value.LongValue);
+    }
+
     [Fact]
     public async Task Latest_ShouldMapPostgresTextValues_WhenDataApiReturnsUtcInstantsAndNumericStrings()
     {
