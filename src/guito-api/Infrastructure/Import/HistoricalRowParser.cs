@@ -37,7 +37,7 @@ public static class HistoricalRowParser
     private static HistoricalImportRow ParseRelevantExpense(FrozenSheetsSnapshot snapshot, HistoricalImportRow row, string[] cells, JsonElement effective)
     {
         if (snapshot.Currency != "EUR") throw new FormatException("Source convention must explicitly be EUR.");
-        if (snapshot.DateFormat is not ("yyyy-MM-dd" or "dd/MM/yyyy" or "d/M/yyyy" or "MM/dd/yyyy"))
+        if (snapshot.DateFormat is not ("yyyy-MM-dd" or "dd/MM/yyyy" or "d/M/yyyy" or "MM/dd/yyyy" or "M/d/yyyy"))
             throw new FormatException("Unsupported explicit source date convention.");
         var date = DateTime.ParseExact(Cell(cells, 0), snapshot.DateFormat, CultureInfo.InvariantCulture);
         var displayAmount = ParseAmount(Cell(cells, 3), snapshot.DecimalSeparator);
@@ -78,21 +78,25 @@ public static class HistoricalRowParser
         if (effective.ValueKind != JsonValueKind.Array || effective.GetArrayLength() <= 3)
             throw new FormatException("Underlying amount is missing; frozen source changed during capture.");
         var amount = effective[3];
-        if (amount.ValueKind == JsonValueKind.Number)
-            return JsonSerializer.Deserialize<decimal>(amount.GetRawText(), DecimalOptions);
-        var parsed = ParseAmount(CellText(amount), separator);
-        if (parsed != displayAmount) throw new FormatException("Text amount changed between formatted and underlying capture.");
+        var parsed = amount.ValueKind == JsonValueKind.Number
+            ? JsonSerializer.Deserialize<decimal>(amount.GetRawText(), DecimalOptions)
+            : ParseAmount(CellText(amount), separator);
+        if (parsed != displayAmount) throw new FormatException("Underlying amount disagrees with the exact displayed amount.");
         return parsed;
     }
 
     private static decimal ParseAmount(string text, string separator)
     {
         if (separator is not ("." or ",")) throw new FormatException("Decimal separator must be explicit '.' or ','.");
-        var match = Regex.Match(text, @"^\s*(?:EUR\s+|€\s*)?(?<amount>[+-]?[0-9]+(?:[.,][0-9]+)?(?:[eE][+-]?[0-9]+)?)(?:\s*€|\s+EUR)?\s*$");
-        if (!match.Success) throw new FormatException("Amount has unsupported or conflicting currency/format.");
+        var integer = separator == "." ? @"(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)" : @"[0-9]+";
+        var fraction = Regex.Escape(separator);
+        var pattern = $@"\A\s*(?<prefix>EUR\s+|€\s*)?(?<amount>[+-]?{integer}(?:{fraction}[0-9]+)?(?:[eE][+-]?[0-9]+)?)(?<suffix>\s*€|\s+EUR)?\s*\z";
+        var match = Regex.Match(text, pattern);
+        if (!match.Success || (match.Groups["prefix"].Success && match.Groups["suffix"].Success))
+            throw new FormatException("Amount has unsupported or conflicting currency/format.");
         var number = match.Groups["amount"].Value;
-        if (number.Contains(separator == "." ? ',' : '.')) throw new FormatException("Amount conflicts with the declared decimal separator; grouping is unsupported.");
-        return JsonSerializer.Deserialize<decimal>(JsonSerializer.Serialize(number.Replace(',', '.')), DecimalOptions);
+        var normalized = separator == "." ? number.Replace(",", "") : number.Replace(',', '.');
+        return JsonSerializer.Deserialize<decimal>(JsonSerializer.Serialize(normalized), DecimalOptions);
     }
 
     private static string Cell(string[] cells, int index) => index < cells.Length ? cells[index] : "";

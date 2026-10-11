@@ -73,7 +73,7 @@ jobs:
           test "$TARGET" = staging
           [[ "$LAST_ROW" =~ ^[1-9][0-9]*$ ]]
           case "$DECIMAL_SEPARATOR" in '.'|',') ;; *) exit 1 ;; esac
-          case "$DATE_FORMAT" in yyyy-MM-dd|dd/MM/yyyy|d/M/yyyy|MM/dd/yyyy) ;; *) exit 1 ;; esac
+          case "$DATE_FORMAT" in yyyy-MM-dd|dd/MM/yyyy|d/M/yyyy|MM/dd/yyyy|M/d/yyyy) ;; *) exit 1 ;; esac
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:

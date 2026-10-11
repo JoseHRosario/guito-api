@@ -22,6 +22,11 @@ class HistoricalImportWorkflowTests(unittest.TestCase):
         self.assertIn('environment: staging', self.child)
         self.assertNotIn('environment: production', self.child)
 
+    def test_both_workflows_advertise_unpadded_month_day_convention(self):
+        self.assertIn('MM/dd/yyyy|M/d/yyyy)', self.caller)
+        self.assertIn("'MM/dd/yyyy', 'M/d/yyyy'", self.child)
+        self.assertNotIn('no grouping', self.child)
+
     def test_child_does_not_wait_on_parent_staging_lane(self):
         self.assertIn("github.workflow == 'ci-cd' && format('historical-import-child-{0}', github.run_id) || 'ci-cd-staging'", self.child)
         self.assertIn('cancel-in-progress: false', self.caller)
@@ -35,6 +40,8 @@ class HistoricalImportWorkflowTests(unittest.TestCase):
         for target, row, separator, date, expected in [
             ('staging', '123', '.', 'yyyy-MM-dd', 0),
             ('staging', '123', ',', 'dd/MM/yyyy', 0),
+            ('staging', '987', '.', 'M/d/yyyy', 0),
+            ('staging', '987', '.', 'M/d/yy', 1),
             ('production', '123', '.', 'yyyy-MM-dd', 1),
             ('staging', '', '.', 'yyyy-MM-dd', 1),
             ('staging', '0', '.', 'yyyy-MM-dd', 1),

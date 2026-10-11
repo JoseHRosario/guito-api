@@ -36,10 +36,16 @@ never copy credentials into the repo or modify `~/.aws`. Agent AWS discovery req
    Operator-confirmed bounds are essential: readiness proves no rows outside those
    bounds. Current bounded limit is 100001 rows starting at the configured anchor.
 5. Explicitly select the source date convention (`yyyy-MM-dd` default, `dd/MM/yyyy`,
-   `d/M/yyyy` or `MM/dd/yyyy` via `-f date_format=...`). Numeric underlying dates must agree with
+   `d/M/yyyy`, `MM/dd/yyyy` or `M/d/yyyy` via `-f date_format=...`). Unpadded month/day
+   displays require `M/d/yyyy`; this is not interchangeable with `MM/dd/yyyy`. Numeric underlying dates must agree with
    that day and carry no hidden historical time. Currency may be absent under the
-   explicitly declared EUR convention or explicitly EUR/€. USD/conflicts/grouping,
-   unsupported date layouts/precision, missing category/creator and unknown mirror
+   explicitly declared EUR convention or a single explicit EUR/€ prefix or suffix.
+   Dot decimals allow comma thousands grouping only with a 1–3 digit first group
+   followed by exactly three digits per group (for example `€1,234.56`). Comma decimals
+   remain ungrouped. Both displayed and underlying numeric/text amounts must be exactly
+   representable and equal; hidden display rounding is a blocker, never silently accepted.
+   USD/conflicting currency markers, malformed grouping, unsupported date layouts/precision,
+   missing category/creator and unknown mirror
    labels are exceptions, not repaired guesses. Do not reformat the live sheet to
    make an import pass. Investigate exceptions and approve any supported follow-up.
 6. Inventory any pre-existing staging Expenses separately. Import provenance does not
@@ -184,6 +190,11 @@ dotnet run --project tools/Guito.HistoricalImport -- --help
 dotnet run --project tools/Guito.HistoricalImport -- validate \
   /restricted/<hash>.snapshot.json /restricted/validation.json
 ```
+
+Local `capture` uses `GUITO_SOURCE_DATE_FORMAT` for the same explicit date allowlist
+(default `yyyy-MM-dd`); select `GUITO_SOURCE_DATE_FORMAT=M/d/yyyy` for unpadded
+month/day/year. Its final positional decimal-separator argument remains required.
+Neither capture nor validation changes the sheet or normalizes archived raw tokens.
 
 `validate` is local/offline and never touches a database. HTTP fake tests use the real
 Sheets client plus fake Data API transport and actual repository/unit-of-work/service,

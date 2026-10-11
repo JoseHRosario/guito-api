@@ -22,6 +22,7 @@ internal static class ImportCommand
         if (args.Length == 0 || args[0] == "--help")
         {
             Console.WriteLine("capture <repo-root> <last-row> <archive-dir> <decimal-separator> | validate <snapshot-file> <report-file> | import <repo-root> <snapshot-file> <report-file> [approval-file]");
+            Console.WriteLine("Capture date convention: GUITO_SOURCE_DATE_FORMAT=yyyy-MM-dd (default), dd/MM/yyyy, d/M/yyyy, MM/dd/yyyy or M/d/yyyy. EUR only; dot decimals allow strict comma thousands groups. Displayed and underlying amounts must agree exactly.");
             return 0;
         }
         return args[0] switch

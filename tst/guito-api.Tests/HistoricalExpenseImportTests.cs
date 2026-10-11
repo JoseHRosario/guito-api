@@ -125,7 +125,7 @@ public class HistoricalExpenseImportTests
     [InlineData("2026-07-10", "1e-29", "Restaurants", "creator@example.com")]
     [InlineData("2026-07-10", "79228162514264337593543950336", "Restaurants", "creator@example.com")]
     [InlineData("2026-07-10", "1 USD", "Restaurants", "creator@example.com")]
-    [InlineData("2026-07-10", "1,234.56", "Restaurants", "creator@example.com")]
+    [InlineData("2026-07-10", "12,34.56", "Restaurants", "creator@example.com")]
     [InlineData("2026-07-10", "1", "", "creator@example.com")]
     [InlineData("2026-07-10", "1", "Restaurants", "")]
     public async Task ImportAsync_ShouldBlockCutoverWithRawExceptions_WhenRelevantRowIsMalformed(string date, string amount, string category, string creator)
@@ -304,6 +304,46 @@ public class HistoricalExpenseImportTests
         Assert.Equal(0, database.ExpenseCount);
     }
 
+    [Theory]
+    [InlineData("€1,234.56", "1234.56", ".", true)]
+    [InlineData("-1,234,567.8900 EUR", "-1234567.89", ".", true)]
+    [InlineData("+9,007,199,254,740,993", "9007199254740993", ".", true)]
+    [InlineData("EUR 1,234.56", "1234.56", ".", true)]
+    [InlineData("1,234.56 €", "1234.56", ".", true)]
+    [InlineData("1,234.56", "1234.56", ",", false)]
+    [InlineData("12,34.56", "1234.56", ".", false)]
+    [InlineData("1,,234.56", "1234.56", ".", false)]
+    [InlineData("1234,567.89", "1234567.89", ".", false)]
+    [InlineData("1,234,56.78", "123456.78", ".", false)]
+    [InlineData("1,234.5,6", "1234.56", ".", false)]
+    [InlineData("1.234,56", "1234.56", ".", false)]
+    [InlineData("1 234.56", "1234.56", ".", false)]
+    [InlineData("1,234.56 USD", "1234.56", ".", false)]
+    [InlineData("EUR 1,234.56 €", "1234.56", ".", false)]
+    [InlineData("€1,234.56 EUR", "1234.56", ".", false)]
+    [InlineData("1,234.567890123456789012345678901", "1234.56", ".", false)]
+    [InlineData("79,228,162,514,264,337,593,543,950,336", "1", ".", false)]
+    public async Task ImportAsync_ShouldValidateStrictGrouping_WhenEurDisplayUsesDeclaredDecimalConvention(string display, string underlying, string separator, bool valid)
+    {
+        // Arrange
+        var handler = new FakeSheetsHttpHandler { LatestValuesJson = System.Text.Json.JsonSerializer.Serialize(new[] { new[] { "2026-07-10", "", "", display, "Coffee", "Restaurants", "creator@example.com" } }),
+            UnformattedValuesJson = $$"""[["2026-07-10","","",{{underlying}},"Coffee","Restaurants","creator@example.com"]]""" };
+        var database = new ImportDatabaseTransport();
+        var snapshot = await ImportHarness.CaptureAsync(handler, 5, 5, separator);
+
+        // Act
+        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = snapshot.ToDomain() });
+
+        // Assert
+        Assert.Equal(valid, report.ReadyForCutover);
+        Assert.Equal(valid ? "Imported" : "Malformed", Assert.Single(report.Rows).Status);
+        Assert.Equal(valid ? 1 : 0, database.ExpenseCount);
+        if (valid) Assert.Equal(underlying, report.Rows[0].Amount);
+        using var raw = System.Text.Json.JsonDocument.Parse(report.Rows[0].RawJson);
+        Assert.Equal(snapshot.Rows[0].GetRawText(), raw.RootElement.GetProperty("Formatted").GetRawText());
+        Assert.Empty(handler.AppendBodies);
+    }
+
     [Fact]
     public async Task ImportAsync_ShouldHonorExplicitCommaConvention_WhenFormattedSourceUsesPortugueseDecimals()
     {
@@ -319,23 +359,55 @@ public class HistoricalExpenseImportTests
         Assert.Equal("12.34", report.Rows[0].Amount);
         Assert.Contains("12,34", report.Rows[0].RawJson);
     }
-    [Fact]
-    public async Task ImportAsync_ShouldPreserveUnderlyingAmount_WhenSheetsDisplayFormatRoundsTheVisibleValue()
+    [Theory]
+    [InlineData("1.23 €", "1.234567890123456789", false)]
+    [InlineData("1,234.56", "1234.57", false)]
+    [InlineData("1,234.5600", "1234.56", true)]
+    [InlineData("1,234.56", "\"1,234.57\"", false)]
+    [InlineData("1,234.56", "\"1,234.5600\"", true)]
+    [InlineData("1.23", "0.12345678901234567890123456789", false)]
+    [InlineData("1.23", "1e-29", false)]
+    public async Task ImportAsync_ShouldRequireExactDisplayAgreement_WhenUnderlyingAmountIsNumericOrText(string display, string underlying, bool valid)
     {
         // Arrange
-        var handler = new FakeSheetsHttpHandler { LatestValuesJson = """[["2026-07-10","","","1.23 €","Coffee","Restaurants","creator@example.com"]]""",
-            UnformattedValuesJson = """[["2026-07-10","","",1.234567890123456789,"Coffee","Restaurants","creator@example.com"]]""" };
+        var handler = new FakeSheetsHttpHandler { LatestValuesJson = System.Text.Json.JsonSerializer.Serialize(new[] { new[] { "2026-07-10", "", "", display, "Coffee", "Restaurants", "creator@example.com" } }),
+            UnformattedValuesJson = $$"""[["2026-07-10","","",{{underlying}},"Coffee","Restaurants","creator@example.com"]]""" };
         var database = new ImportDatabaseTransport();
+        var snapshot = await ImportHarness.CaptureAsync(handler, 5, 5);
 
         // Act
-        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = (await ImportHarness.CaptureAsync(handler, 5, 5)).ToDomain() });
+        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = snapshot.ToDomain() });
 
         // Assert
-        Assert.True(report.ReadyForCutover);
-        Assert.Equal("1.234567890123456789", report.Rows[0].Amount);
-        Assert.Contains("1.23", report.Rows[0].RawJson);
-        Assert.Contains("1.234567890123456789", report.Rows[0].RawJson);
+        Assert.Equal(valid, report.ReadyForCutover);
+        Assert.Equal(valid ? "Imported" : "Malformed", Assert.Single(report.Rows).Status);
+        Assert.Equal(valid ? 1 : 0, database.ExpenseCount);
+        using var raw = System.Text.Json.JsonDocument.Parse(report.Rows[0].RawJson);
+        Assert.Equal(display, raw.RootElement.GetProperty("Formatted")[3].GetString());
+        Assert.Equal(underlying, raw.RootElement.GetProperty("Unformatted")[3].GetRawText());
     }
+    [Theory]
+    [InlineData("7/10/2026", "M/d/yyyy", true)]
+    [InlineData("7/10/2026", "MM/dd/yyyy", false)]
+    [InlineData("2/30/2026", "M/d/yyyy", false)]
+    public async Task ImportAsync_ShouldHonorConfiguredDateConvention_WhenSourceUsesUnpaddedMonthAndDay(string date, string format, bool valid)
+    {
+        // Arrange
+        var handler = new FakeSheetsHttpHandler { LatestValuesJson = System.Text.Json.JsonSerializer.Serialize(new[] { new[] { date, "", "", "1.23", "Coffee", "Restaurants", "creator@example.com" } }),
+            UnformattedValuesJson = """[[46213,"","",1.23,"Coffee","Restaurants","creator@example.com"]]""" };
+        var database = new ImportDatabaseTransport();
+        var snapshot = await ImportHarness.CaptureAsync(handler, 5, 5);
+
+        // Act
+        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = (snapshot with { DateFormat = format }).ToDomain() });
+
+        // Assert
+        Assert.Equal(valid, report.ReadyForCutover);
+        Assert.Equal(valid ? "Imported" : "Malformed", Assert.Single(report.Rows).Status);
+        Assert.Equal(valid ? 1 : 0, database.ExpenseCount);
+        if (valid) Assert.Equal("2026-07-10T00:00:00+01:00", report.Rows[0].BookingDate);
+    }
+
     [Fact]
     public async Task ImportAsync_ShouldPreserveOriginalDay_WhenExplicitPortugueseDateFormatMatchesUnderlyingSerial()
     {

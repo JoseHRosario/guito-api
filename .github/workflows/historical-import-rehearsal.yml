@@ -24,14 +24,14 @@ on:
         required: true
         type: string
       decimal_separator:
-        description: 'Explicit formatted-value decimal separator (no grouping)'
+        description: 'Explicit decimal separator (strict comma grouping supported with dot decimals)'
         type: choice
         options: ['.', ',']
         default: '.'
       date_format:
         description: 'Explicit source date display convention; never guess/reformat the sheet'
         type: choice
-        options: ['yyyy-MM-dd', 'dd/MM/yyyy', 'd/M/yyyy', 'MM/dd/yyyy']
+        options: ['yyyy-MM-dd', 'dd/MM/yyyy', 'd/M/yyyy', 'MM/dd/yyyy', 'M/d/yyyy']
         default: 'yyyy-MM-dd'
       retry_run_id:
         description: 'Prior rehearsal run ID: reuse its encrypted frozen snapshot, never recapture on retry'
