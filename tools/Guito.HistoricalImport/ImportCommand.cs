@@ -37,7 +37,8 @@ internal static class ImportCommand
     private static async Task<int> CaptureAsync(string[] args)
     {
         var source = ReadSource(args[1]);
-        var reader = new SheetsSnapshotReader(new ImportSheetsClientProvider(RequiredEnvironment("GOOGLE_KEY_FILE")));
+        using var provider = new ImportSheetsClientProvider(RequiredEnvironment("GOOGLE_KEY_FILE"));
+        var reader = new SheetsSnapshotReader(provider);
         var snapshot = await reader.CaptureAsync(source.SpreadsheetId, source.Tab, source.FirstRow, int.Parse(args[2], CultureInfo.InvariantCulture), decimalSeparator: args[4], dateFormat: Environment.GetEnvironmentVariable("GUITO_SOURCE_DATE_FORMAT") ?? "yyyy-MM-dd");
         var path = await SnapshotArchive.SaveAsync(Path.GetFullPath(args[3]), snapshot);
         Console.WriteLine($"Captured {snapshot.Rows.Count} bounded rows. Snapshot {SnapshotArchive.Identity(snapshot)}. Archive: {path}");

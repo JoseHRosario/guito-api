@@ -374,25 +374,9 @@ public class HistoricalExpenseImportTests
         var retry = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = snapshot.ToDomain() });
 
         // Assert
-        Assert.True(first.ReadyForCutover);
-        Assert.True(retry.ReadyForCutover);
-        Assert.Empty(retry.Exceptions);
-        var row = Assert.Single(retry.Rows);
-        Assert.Equal(41, row.SourceRow);
-        Assert.Equal(0.011m, row.Expected!.Amount);
-        Assert.Equal("0.011", row.Amount);
-        Assert.Equal("0.011", retry.ImportedTotal);
-        Assert.True(row.Parity);
-        Assert.Null(row.Exception);
-        Assert.Equal(first.Rows[0].ExpenseId, row.ExpenseId);
-        Assert.Equal(1, database.ExpenseCount);
-        Assert.Equal(snapshotId, retry.SnapshotId);
-        using var evidence = System.Text.Json.JsonDocument.Parse(row.RawJson);
-        Assert.Equal("€0.01", evidence.RootElement.GetProperty("Formatted")[3].GetString());
-        Assert.Equal("0.011", evidence.RootElement.GetProperty("Unformatted")[3].GetRawText());
-        using var report = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(row));
-        Assert.True(report.RootElement.TryGetProperty("FormattingDifference", out var note));
-        Assert.Contains("underlying", note.GetString());
+        AssertUnderlyingPrecision(first, retry, database, snapshotId);
+        AssertRawAmountEvidence(Assert.Single(retry.Rows), "€0.01", "0.011");
+        AssertFormattingDifference(retry.Rows[0]);
         Assert.Empty(handler.AppendBodies);
     }
 
@@ -425,15 +409,8 @@ public class HistoricalExpenseImportTests
         Assert.Equal(valid, report.ReadyForCutover);
         Assert.Equal(valid ? "Imported" : "Malformed", Assert.Single(report.Rows).Status);
         Assert.Equal(valid ? 1 : 0, database.ExpenseCount);
-        using var raw = System.Text.Json.JsonDocument.Parse(report.Rows[0].RawJson);
-        Assert.Equal(display, raw.RootElement.GetProperty("Formatted")[3].GetString());
-        using var original = System.Text.Json.JsonDocument.Parse(underlying);
-        Assert.True(System.Text.Json.JsonElement.DeepEquals(original.RootElement, raw.RootElement.GetProperty("Unformatted")[3]));
-        if (valid)
-        {
-            Assert.Equal(System.Text.Json.JsonSerializer.Deserialize<decimal>(underlying.Trim('"').Replace(",", "")), report.Rows[0].Expected!.Amount);
-            Assert.Equal(report.Rows[0].Expected!.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), report.Rows[0].Amount);
-        }
+        AssertRawAmountEvidence(report.Rows[0], display, underlying);
+        if (valid) AssertExactUnderlyingAmount(report.Rows[0], underlying);
     }
     [Theory]
     [InlineData("7/10/2026", "M/d/yyyy", true)]
@@ -530,6 +507,46 @@ public class HistoricalExpenseImportTests
         Assert.Equal(0, report.ExcludedCount);
         Assert.NotEmpty(report.Exceptions);
         Assert.Equal(0, database.ExpenseCount);
+    }
+
+    private static void AssertUnderlyingPrecision(HistoricalImportReport first, HistoricalImportReport retry, ImportDatabaseTransport database, string snapshotId)
+    {
+        Assert.True(first.ReadyForCutover);
+        Assert.True(retry.ReadyForCutover);
+        Assert.Empty(retry.Exceptions);
+        var row = Assert.Single(retry.Rows);
+        Assert.Equal(41, row.SourceRow);
+        Assert.Equal(0.011m, row.Expected!.Amount);
+        Assert.Equal("0.011", row.Amount);
+        Assert.Equal("0.011", retry.ImportedTotal);
+        Assert.True(row.Parity);
+        Assert.Null(row.Exception);
+        Assert.Equal(first.Rows[0].ExpenseId, row.ExpenseId);
+        Assert.Equal(1, database.ExpenseCount);
+        Assert.Equal(snapshotId, retry.SnapshotId);
+    }
+
+    private static void AssertRawAmountEvidence(HistoricalImportRow row, string display, string underlying)
+    {
+        using var raw = System.Text.Json.JsonDocument.Parse(row.RawJson);
+        Assert.Equal(display, raw.RootElement.GetProperty("Formatted")[3].GetString());
+        using var original = System.Text.Json.JsonDocument.Parse(underlying);
+        Assert.True(System.Text.Json.JsonElement.DeepEquals(original.RootElement, raw.RootElement.GetProperty("Unformatted")[3]));
+    }
+
+    private static void AssertFormattingDifference(HistoricalImportRow row)
+    {
+        using var evidence = System.Text.Json.JsonDocument.Parse(row.RawJson);
+        Assert.Equal("0.011", evidence.RootElement.GetProperty("Unformatted")[3].GetRawText());
+        using var report = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(row));
+        Assert.True(report.RootElement.TryGetProperty("FormattingDifference", out var note));
+        Assert.Contains("underlying", note.GetString());
+    }
+
+    private static void AssertExactUnderlyingAmount(HistoricalImportRow row, string underlying)
+    {
+        Assert.Equal(System.Text.Json.JsonSerializer.Deserialize<decimal>(underlying.Trim('"').Replace(",", "")), row.Expected!.Amount);
+        Assert.Equal(row.Expected!.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), row.Amount);
     }
 
     private static void AssertCompleteHistory(HistoricalImportReport report, FakeSheetsHttpHandler handler)
