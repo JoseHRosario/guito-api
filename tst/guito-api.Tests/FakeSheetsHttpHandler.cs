@@ -17,7 +17,6 @@ public class FakeSheetsHttpHandler : HttpMessageHandler
     /// <summary>Whether the row a DELETE /Smoke read-back targets exists in the fake. Tests toggle per case.</summary>
     public bool SmokeRowExists { get; set; } = true;
     public string? LatestValuesJson { get; set; }
-    public string? UnformattedValuesJson { get; set; }
 
     public List<string> AppendBodies { get; } = [];
     public List<string> AppendRanges { get; } = [];
@@ -129,8 +128,7 @@ public class FakeSheetsHttpHandler : HttpMessageHandler
         if (LatestValuesJson is not null && readRange is not null && Regex.IsMatch(readRange, @"![A-Z]+\d+:[A-Z]+\d+$"))
         {
             ReadRanges.Add(readRange);
-            var values = pathAndQuery.Contains("UNFORMATTED_VALUE", StringComparison.Ordinal) ? UnformattedValuesJson ?? LatestValuesJson : LatestValuesJson;
-            return Json(200, $$"""{ "values": {{values}} }""");
+            return Json(200, $$"""{ "values": {{LatestValuesJson}} }""");
         }
 
         // Default: values.get. Record the requested range, then return canned latest rows.

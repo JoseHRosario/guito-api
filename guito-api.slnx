@@ -7,6 +7,7 @@
     <File Path="db/migrations/005_expenses.sql" />
     <File Path="db/migrations/006_remove_integration_tests_category.sql" />
     <File Path="db/migrations/007_historical_expense_import.sql" />
+    <File Path="db/migrations/008_historical_expense_categories.sql" />
   </Folder>
   <Folder Name="/docs/" Id="4a5e54fd-a648-58af-ffbf-706d32b5cdde">
     <File Path="docs/adr/0001-aws-serverless-deployment-target.md" />
@@ -33,9 +34,6 @@
   <Folder Name="/src/">
     <Project Path="src/guito-api-authorizer/guito-api-authorizer.csproj" />
     <Project Path="src/guito-api/guito-api.csproj" />
-  </Folder>
-  <Folder Name="/tools/">
-    <Project Path="tools/Guito.HistoricalImport/Guito.HistoricalImport.csproj" />
   </Folder>
   <Folder Name="/tst/">
     <Project Path="tst/guito-api-authorizer.Tests/guito-api-authorizer.Tests.csproj" />
