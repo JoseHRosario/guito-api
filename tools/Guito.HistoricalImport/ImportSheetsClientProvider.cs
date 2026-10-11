@@ -14,7 +14,7 @@ internal sealed class ImportSheetsClientProvider(string keyFile) : IGooglesheets
         ObjectDisposedException.ThrowIf(disposed, this);
         using var stream = File.OpenRead(keyFile);
         var credential = (await GoogleCredential.FromStreamAsync(stream, cancellationToken)).CreateScoped(SheetsService.Scope.SpreadsheetsReadonly);
-        var client = new SheetsService(new BaseClientService.Initializer { HttpClientInitializer = credential, ApplicationName = "Guito historical snapshot (read only)" });
+        var client = new SheetsService(new BaseClientService.Initializer { HttpClientInitializer = credential, ApplicationName = "Guito historical snapshot read only" });
         ownedClients.Add(client);
         return client;
     }
