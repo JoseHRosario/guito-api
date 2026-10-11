@@ -144,6 +144,24 @@ public class SmokeScopeTests
         Assert.Contains(factory.SheetsHandler.ReadRanges, r => r.StartsWith("Smoke Test!", StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData("not-an-integer")]
+    [InlineData("2147483648")]
+    public async Task DeleteSmoke_ShouldReturnBadRequest_WhenIdIsNotInt32(string id)
+    {
+        // Arrange
+        using var factory = new CustomWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.DeleteAsync($"/Smoke/{id}");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Empty(factory.SheetsHandler.DeleteDimensions);
+        Assert.Empty(factory.SheetsHandler.ReadRanges);
+    }
+
     [Fact]
     public async Task DeleteSmoke_ShouldDimensionDeleteRow_WhenRowExists()
     {

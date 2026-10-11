@@ -16,7 +16,7 @@ namespace GuitoApi.Services.Expense
         public DeleteExpenseService(IExpenseRepository expenseRepository) =>
             _expenseRepository = expenseRepository;
 
-        public Task DeleteAsync(string id, CancellationToken cancellationToken = default) =>
+        public Task DeleteAsync(int id, CancellationToken cancellationToken = default) =>
             _expenseRepository.DeleteAsync(id, cancellationToken);
     }
 }

@@ -26,6 +26,6 @@ namespace GuitoApi.Repositories
         /// support deletion; personal records cannot be deleted through this port.
         /// Throws <see cref="GuitoApi.Exceptions.ExpenseNotFoundException"/> when the smoke Id is absent or stale.
         /// </summary>
-        Task DeleteAsync(string id, CancellationToken cancellationToken = default);
+        Task DeleteAsync(int id, CancellationToken cancellationToken = default);
     }
 }

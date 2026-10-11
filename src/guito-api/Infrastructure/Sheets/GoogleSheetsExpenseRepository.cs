@@ -168,7 +168,7 @@ namespace GuitoApi.Infrastructure.Sheets
             return output;
         }
 
-        public async Task DeleteAsync(string id, CancellationToken cancellationToken = default)
+        public async Task DeleteAsync(int id, CancellationToken cancellationToken = default)
         {
             // The Smoke-scoped delete per ADR-0009. Operates ONLY on the
             // environment's Smoke Test tab — the route /Smoke/{id} is the scope
@@ -176,26 +176,19 @@ namespace GuitoApi.Infrastructure.Sheets
             // anchor and never consults the request scope header. Verify-then-
             // delete (reads the row back before deleting the dimension) makes it
             // idempotent on retry.
-            var appendedRowIndex = ParseId(id);
+            var appendedRowIndex = id;
             var (tabTitle, firstDataRow, _) = ParseAnchor(_options.Googlesheets.ExpensesSmokeRange);
             if (appendedRowIndex < firstDataRow)
-                throw new ExpenseNotFoundException(id);
+                throw new ExpenseNotFoundException(id.ToString(CultureInfo.InvariantCulture));
 
             var spreadsheetId = _options.Googlesheets.SpreadsheetId;
             SheetsService service = await _googlesheetsService.GetAsync(cancellationToken);
             var sheetId = await ResolveSheetIdAsync(service, spreadsheetId, tabTitle, cancellationToken);
 
             if (!await RowExistsAsync(service, spreadsheetId, tabTitle, appendedRowIndex, cancellationToken))
-                throw new ExpenseNotFoundException(id);
+                throw new ExpenseNotFoundException(id.ToString(CultureInfo.InvariantCulture));
 
             await DeleteRowDimensionAsync(service, spreadsheetId, sheetId, appendedRowIndex, cancellationToken);
-        }
-
-        private static int ParseId(string id)
-        {
-            return int.TryParse(id, NumberStyles.None, CultureInfo.InvariantCulture, out var row)
-                ? row
-                : throw new ExpenseNotFoundException(id);
         }
 
         private static string NormalizeDescription(string description) =>

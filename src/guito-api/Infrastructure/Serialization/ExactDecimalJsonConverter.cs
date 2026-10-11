@@ -6,7 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
-namespace GuitoApi.DataTransferObjects.Input;
+namespace GuitoApi.Infrastructure.Serialization;
 
 public sealed partial class ExactDecimalJsonConverter : JsonConverter<decimal>
 {

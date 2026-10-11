@@ -1,4 +1,5 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿using GuitoApi.Infrastructure.Serialization;
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 
 namespace GuitoApi.DataTransferObjects.Input

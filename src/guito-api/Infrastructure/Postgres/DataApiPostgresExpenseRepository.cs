@@ -68,7 +68,7 @@ public class DataApiPostgresExpenseRepository(IPostgresDataApiClient client) : I
         : ExpenseTime.InLisbon(DateTimeOffset.Parse(value.StringValue!, CultureInfo.InvariantCulture));
 
     // Smoke cleanup is a Sheets-only capability, never a personal-record delete.
-    public Task DeleteAsync(string id, CancellationToken cancellationToken = default) =>
+    public Task DeleteAsync(int id, CancellationToken cancellationToken = default) =>
         throw new ProblemException(409, "Postgres expenses cannot be deleted through Smoke cleanup.");
 
     private static PostgresParameter Text(string name, string value) => new(name, PostgresValue.FromString(value));

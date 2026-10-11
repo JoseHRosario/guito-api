@@ -114,7 +114,7 @@ public class GoogleSheetsExpenseRepositoryTests
         // Arrange
         _handler.SmokeRowExists = true;
         var repository = CreateRepository();
-        var id = FakeSheetsHttpHandler.NextRowIndex.ToString();
+        var id = FakeSheetsHttpHandler.NextRowIndex;
 
         // Act
         await repository.DeleteAsync(id);
@@ -136,7 +136,7 @@ public class GoogleSheetsExpenseRepositoryTests
 
         // Act
         var exception = await Assert.ThrowsAsync<ExpenseNotFoundException>(
-            () => repository.DeleteAsync(FakeSheetsHttpHandler.NextRowIndex.ToString()));
+            () => repository.DeleteAsync(FakeSheetsHttpHandler.NextRowIndex));
 
         // Assert
         Assert.Contains(FakeSheetsHttpHandler.NextRowIndex.ToString(), exception.Message);
@@ -151,7 +151,7 @@ public class GoogleSheetsExpenseRepositoryTests
 
         // Act
         var exception = await Assert.ThrowsAsync<ExpenseNotFoundException>(
-            () => repository.DeleteAsync((firstDataRow - 1).ToString()));
+            () => repository.DeleteAsync(firstDataRow - 1));
 
         // Assert
         Assert.Equal($"Expense {firstDataRow - 1} not found", exception.Message);
