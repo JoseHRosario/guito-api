@@ -30,7 +30,7 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
         var client = factory.CreateClient();
         var response = await client.PostAsJsonAsync("/expense", new ExpenseCreate
         {
-            Date = "2026-10-02",
+            Date = DateTimeOffset.Parse("2026-10-02T00:00:00+01:00"),
             Amount = -42.50m,
             Description = "negative test",
             Category = "Restaurants",
@@ -48,7 +48,7 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
         var client = factory.CreateClient();
         var response = await client.PostAsJsonAsync("/expense", new ExpenseCreate
         {
-            Date = "2026-10-02",
+            Date = DateTimeOffset.Parse("2026-10-02T00:00:00+01:00"),
             Amount = 0m,
             Description = "zero test",
             Category = "Restaurants",
@@ -66,7 +66,7 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
         var client = factory.CreateClient();
         var response = await client.PostAsJsonAsync("/expense", new ExpenseCreate
         {
-            Date = "2026-10-02",
+            Date = DateTimeOffset.Parse("2026-10-02T00:00:00+01:00"),
             Amount = 0.01m,
             Description = "minimum amount",
             Category = "Restaurants",
@@ -82,7 +82,7 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
         var client = _factory.CreateClient();
         var response = await client.PostAsJsonAsync("/expense", new ExpenseCreate
         {
-            Date = "2026-09-21",
+            Date = DateTimeOffset.Parse("2026-09-21T00:00:00+01:00"),
             Amount = 42.50m,
             Description = "coffee shop",
             Category = "Restaurants",
@@ -127,8 +127,12 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
         Assert.Contains("2026-07-02", Assert.Single(factory.SheetsHandler.AppendBodies));
         Assert.Empty(factory.Postgres.ExecutedSql);
         var expense = Assert.Single(latest.EnumerateArray());
-        Assert.Equal(JsonValueKind.Number, expense.GetProperty("amount").ValueKind);
-        Assert.Equal(expense.GetProperty("amount").GetDecimal().ToString(System.Globalization.CultureInfo.InvariantCulture), expense.GetProperty("amountExact").GetString());
+        Assert.Equal(JsonValueKind.String, expense.GetProperty("amount").ValueKind);
+        Assert.Equal(42.50m, decimal.Parse(expense.GetProperty("amount").GetString()!, System.Globalization.CultureInfo.InvariantCulture));
+        Assert.False(expense.TryGetProperty("amountExact", out _));
+        Assert.False(expense.TryGetProperty("date", out _));
+        Assert.False(expense.TryGetProperty("occurredAt", out _));
+        Assert.False(expense.TryGetProperty("storedOrder", out _));
     }
 
     [Fact]
@@ -145,7 +149,7 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
         Assert.Equal(12.50m, first.Amount);
         Assert.Equal("Coffee", first.Description);
         Assert.Equal("Restaurants", first.Category);
-        Assert.Equal(new DateTime(2026, 9, 20), first.Date);
+        Assert.Equal(new DateTime(2026, 9, 20), first.BookingDate?.Date);
     }
 
     [Fact]

@@ -8,7 +8,7 @@ namespace GuitoApi.Exceptions
     /// </summary>
     public class ExpenseNotFoundException : Exception
     {
-        public ExpenseNotFoundException(string id)
+        public ExpenseNotFoundException(int id)
             : base($"Expense {id} not found")
         {
         }

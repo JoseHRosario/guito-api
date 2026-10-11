@@ -8,7 +8,8 @@ namespace GuitoApi.DataTransferObjects.Input
     /// <summary>Expense input accepts any exactly representable decimal amount (ADR-0015).</summary>
     public class ExpenseCreate : IValidatableObject
     {
-        public string Date { get; set; } = "";
+        [JsonRequired, JsonConverter(typeof(ExpenseDateJsonConverter))]
+        public DateTimeOffset Date { get; set; }
         [Required, RegularExpression("EUR", ErrorMessage = "Only EUR is supported.")]
         public string Currency { get; set; } = "EUR";
 

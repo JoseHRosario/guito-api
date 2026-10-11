@@ -7,13 +7,13 @@ namespace GuitoApi.Repositories
     /// storage-specific detail and it must never cross this boundary: today the
     /// Google Sheet (ranges, the Smoke-scope header resolution, the
     /// row-index↔Id mapping, the Year/Month formula backfill), later Postgres.
-    /// The Id is opaque — today the sheet row index, later a database key
+    /// The Id is an Int32 identity — a Sheets absolute row index or a Postgres primary key
     /// (CONTEXT.md); callers must not interpret it.
     /// </summary>
     public interface IExpenseRepository
     {
-        /// <summary>Persists the expense and returns its opaque Id.</summary>
-        Task<string> CreateAsync(ExpenseDraft value, CancellationToken cancellationToken = default);
+        /// <summary>Persists the expense and returns its integer Id.</summary>
+        Task<int> CreateAsync(ExpenseDraft value, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Lists recent expenses. Postgres orders occurrence and ID descending;

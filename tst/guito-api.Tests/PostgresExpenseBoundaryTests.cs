@@ -11,6 +11,83 @@ namespace GuitoApi.Tests;
 
 public class PostgresExpenseBoundaryTests
 {
+    [Fact]
+    public async Task CreateExpense_ShouldBindOffsetAwareDate_WhenControllerReceivesTimestamp()
+    {
+        // Arrange — inspect the agreed HTTP/service seam, not converter internals.
+        using var factory = new CustomWebApplicationFactory();
+        var service = new CapturingCreateService();
+        using var host = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+            services.AddSingleton<GuitoApi.Services.Expense.ICreateExpenseService>(service)));
+        using var client = host.CreateClient();
+
+        // Act
+        var response = await client.PostAsJsonAsync("/Expense", new { date = "2026-07-01T23:30:00.123456Z", amount = "-1.23" });
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var date = Assert.IsType<DateTimeOffset>(service.Date);
+        Assert.Equal(DateTimeOffset.Parse("2026-07-02T00:30:00.123456+01:00"), date);
+        Assert.Equal(TimeSpan.FromHours(1), date.Offset);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task CreateExpense_ShouldRefuseOutOfRangeIdentity_WhenDataApiReturnsBeyondInt32(bool textId)
+    {
+        // Arrange
+        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres" };
+        factory.Postgres.NextResults.Enqueue(new PostgresResult([], [[PostgresValue.FromLong(2)]], 0));
+        factory.Postgres.NextResults.Enqueue(new PostgresResult([], [[textId
+            ? PostgresValue.FromString("2147483648") : PostgresValue.FromLong(2147483648L)]], 1));
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.PostAsJsonAsync("/Expense", new { date = "2026-07-02", amount = 1, category = "Test" });
+
+        // Assert
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.DoesNotContain("\"id\"", await response.Content.ReadAsStringAsync());
+        Assert.Empty(factory.SheetsHandler.AppendBodies);
+    }
+
+    [Fact]
+    public async Task Latest_ShouldRetainNullsAndSingleFields_WhenLegacySheetsCellsAreMalformed()
+    {
+        // Arrange
+        using var factory = new CustomWebApplicationFactory();
+        factory.SheetsHandler.LatestValuesJson = """
+            [["bad date", "", "", "bad amount", "Legacy", "Test", "user@example.test"]]
+            """;
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync("/Expense/latest/1");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var expense = Assert.Single(body.GetProperty("expenses").EnumerateArray());
+        Assert.Equal(JsonValueKind.Number, expense.GetProperty("id").ValueKind);
+        foreach (var field in new[] { "bookingDate", "amount", "creationDate", "updateDate" })
+            Assert.Equal(JsonValueKind.Null, expense.GetProperty(field).ValueKind);
+        foreach (var removed in new[] { "date", "occurredAt", "amountExact", "storedOrder" })
+            Assert.False(expense.TryGetProperty(removed, out _));
+        Assert.Empty(factory.Postgres.ExecutedSql);
+        Assert.Empty(factory.SheetsHandler.AppendBodies);
+    }
+
+    private sealed class CapturingCreateService : GuitoApi.Services.Expense.ICreateExpenseService
+    {
+        public object? Date { get; private set; }
+        public Task<GuitoApi.DataTransferObjects.Output.ExpenseCreated> CreateAsync(GuitoApi.DataTransferObjects.Input.ExpenseCreate value, CancellationToken cancellationToken = default)
+        {
+            Date = value.Date;
+            return Task.FromResult(new GuitoApi.DataTransferObjects.Output.ExpenseCreated { Id = 1 });
+        }
+    }
+
     [Theory]
     [InlineData("occurredAt", "2026-07-02T14:00:00+01:00", HttpStatusCode.BadRequest)]
     [InlineData("OccurredAt", null, HttpStatusCode.BadRequest)]
@@ -47,18 +124,20 @@ public class PostgresExpenseBoundaryTests
         var response = await client.PostAsJsonAsync("/Expense", new { date = "2026-10-10", amount = "-1.25", category = "Test" });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("2147483647", (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetString());
+        Assert.Equal(2147483647, (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32());
         var categoryParameter = Assert.Single(factory.Postgres.ExecutedParameters[1]!, p => p.Name == "category_id");
         Assert.Equal(2147483648L, categoryParameter.Value.LongValue);
     }
 
-    [Fact]
-    public async Task Latest_ShouldMapPostgresTextValues_WhenDataApiReturnsUtcInstantsAndNumericStrings()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Latest_ShouldMapPostgresTextValues_WhenDataApiReturnsUtcInstantsAndNumericStrings(bool textId)
     {
         // Arrange
         using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
         factory.Postgres.NextResults.Enqueue(new PostgresResult([], [[
-            PostgresValue.FromString("2147483647"),
+            textId ? PostgresValue.FromString("2147483647") : PostgresValue.FromLong(2147483647),
             PostgresValue.FromString("2026-07-09 23:00:00+00"),
             PostgresValue.FromString("79228162514264337593543950335"),
             PostgresValue.FromString("Unchanged"),
@@ -72,12 +151,14 @@ public class PostgresExpenseBoundaryTests
 
         // Assert
         var expense = Assert.Single(latest.EnumerateArray());
-        Assert.Equal(decimal.MaxValue, expense.GetProperty("amount").GetDecimal());
-        Assert.Equal("2147483647", expense.GetProperty("id").GetString());
+        Assert.Equal(decimal.MaxValue, decimal.Parse(expense.GetProperty("amount").GetString()!, System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Equal(2147483647, expense.GetProperty("id").GetInt32());
         Assert.Equal("Groceries", expense.GetProperty("category").GetString());
         Assert.Equal("EUR", expense.GetProperty("currency").GetString());
         Assert.Equal(DateTimeOffset.Parse("2026-10-10T21:00:00.123456+01:00"), expense.GetProperty("updateDate").GetDateTimeOffset());
-        Assert.Equal("2026-07-10T00:00:00+01:00", expense.GetProperty("occurredAt").GetDateTimeOffset().ToString("yyyy-MM-ddTHH:mm:sszzz"));
+        Assert.Equal("2026-07-10T00:00:00+01:00", expense.GetProperty("bookingDate").GetDateTimeOffset().ToString("yyyy-MM-ddTHH:mm:sszzz"));
+        Assert.False(expense.TryGetProperty("date", out _));
+        Assert.False(expense.TryGetProperty("occurredAt", out _));
         Assert.Equal("jose@example.test", expense.GetProperty("creatorEmail").GetString());
         Assert.Equal(DateTimeOffset.Parse("2026-10-10T21:00:00.123456+01:00"), expense.GetProperty("creationDate").GetDateTimeOffset());
         Assert.False(expense.TryGetProperty("storedOrder", out _));
@@ -196,20 +277,20 @@ public class PostgresExpenseBoundaryTests
         Assert.Equal(HttpStatusCode.OK, created.StatusCode);
         var latest = (await client.GetFromJsonAsync<JsonElement>("/Expense/latest/1")).GetProperty("expenses");
         var expense = Assert.Single(latest.EnumerateArray());
-        Assert.Equal(DateTimeOffset.Parse(occurredAt).UtcTicks, expense.GetProperty("occurredAt").GetDateTimeOffset().UtcTicks);
-        Assert.Equal(DateTimeOffset.Parse(expected).ToString("O"), expense.GetProperty("occurredAt").GetDateTimeOffset().ToString("O"));
-        Assert.Equal(DateTimeOffset.Parse(expected).Date, expense.GetProperty("date").GetDateTime());
+        Assert.Equal(DateTimeOffset.Parse(occurredAt).UtcTicks, expense.GetProperty("bookingDate").GetDateTimeOffset().UtcTicks);
+        Assert.Equal(DateTimeOffset.Parse(expected).ToString("O"), expense.GetProperty("bookingDate").GetDateTimeOffset().ToString("O"));
+        Assert.Equal(DateTimeOffset.Parse(expected).Date, expense.GetProperty("bookingDate").GetDateTimeOffset().Date);
 
         // Latest-prefill compatibility: submit the unchanged output instant through the sole input date.
         var resubmitted = await client.PostAsJsonAsync("/Expense", new
         {
-            date = expense.GetProperty("occurredAt").GetString(),
-            amount = expense.GetProperty("amountExact").GetString(), category = expense.GetProperty("category").GetString()
+            date = expense.GetProperty("bookingDate").GetString(),
+            amount = expense.GetProperty("amount").GetString(), category = expense.GetProperty("category").GetString()
         });
         Assert.Equal(HttpStatusCode.OK, resubmitted.StatusCode);
         var repeated = (await client.GetFromJsonAsync<JsonElement>("/Expense/latest/1")).GetProperty("expenses")[0];
-        Assert.Equal(expense.GetProperty("occurredAt").GetString(), repeated.GetProperty("occurredAt").GetString());
-        Assert.Equal(expense.GetProperty("amountExact").GetString(), repeated.GetProperty("amountExact").GetString());
+        Assert.Equal(expense.GetProperty("bookingDate").GetString(), repeated.GetProperty("bookingDate").GetString());
+        Assert.Equal(expense.GetProperty("amount").GetString(), repeated.GetProperty("amount").GetString());
     }
 
     [Theory]
@@ -246,7 +327,7 @@ public class PostgresExpenseBoundaryTests
         else
         {
             var listed = (await client.GetFromJsonAsync<JsonElement>("/Expense/latest/10")).GetProperty("expenses");
-            Assert.Equal(DateTimeOffset.Parse(date!), Assert.Single(listed.EnumerateArray()).GetProperty("occurredAt").GetDateTimeOffset());
+            Assert.Equal(DateTimeOffset.Parse(date!), Assert.Single(listed.EnumerateArray()).GetProperty("bookingDate").GetDateTimeOffset());
         }
     }
 
@@ -266,8 +347,8 @@ public class PostgresExpenseBoundaryTests
         // Assert
         Assert.Equal(HttpStatusCode.OK, created.StatusCode);
         var expense = Assert.Single(listed.EnumerateArray());
-        Assert.Equal(expected, expense.GetProperty("occurredAt").GetDateTimeOffset().ToString("yyyy-MM-ddTHH:mm:sszzz"));
-        Assert.Equal(0.0000000000000000000000000001m, expense.GetProperty("amount").GetDecimal());
+        Assert.Equal(expected, expense.GetProperty("bookingDate").GetDateTimeOffset().ToString("yyyy-MM-ddTHH:mm:sszzz"));
+        Assert.Equal(0.0000000000000000000000000001m, decimal.Parse(expense.GetProperty("amount").GetString()!, System.Globalization.CultureInfo.InvariantCulture));
         Assert.Equal("Original description", expense.GetProperty("description").GetString());
         Assert.Equal("Original category", expense.GetProperty("category").GetString());
         Assert.Equal("xunga.meireles@gmail.com", expense.GetProperty("creatorEmail").GetString());
@@ -292,12 +373,14 @@ public class PostgresExpenseBoundaryTests
         Assert.Equal(HttpStatusCode.OK, created.StatusCode);
         var latest = (await client.GetFromJsonAsync<JsonElement>("/Expense/latest/1")).GetProperty("expenses");
         var expense = Assert.Single(latest.EnumerateArray());
-        Assert.Equal(JsonValueKind.Number, expense.GetProperty("amount").ValueKind);
-        Assert.Equal(decimal.Parse(amount, System.Globalization.CultureInfo.InvariantCulture), expense.GetProperty("amount").GetDecimal());
-        Assert.Equal(amount, expense.GetProperty("amountExact").GetString());
+        Assert.Equal(JsonValueKind.String, expense.GetProperty("amount").ValueKind);
+        Assert.Equal(amount, expense.GetProperty("amount").GetString());
+        Assert.False(expense.TryGetProperty("amountExact", out _));
     }
 
     [Theory]
+    [InlineData("\"-79228162514264337593543950336\"")]
+    [InlineData("-79228162514264337593543950336")]
     [InlineData("\"0.12345678901234567890123456789\"")]
     [InlineData("0.12345678901234567890123456789")]
     [InlineData("\"0.00000000000000000000000000011\"")]
@@ -326,6 +409,13 @@ public class PostgresExpenseBoundaryTests
     }
 
     [Theory]
+    [InlineData("\"-0\"", "0")]
+    [InlineData("-0", "0")]
+    [InlineData("\"+0\"", "0")]
+    [InlineData("-0e-999999999999999999999", "0")]
+    [InlineData("\"-79228162514264337593543950335\"", "-79228162514264337593543950335")]
+    [InlineData("-79228162514264337593543950335", "-79228162514264337593543950335")]
+    [InlineData("9007199254740993", "9007199254740993")]
     [InlineData("\"0.1234567890123456789012345678000\"", "0.1234567890123456789012345678")]
     [InlineData("0.1234567890123456789012345678000", "0.1234567890123456789012345678")]
     [InlineData("\"1.230000000000000000000000000000000000\"", "1.23")]
@@ -353,8 +443,8 @@ public class PostgresExpenseBoundaryTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var latest = (await client.GetFromJsonAsync<JsonElement>("/Expense/latest/1")).GetProperty("expenses");
         var expense = Assert.Single(latest.EnumerateArray());
-        Assert.Equal(expected, expense.GetProperty("amountExact").GetString());
-        Assert.Equal(decimal.Parse(expected, System.Globalization.CultureInfo.InvariantCulture), expense.GetProperty("amount").GetDecimal());
+        Assert.Equal(expected, expense.GetProperty("amount").GetString());
+        Assert.Equal(decimal.Parse(expected, System.Globalization.CultureInfo.InvariantCulture), decimal.Parse(expense.GetProperty("amount").GetString()!, System.Globalization.CultureInfo.InvariantCulture));
     }
 
     [Theory]
@@ -375,7 +465,7 @@ public class PostgresExpenseBoundaryTests
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var latest = (await client.GetFromJsonAsync<JsonElement>("/Expense/latest/1")).GetProperty("expenses");
-        Assert.Equal("1.23", Assert.Single(latest.EnumerateArray()).GetProperty("amountExact").GetString());
+        Assert.Equal("1.23", Assert.Single(latest.EnumerateArray()).GetProperty("amount").GetString());
     }
 
     [Theory]
@@ -402,11 +492,11 @@ public class PostgresExpenseBoundaryTests
         // Arrange
         using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient();
-        var ids = new List<string>();
+        var ids = new List<int>();
         foreach (var time in new[] { "18:00:00", "09:00:00", "18:00:00" })
         {
             var created = await client.PostAsJsonAsync("/Expense", new { date = $"2026-10-10T{time}+01:00", amount = 1m, description = "Duplicate", category = "Test" });
-            ids.Add((await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetString()!);
+            ids.Add((await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32());
         }
 
         // Act
@@ -414,8 +504,8 @@ public class PostgresExpenseBoundaryTests
         var repeated = (await client.GetFromJsonAsync<JsonElement>("/Expense/latest/3")).GetProperty("expenses");
 
         // Assert
-        var tied = new[] { ids[0], ids[2] }.OrderByDescending(id => id, StringComparer.Ordinal);
-        Assert.Equal(tied.Append(ids[1]), first.EnumerateArray().Select(e => e.GetProperty("id").GetString()));
+        var tied = new[] { ids[0], ids[2] }.OrderByDescending(id => id);
+        Assert.Equal(tied.Append(ids[1]), first.EnumerateArray().Select(e => e.GetProperty("id").GetInt32()));
         Assert.Equal(first.GetRawText(), repeated.GetRawText());
         Assert.Equal(3, ids.Distinct().Count());
     }
@@ -454,13 +544,13 @@ public class PostgresExpenseBoundaryTests
 
         // Act
         var created = await smoke.PostAsJsonAsync("/Expense", payload);
-        var id = (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetString();
+        var id = (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
         var listed = await smoke.GetAsync("/Expense/latest/10");
         var deleted = await cleanup.DeleteAsync($"/Smoke/{id}");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, created.StatusCode);
-        Assert.Equal(FakeSheetsHttpHandler.NextRowIndex.ToString(), id);
+        Assert.Equal(FakeSheetsHttpHandler.NextRowIndex, id);
         Assert.Equal(HttpStatusCode.OK, listed.StatusCode);
         Assert.Equal(HttpStatusCode.OK, deleted.StatusCode);
         Assert.Empty(factory.Postgres.ExecutedSql);
@@ -476,7 +566,7 @@ public class PostgresExpenseBoundaryTests
         using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient();
         var created = await client.PostAsJsonAsync("/Expense", new { date = "2026-10-10", amount = 1m, category = "Test" });
-        var id = (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetString();
+        var id = (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
         factory.Postgres.ExecutedSql.Clear();
 
         // Act
@@ -486,7 +576,7 @@ public class PostgresExpenseBoundaryTests
         Assert.Equal(HttpStatusCode.NotFound, deleted.StatusCode);
         Assert.Empty(factory.Postgres.ExecutedSql);
         var expenses = (await client.GetFromJsonAsync<JsonElement>("/Expense/latest/10")).GetProperty("expenses");
-        Assert.Equal(id, Assert.Single(expenses.EnumerateArray()).GetProperty("id").GetString());
+        Assert.Equal(id, Assert.Single(expenses.EnumerateArray()).GetProperty("id").GetInt32());
     }
 
     [Fact]
@@ -502,17 +592,17 @@ public class PostgresExpenseBoundaryTests
             date = "2026-10-10T14:23:00.123456+01:00",
             amount = 123456789.123456789m, description = "Coffee", category = "Restaurants"
         });
-        var id = JsonDocument.Parse(await created.Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetString();
+        var id = JsonDocument.Parse(await created.Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetInt32();
         var listed = JsonDocument.Parse(await client.GetStringAsync("/Expense/latest/10")).RootElement.GetProperty("expenses");
 
         // Assert
         var expense = Assert.Single(listed.EnumerateArray());
-        Assert.Equal(id, expense.GetProperty("id").GetString());
-        Assert.Equal(123456789.123456789m, expense.GetProperty("amount").GetDecimal());
-        Assert.Equal(DateTimeOffset.Parse("2026-10-10T14:23:00.123456+01:00"), expense.GetProperty("occurredAt").GetDateTimeOffset());
-        Assert.Equal(TimeSpan.FromHours(1), expense.GetProperty("occurredAt").GetDateTimeOffset().Offset);
+        Assert.Equal(id, expense.GetProperty("id").GetInt32());
+        Assert.Equal(123456789.123456789m, decimal.Parse(expense.GetProperty("amount").GetString()!, System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Equal(DateTimeOffset.Parse("2026-10-10T14:23:00.123456+01:00"), expense.GetProperty("bookingDate").GetDateTimeOffset());
+        Assert.Equal(TimeSpan.FromHours(1), expense.GetProperty("bookingDate").GetDateTimeOffset().Offset);
         Assert.Equal("EUR", expense.GetProperty("currency").GetString());
-        Assert.NotEqual(expense.GetProperty("occurredAt").GetDateTimeOffset(), expense.GetProperty("creationDate").GetDateTimeOffset());
+        Assert.NotEqual(expense.GetProperty("bookingDate").GetDateTimeOffset(), expense.GetProperty("creationDate").GetDateTimeOffset());
         Assert.Equal(JsonValueKind.Null, expense.GetProperty("updateDate").ValueKind);
     }
 
@@ -570,12 +660,12 @@ public class PostgresExpenseBoundaryTests
         var expenses = (await client.GetFromJsonAsync<JsonElement>("/Expense/latest/3")).GetProperty("expenses");
 
         // Assert
-        Assert.Equal(new[] { "12", "11", "10" }, expenses.EnumerateArray().Select(e => e.GetProperty("id").GetString()));
+        Assert.Equal(new[] { 12, 11, 10 }, expenses.EnumerateArray().Select(e => e.GetProperty("id").GetInt32()));
         Assert.Contains("ORDER BY e.booking_date DESC, e.id DESC", factory.Postgres.ExecutedSql.Last());
     }
 
     [Fact]
-    public async Task CreateExpense_ShouldReturnOpaqueId_WhenPostgresSelected()
+    public async Task CreateExpense_ShouldReturnIntegerId_WhenPostgresSelected()
     {
         // Arrange
         using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres" };
@@ -593,8 +683,8 @@ public class PostgresExpenseBoundaryTests
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
-        Assert.Equal(JsonValueKind.String, body.GetProperty("id").ValueKind);
-        Assert.Equal("2147483647", body.GetProperty("id").GetString());
+        Assert.Equal(JsonValueKind.Number, body.GetProperty("id").ValueKind);
+        Assert.Equal(2147483647, body.GetProperty("id").GetInt32());
         Assert.Empty(factory.SheetsHandler.AppendBodies);
     }
 }

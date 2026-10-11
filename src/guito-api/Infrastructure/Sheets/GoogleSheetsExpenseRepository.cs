@@ -34,11 +34,11 @@ namespace GuitoApi.Infrastructure.Sheets
             _sheetScopeResolver = sheetScopeResolver;
         }
 
-        public async Task<string> CreateAsync(ExpenseDraft value, CancellationToken cancellationToken = default)
+        public async Task<int> CreateAsync(ExpenseDraft value, CancellationToken cancellationToken = default)
         {
             // The frozen Sheets schema has date-only occurrence precision. Never
             // acknowledge an intraday instant that this adapter cannot retain.
-            if (value.OccurredAt.TimeOfDay != TimeSpan.Zero)
+            if (value.BookingDate.TimeOfDay != TimeSpan.Zero)
                 throw new ProblemException(409, "Timestamped expenses require the Postgres Expense store; this environment remains on Sheets.");
             SheetsService service = await _googlesheetsService.GetAsync(cancellationToken);
 
@@ -46,7 +46,7 @@ namespace GuitoApi.Infrastructure.Sheets
             var appendedRowIndex = ResolveAppendedRowIndex(appendResponse);
             await BackfillYearMonthFormulasAsync(service, appendedRowIndex, cancellationToken);
 
-            return appendedRowIndex.ToString(CultureInfo.InvariantCulture);
+            return appendedRowIndex;
         }
 
         private async Task<AppendValuesResponse> AppendExpenseRowAsync(SheetsService service,
@@ -72,7 +72,7 @@ namespace GuitoApi.Infrastructure.Sheets
 
         private IList<object> BuildExpenseRow(ExpenseDraft value) => new List<object>
         {
-            value.Date.ToString("yyyy-MM-dd"),
+            value.BookingDate.ToString("yyyy-MM-dd"),
             "", // Year
             "", // Month
             value.Amount,
@@ -154,10 +154,8 @@ namespace GuitoApi.Infrastructure.Sheets
 
                 output.Add(new ExpenseSummary
                 {
-                    Id = (firstRowIndex + i).ToString(CultureInfo.InvariantCulture),
-                    StoredOrder = i + 1,
-                    OccurredAt = ParseDate(values[i]?[0]) is { } date ? ExpenseTime.Midnight(date) : null,
-                    Date = ParseDate(values[i]?[0]),
+                    Id = firstRowIndex + i,
+                    BookingDate = ParseDate(values[i]?[0]) is { } date ? ExpenseTime.Midnight(date) : null,
                     Amount = ParseDecimal(values[i]?[3]),
                     Description = values[i]?[4]?.ToString(),
                     Category = values[i]?[5]?.ToString(),
@@ -179,14 +177,14 @@ namespace GuitoApi.Infrastructure.Sheets
             var appendedRowIndex = id;
             var (tabTitle, firstDataRow, _) = ParseAnchor(_options.Googlesheets.ExpensesSmokeRange);
             if (appendedRowIndex < firstDataRow)
-                throw new ExpenseNotFoundException(id.ToString(CultureInfo.InvariantCulture));
+                throw new ExpenseNotFoundException(id);
 
             var spreadsheetId = _options.Googlesheets.SpreadsheetId;
             SheetsService service = await _googlesheetsService.GetAsync(cancellationToken);
             var sheetId = await ResolveSheetIdAsync(service, spreadsheetId, tabTitle, cancellationToken);
 
             if (!await RowExistsAsync(service, spreadsheetId, tabTitle, appendedRowIndex, cancellationToken))
-                throw new ExpenseNotFoundException(id.ToString(CultureInfo.InvariantCulture));
+                throw new ExpenseNotFoundException(id);
 
             await DeleteRowDimensionAsync(service, spreadsheetId, sheetId, appendedRowIndex, cancellationToken);
         }

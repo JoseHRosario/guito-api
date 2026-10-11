@@ -8,7 +8,7 @@ namespace GuitoApi.Tests;
 
 /// <summary>
 /// ADR-0009 smoke-scope acceptance: list-latest and match are pure reads (no
-/// dummy-row append), create exposes the opaque Expense Id, the X-Sheet-Scope
+/// dummy-row append), create exposes the integer Expense Id, the X-Sheet-Scope
 /// header redirects writes/reads to the Smoke Test tab, and DELETE /Smoke/{id}
 /// is an id-scoped verify-then-delete restricted to that tab. Each test uses a
 /// fresh factory so its fake handler starts clean.
@@ -34,7 +34,7 @@ public class SmokeScopeTests
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var latest = await response.Content.ReadFromJsonAsync<ExpenseListLatest>();
-        Assert.Equal(new[] { (firstRow + 1).ToString(), (firstRow + 2).ToString() }, latest!.Expenses.Select(expense => expense.Id));
+        Assert.Equal(new[] { firstRow + 1, firstRow + 2 }, latest!.Expenses.Select(expense => expense.Id));
     }
 
     [Fact]
@@ -44,7 +44,7 @@ public class SmokeScopeTests
         using var factory = new CustomWebApplicationFactory();
         using var client = factory.CreateClient();
         var expense = ValidExpense();
-        expense.Date = "2026-09-21T14:00:00+01:00";
+        expense.Date = DateTimeOffset.Parse("2026-09-21T14:00:00+01:00");
 
         // Act
         var response = await client.PostAsJsonAsync("/Expense", expense);
@@ -67,15 +67,15 @@ public class SmokeScopeTests
         var latest = await client.GetFromJsonAsync<ExpenseListLatest>("/Expense/latest/1");
 
         // Assert
-        Assert.Equal(lastRow.ToString(), latest!.Expenses[0].Id);
+        Assert.Equal(lastRow, latest!.Expenses[0].Id);
         Assert.Equal("EUR", latest.Expenses[0].Currency);
-        Assert.Equal(TimeSpan.FromHours(1), latest.Expenses[0].OccurredAt!.Value.Offset);
+        Assert.Equal(TimeSpan.FromHours(1), latest.Expenses[0].BookingDate!.Value.Offset);
         Assert.Null(latest.Expenses[0].CreationDate);
     }
 
     private static ExpenseCreate ValidExpense() => new()
     {
-        Date = "2026-09-21",
+        Date = DateTimeOffset.Parse("2026-09-21T00:00:00+01:00"),
         Amount = 5.00m,
         Description = "smoke espresso",
         Category = "Restaurants",
@@ -106,7 +106,7 @@ public class SmokeScopeTests
     }
 
     [Fact]
-    public async Task CreateExpense_ShouldReturnOpaqueId_WhenExpenseIsValid()
+    public async Task CreateExpense_ShouldReturnIntegerId_WhenExpenseIsValid()
     {
         using var factory = new CustomWebApplicationFactory();
         var client = factory.CreateClient();
@@ -115,7 +115,7 @@ public class SmokeScopeTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var created = await response.Content.ReadFromJsonAsync<ExpenseCreated>();
-        Assert.Equal(FakeSheetsHttpHandler.NextRowIndex.ToString(), created!.Id);
+        Assert.Equal(FakeSheetsHttpHandler.NextRowIndex, created!.Id);
     }
 
     [Fact]

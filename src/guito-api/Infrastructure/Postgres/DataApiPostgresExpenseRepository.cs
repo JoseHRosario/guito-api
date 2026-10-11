@@ -20,16 +20,16 @@ public class DataApiPostgresExpenseRepository(IPostgresDataApiClient client) : I
         ORDER BY e.booking_date DESC, e.id DESC LIMIT :limit
         """;
 
-    public async Task<string> CreateAsync(ExpenseDraft value, CancellationToken cancellationToken = default)
+    public async Task<int> CreateAsync(ExpenseDraft value, CancellationToken cancellationToken = default)
     {
         var categoryId = await ResolveCategoryIdAsync(value.Category, cancellationToken);
         var result = await client.ExecuteAsync(CreateSql,
             [Text("amount", value.Amount.ToString(CultureInfo.InvariantCulture)),
              Text("description", value.Description), new("category_id", PostgresValue.FromLong(categoryId)),
              Text("creator_email", value.CreatorEmail),
-             Text("booking_date", value.OccurredAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture))],
+             Text("booking_date", value.BookingDate.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture))],
             cancellationToken: cancellationToken);
-        return ReadId(result.Rows.Single()[0]).ToString(CultureInfo.InvariantCulture);
+        return checked((int)ReadId(result.Rows.Single()[0]));
     }
 
     private async Task<long> ResolveCategoryIdAsync(string name, CancellationToken cancellationToken)
@@ -54,10 +54,10 @@ public class DataApiPostgresExpenseRepository(IPostgresDataApiClient client) : I
 
     private static ExpenseSummary ToSummary(IReadOnlyList<PostgresValue> row)
     {
-        var occurredAt = ReadInstant(row[1])!.Value;
+        var bookingDate = ReadInstant(row[1])!.Value;
         return new ExpenseSummary
         {
-            Id = row[0].StringValue!, Date = occurredAt.Date, OccurredAt = occurredAt,
+            Id = checked((int)ReadId(row[0])), BookingDate = bookingDate,
             Amount = decimal.Parse(row[2].StringValue!, CultureInfo.InvariantCulture), Currency = "EUR",
             Description = row[3].StringValue, Category = row[4].StringValue, CreatorEmail = row[5].StringValue,
             CreationDate = ReadInstant(row[6]), UpdateDate = ReadInstant(row[7])

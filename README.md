@@ -51,35 +51,36 @@ Configuration comes from `appsettings.{Environment}.json` plus environment varia
 
 ## Expense contract and staged Postgres rollout
 
-`POST /Expense` accepts one required `date` string: `yyyy-MM-dd` for legacy
-Lisbon midnight, or explicit-offset ISO8601 for a known occurrence instant. It also accepts
+`POST /Expense` binds one required `date` to a `DateTimeOffset`; its JSON value is
+a string: `yyyy-MM-dd` for legacy Lisbon midnight, or explicit-offset ISO8601 for a known occurrence instant. It also accepts
 exact-decimal `amount` (positive, zero or negative; a JSON number, including exponent notation, or an
 invariant decimal string), description and category. Amounts must be exactly
 representable by .NET decimal: a 96-bit coefficient and scale 0–28 after removing
 trailing zeros. Inputs requiring rounding, underflow or overflow return 400; equivalent
-trailing-zero representations are accepted. Responses keep numeric `amount` and add
-`amountExact` text for clients that cannot preserve decimal precision in JSON numbers.
+trailing-zero representations are accepted. Latest and AI extraction responses expose
+one `amount` as invariant exact decimal text (null for an absent latest amount), avoiding
+JavaScript Number rounding; there is no duplicate amount field.
 Timestamp `date` accepts any explicit offset (including UTC `Z`); the server preserves
 the instant and derives its Europe/Lisbon calendar day. For example,
 `"date":"2026-07-01T23:30:00.123456Z"` becomes Lisbon July 2, 00:30, with all
 microseconds retained. Naive datetime strings (including unresolved DST gaps or
 repetitions), invalid/missing dates, and more than six fractional digits return 400,
 not rounding. The removed request property `occurredAt` returns 400 even if null;
-other unknown request properties remain tolerated. Latest response `date`/`occurredAt`
-are unchanged: time-enabled clients resubmit latest `occurredAt` as POST `date`, not
-as a second field. Legacy/prod clients send only `yyyy-MM-dd`; intraday timestamps
+other unknown request properties remain tolerated. Latest has one `bookingDate`
+occurrence instant: time-enabled clients resubmit it as POST `date`, not as a second
+field. AI extraction retains its existing `date` output. Legacy/prod clients send only `yyyy-MM-dd`; intraday timestamps
 against frozen date-only Sheets return 409 rather than silently losing time. Currency defaults
-to EUR; non-EUR values are rejected. Create returns `{ "id": "opaque-string" }`.
+to EUR; non-EUR values are rejected. Create returns `{ "id": 123 }` (an Int32 JSON number).
 
-`GET /Expense/latest/{count}` (1–100) returns `expenses` with `id`, compatible `date`,
-`occurredAt`, `currency`, `creationDate`, `updateDate`, amount, description, category
-and creatorEmail. Postgres stores generated integer IDs (passed as opaque strings),
+`GET /Expense/latest/{count}` (1–100) returns `expenses` with numeric `id`,
+`bookingDate`, `currency`, `creationDate`, `updateDate`, amount, description, category
+and creatorEmail. Postgres stores generated integer IDs (returned as JSON numbers),
 `booking_date`, an exact numeric amount, `category_id` referencing the seeded categories
 mirror, `create_date`, and nullable `update_date`. No currency or test-scope column is
 stored. EUR remains a compatibility wire value. Latest orders booking date then integer
 ID descending; `updateDate` is null until an explicit update. Unknown category names
 not present in the mirror return 422; requests never seed categories.
-`storedOrder` is optional/deprecated, not ID.
+Latest has no `storedOrder`, `date` or `occurredAt` aliases; callers use `id`.
 `X-Sheet-Scope: smoke` explicitly selects the dedicated Sheets smoke tab for create/list,
 regardless of the normal Expense Store. `DELETE /Smoke/{id}` is Sheets-only cleanup;
 it never deletes Postgres expenses.

@@ -26,7 +26,7 @@ public sealed partial class ExactDecimalJsonConverter : JsonConverter<decimal>
     }
 
     public override void Write(Utf8JsonWriter writer, decimal value, JsonSerializerOptions options) =>
-        writer.WriteNumberValue(value);
+        writer.WriteStringValue(value.ToString(CultureInfo.InvariantCulture));
 
     private static decimal ParseExact(string text)
     {

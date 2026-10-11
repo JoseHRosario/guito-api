@@ -49,7 +49,7 @@ public class DeployedExpenseRoundTripTests
         finally
         {
             // Cleanup is pinned to smoke scope by the server, even if listing fails.
-            var deleteResponse = await client.DeleteAsync($"/Smoke/{Uri.EscapeDataString(id)}");
+            var deleteResponse = await client.DeleteAsync($"/Smoke/{id}");
             Assert.Equal(HttpStatusCode.OK, deleteResponse.StatusCode);
         }
 
@@ -73,25 +73,25 @@ public class DeployedExpenseRoundTripTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
-    private static async Task<string> ReadCreatedIdAsync(HttpResponseMessage createResponse)
+    private static async Task<int> ReadCreatedIdAsync(HttpResponseMessage createResponse)
     {
         var created = (await createResponse.Content.ReadFromJsonAsync<ExpenseCreated>(_jsonOptions))!;
-        return created.Id ?? throw new InvalidOperationException("POST /expense returned no Id");
+        return created.Id > 0 ? created.Id : throw new InvalidOperationException("POST /expense returned no positive Id");
     }
 
-    /// <summary>True when the live list contains this round-trip's opaque identity and payload.</summary>
-    private static async Task<bool> IsListedAsync(HttpResponseMessage response, ExpensePayload expense, string id)
+    /// <summary>True when the live list contains this round-trip's integer identity and payload.</summary>
+    private static async Task<bool> IsListedAsync(HttpResponseMessage response, ExpensePayload expense, int id)
     {
         var latest = (await response.Content.ReadFromJsonAsync<ExpenseListLatest>(_jsonOptions))!;
         var expenses = latest.Expenses ?? throw new InvalidOperationException("list payload had no Expenses array");
         return expenses.Any(e =>
             e.Id == id &&
             e.Amount == expense.Amount &&
-            e.Category == expense.Category && e.Date?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) == expense.Date &&
+            e.Category == expense.Category && e.BookingDate?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) == expense.Date &&
             string.Equals(e.Description, expense.Description, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static async Task<bool> IsIdentityListedAsync(HttpResponseMessage response, string id)
+    private static async Task<bool> IsIdentityListedAsync(HttpResponseMessage response, int id)
     {
         var latest = (await response.Content.ReadFromJsonAsync<ExpenseListLatest>(_jsonOptions))!;
         return (latest.Expenses ?? throw new InvalidOperationException("list payload had no Expenses array"))
@@ -108,7 +108,7 @@ public class DeployedExpenseRoundTripTests
 
     private sealed class ExpenseCreated
     {
-        public string? Id { get; set; }
+        public int Id { get; set; }
     }
 
     private sealed class ExpenseListLatest
@@ -118,8 +118,9 @@ public class DeployedExpenseRoundTripTests
 
     private sealed class ExpenseListLatestDetail
     {
-        public string? Id { get; set; }
-        public DateTime? Date { get; set; }
+        public int Id { get; set; }
+        public DateTimeOffset? BookingDate { get; set; }
+        [System.Text.Json.Serialization.JsonNumberHandling(System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString)]
         public decimal? Amount { get; set; }
         public string? Description { get; set; }
         public string? Category { get; set; }

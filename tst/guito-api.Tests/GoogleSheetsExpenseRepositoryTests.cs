@@ -19,7 +19,7 @@ public class GoogleSheetsExpenseRepositoryTests
 
     private static ExpenseDraft AnExpense() => new()
     {
-        Date = new DateTime(2026, 10, 2),
+        BookingDate = new DateTimeOffset(2026, 10, 2, 0, 0, 0, TimeSpan.FromHours(1)),
         Amount = 2.30m,
         Description = "morning coffee",
         Category = "Restaurants",
@@ -60,7 +60,7 @@ public class GoogleSheetsExpenseRepositoryTests
     }
 
     [Fact]
-    public async Task CreateAsync_ShouldReturnOpaqueId_WhenExpenseCreated()
+    public async Task CreateAsync_ShouldReturnIntegerId_WhenExpenseCreated()
     {
         // Arrange
         var repository = CreateRepository();
@@ -69,7 +69,7 @@ public class GoogleSheetsExpenseRepositoryTests
         var id = await repository.CreateAsync(AnExpense());
 
         // Assert
-        Assert.Equal(FakeSheetsHttpHandler.NextRowIndex.ToString(), id);
+        Assert.Equal(FakeSheetsHttpHandler.NextRowIndex, id);
     }
 
     [Fact]
@@ -90,7 +90,7 @@ public class GoogleSheetsExpenseRepositoryTests
     }
 
     [Fact]
-    public async Task ListLatestAsync_ShouldReturnStoredOrderExpenses_WhenRowsExist()
+    public async Task ListLatestAsync_ShouldReturnAbsoluteRowIdentities_WhenRowsExist()
     {
         // Arrange
         var repository = CreateRepository();
@@ -100,10 +100,11 @@ public class GoogleSheetsExpenseRepositoryTests
 
         // Assert
         Assert.Equal(3, expenses.Count);
-        Assert.Equal([1, 2, 3], expenses.Select(e => e.StoredOrder));
+        var firstRow = TestSheetsConfiguration.FirstDataRow(_options);
+        Assert.Equal([firstRow, firstRow + 1, firstRow + 2], expenses.Select(e => e.Id));
         Assert.Equal(12.50m, expenses[0].Amount);
         Assert.Equal("Coffee", expenses[0].Description);
-        Assert.Equal(new DateTime(2026, 9, 20), expenses[0].Date);
+        Assert.Equal(new DateTimeOffset(2026, 9, 20, 0, 0, 0, TimeSpan.FromHours(1)), expenses[0].BookingDate);
         Assert.Equal("Restaurants", expenses[0].Category);
         Assert.Equal("user@example.com", expenses[0].CreatorEmail);
     }

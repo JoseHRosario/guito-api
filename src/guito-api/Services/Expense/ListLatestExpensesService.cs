@@ -16,9 +16,9 @@ public class ListLatestExpensesService(IExpenseRepository repository) : IListLat
 
     private static ExpenseListLatestDetail ToOutput(ExpenseSummary expense) => new()
     {
-        Id = expense.Id, Date = expense.Date, OccurredAt = expense.OccurredAt,
+        Id = expense.Id, BookingDate = expense.BookingDate,
         CreationDate = expense.CreationDate, UpdateDate = expense.UpdateDate, Currency = expense.Currency,
         Amount = expense.Amount, Description = expense.Description, Category = expense.Category,
-        CreatorEmail = expense.CreatorEmail, StoredOrder = expense.StoredOrder == 0 ? null : expense.StoredOrder
+        CreatorEmail = expense.CreatorEmail
     };
 }
