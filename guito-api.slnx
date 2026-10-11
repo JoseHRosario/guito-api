@@ -6,6 +6,7 @@
     <File Path="db/migrations/004_seed_categories.sql" />
     <File Path="db/migrations/005_expenses.sql" />
     <File Path="db/migrations/006_remove_integration_tests_category.sql" />
+    <File Path="db/migrations/007_historical_expense_import.sql" />
   </Folder>
   <Folder Name="/docs/" Id="4a5e54fd-a648-58af-ffbf-706d32b5cdde">
     <File Path="docs/adr/0001-aws-serverless-deployment-target.md" />
@@ -20,6 +21,8 @@
     <File Path="docs/adr/0011-repository-pattern.md" />
     <File Path="docs/adr/0014-categories-mirror-postgres.md" />
     <File Path="docs/adr/0015-postgres-expenses-and-lisbon-occurrence.md" />
+    <File Path="docs/adr/0016-frozen-history-import-provenance.md" />
+    <File Path="docs/historical-expense-import.md" />
     <File Path="docs/adr/0010-amounts-stored-positive.md" />
   </Folder>
   <Folder Name="/sit/">
@@ -30,6 +33,9 @@
   <Folder Name="/src/">
     <Project Path="src/guito-api-authorizer/guito-api-authorizer.csproj" />
     <Project Path="src/guito-api/guito-api.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Guito.HistoricalImport/Guito.HistoricalImport.csproj" />
   </Folder>
   <Folder Name="/tst/">
     <Project Path="tst/guito-api-authorizer.Tests/guito-api-authorizer.Tests.csproj" />
