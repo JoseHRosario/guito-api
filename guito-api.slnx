@@ -6,7 +6,6 @@
     <File Path="db/migrations/004_seed_categories.sql" />
     <File Path="db/migrations/005_expenses.sql" />
     <File Path="db/migrations/006_remove_integration_tests_category.sql" />
-    <File Path="db/migrations/007_historical_expense_import.sql" />
     <File Path="db/migrations/008_historical_expense_categories.sql" />
   </Folder>
   <Folder Name="/docs/" Id="4a5e54fd-a648-58af-ffbf-706d32b5cdde">

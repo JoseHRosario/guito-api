@@ -1,7 +1,6 @@
 # ADR-0016: Operator-run historical Expense SQL and frozen provenance
 
-Status: Accepted. José executes staging and production imports; agent verification is
-read-only. Production storage cutover remains separately gated.
+Status: Completed and retired at José's direction after verified one-off staging and production imports. The decision below records the historical execution approach, not a supported reusable importer.
 Issue: #129 / parent #126. Extends ADR-0015; category authority and smoke stay unchanged.
 
 ## Decision
@@ -50,6 +49,11 @@ are inventoried separately. Successful import is not a production authority swit
 
 Hermetic entry tests use frozen source files and fake database transport. Read-only
 PostgreSQL EXPLAIN validates generated insert syntax; it is not live write acceptance.
-José executes staging, then an identical rerun, followed by read-only comparisons.
-Production follows only after staging review and José's own execution. Until then,
-persistence/rollback/rerun acceptance remains pending. See the import runbook.
+José executed both imports and identical reruns; read-only comparisons passed with
+zero exceptions and stable Expense IDs/audit dates. José then dropped the three
+auxiliary tables in both databases; read-only checks confirmed absence and retained
+Expenses. Scripts, temporary test/workflow and provenance migration 007 are retired
+so deployments cannot recreate them. Private snapshots and reports retain evidence.
+Live interrupted-write recovery and changed-snapshot reconciliation were not exercised;
+José explicitly closed the scope as a completed one-off import. See the completion
+record in docs/historical-expense-import.md. Cutover remains separately gated by #132.

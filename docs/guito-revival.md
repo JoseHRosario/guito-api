@@ -55,10 +55,11 @@ The MVP is complete when the app is deployed and usable end-to-end:
 ## Expense migration after MVP
 
 ADR-0015 and issues #126/#128 supersede the Expense-only Sheets assumptions above.
-Categories and smoke remain Sheets-authoritative. Issue #129 adds API 0.14.0 frozen
-historical import, durable provenance, exact parity/exceptions and a staging-only
-manual rehearsal workflow. Production import/cutover remains unapproved; see
-[the historical import runbook](historical-expense-import.md) and ADR-0016.
+Categories and smoke remain Sheets-authoritative. Issue #129 completed the one-off
+historical import and verified identical reruns in staging and production. José
+removed the temporary provenance tables after verification; import tooling and its
+DDL are retired. Production storage cutover remains separate under #132. See
+[the historical import record](historical-expense-import.md) and ADR-0016.
 
 ## Relevant GitHub issues
 
