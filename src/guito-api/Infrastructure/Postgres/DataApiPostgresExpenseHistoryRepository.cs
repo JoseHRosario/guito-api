@@ -41,11 +41,19 @@ public sealed class DataApiPostgresExpenseHistoryRepository(IPostgresDataApiClie
         WHERE c.token = CAST(:token AS uuid)
         """;
     private const string PageSql = """
-        SELECT expense_id, booking_date::text, amount, description, category, creator_email,
-               create_date::text, update_date::text
-        FROM expense_history_rows
-        WHERE snapshot_id = CAST(:snapshot_id AS uuid) AND position > :start_position
-        ORDER BY position ASC LIMIT :page_size
+        SELECT p.expense_id, p.booking_date::text, p.amount, p.description, p.category, p.creator_email,
+               p.create_date::text, p.update_date::text, (s.expires_at <= statement_timestamp())::text
+        FROM expense_history_snapshots s
+        LEFT JOIN LATERAL (
+            SELECT expense_id, booking_date, amount, description, category, creator_email,
+                   create_date, update_date, position
+            FROM expense_history_rows
+            WHERE snapshot_id = s.id AND position > :start_position
+              AND s.expires_at > statement_timestamp()
+            ORDER BY position ASC LIMIT :page_size
+        ) p ON true
+        WHERE s.id = CAST(:snapshot_id AS uuid)
+        ORDER BY p.position ASC
         """;
     private const string NextCursorSql = """
         INSERT INTO expense_history_cursors (token, snapshot_id, start_position, page_size)
@@ -56,23 +64,33 @@ public sealed class DataApiPostgresExpenseHistoryRepository(IPostgresDataApiClie
 
     public async Task<ExpenseHistoryPage> ReadAsync(int pageSize, string? cursor, CancellationToken cancellationToken = default)
     {
-        var header = cursor is null
+        var header = ToHeader(cursor is null
             ? await CreateSnapshotAsync(cancellationToken)
-            : await ReadCursorAsync(cursor, pageSize, cancellationToken);
-        var snapshotId = Guid.Parse(header[0].StringValue!);
-        var expiresAt = ReadInstant(header[1]);
-        var totalCount = header[2].LongValue!.Value;
-        var position = cursor is null ? 0 : header[3].LongValue!.Value;
-        var rows = await client.ExecuteAsync(PageSql,
-            [Text("snapshot_id", snapshotId.ToString()), Number("start_position", position), Number("page_size", pageSize)],
-            cancellationToken: cancellationToken);
-        var nextPosition = position + rows.Rows.Count;
-        if (rows.Rows.Count != Math.Min(pageSize, totalCount - position))
-            throw new ProblemException(502, "Expense snapshot page was incomplete; restart the export.");
-        var nextCursor = nextPosition < totalCount
-            ? await CreateCursorAsync(snapshotId, nextPosition, pageSize, cancellationToken) : null;
-        return new(snapshotId, expiresAt, totalCount, rows.Rows.Select(ToEntry).ToList(), nextCursor);
+            : await ReadCursorAsync(cursor, pageSize, cancellationToken), cursor is not null);
+        var entries = await ReadPageAsync(header, pageSize, cancellationToken);
+        var nextPosition = header.Position + entries.Count;
+        var nextCursor = nextPosition < header.TotalCount
+            ? await CreateCursorAsync(header.SnapshotId, nextPosition, pageSize, cancellationToken) : null;
+        return new(header.SnapshotId, header.ExpiresAt, header.TotalCount, entries, nextCursor);
     }
+
+    private async Task<List<ExpenseHistoryEntry>> ReadPageAsync(PostgresExpenseHistoryHeader header, int pageSize, CancellationToken cancellationToken)
+    {
+        // Header expiry and payload share one MVCC view: cleanup cannot turn an expired cursor into a partial page.
+        var result = await client.ExecuteAsync(PageSql,
+            [Text("snapshot_id", header.SnapshotId.ToString()), Number("start_position", header.Position), Number("page_size", pageSize)],
+            cancellationToken: cancellationToken);
+        if (result.Rows.Any(row => row[8].StringValue == "true"))
+            throw new ProblemException(410, "Expense history cursor expired; start a new export.");
+        var rows = result.Rows.Where(row => !row[0].IsNull).ToList();
+        if (result.Rows.Count == 0 || rows.Count != Math.Min(pageSize, header.TotalCount - header.Position))
+            throw new ProblemException(502, "Expense snapshot page was incomplete; restart the export.");
+        return rows.Select(ToEntry).ToList();
+    }
+
+    private static PostgresExpenseHistoryHeader ToHeader(IReadOnlyList<PostgresValue> row, bool continuation) =>
+        new(Guid.Parse(row[0].StringValue!), ReadInstant(row[1]), row[2].LongValue!.Value,
+            continuation ? row[3].LongValue!.Value : 0);
 
     private async Task<IReadOnlyList<PostgresValue>> CreateSnapshotAsync(CancellationToken cancellationToken)
     {

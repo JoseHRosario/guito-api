@@ -101,11 +101,16 @@ namespace GuitoApi
             });
             services.AddScoped<ICategoryRepository, GoogleSheetsCategoryRepository>();
             services.AddScoped<IExpenseHistoryRepository>(sp =>
-                sp.GetRequiredService<ISheetScopeResolver>().IsSmokeScope
-                || sp.GetRequiredService<IOptions<AppConfigurationOptions>>().Value.ExpenseStore != "Postgres"
-                || sp.GetRequiredService<IWebHostEnvironment>().IsProduction()
-                    ? new UnavailableExpenseHistoryRepository()
-                    : ActivatorUtilities.CreateInstance<DataApiPostgresExpenseHistoryRepository>(sp));
+            {
+                // Production Postgres cutover is not approved; export must never expose personal history there.
+                if (sp.GetRequiredService<IWebHostEnvironment>().IsProduction())
+                    return new UnavailableExpenseHistoryRepository();
+                // Smoke remains Sheets-only, and Sheets cannot provide a consistent export snapshot.
+                if (sp.GetRequiredService<ISheetScopeResolver>().IsSmokeScope
+                    || sp.GetRequiredService<IOptions<AppConfigurationOptions>>().Value.ExpenseStore != "Postgres")
+                    return new UnavailableExpenseHistoryRepository();
+                return ActivatorUtilities.CreateInstance<DataApiPostgresExpenseHistoryRepository>(sp);
+            });
             services.AddScoped<IExportExpenseHistoryService, ExportExpenseHistoryService>();
 
             services.AddScoped<ICreateExpenseService, CreateExpenseService>();

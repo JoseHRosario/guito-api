@@ -82,6 +82,19 @@ GET is read-only with respect to authoritative Expenses/Categories but persists 
 reporting snapshot/cursors and opportunistically removes expired snapshot payloads.
 Header/cursor tombstones remain to preserve explicit 410 semantics; no scheduler is
 introduced. Account for snapshot storage when operating high-volume consumers.
+
+### Provider size boundary
+
+The existing RDS Data API transport supports at most 64 KiB per returned row and
+1 MiB per statement result. Row-count pagination does not remove these provider
+limits. If a page exceeds the result limit, restart with a smaller pageSize (do not
+mix snapshots); if one record exceeds the row limit, this transport cannot export
+it even with pageSize=1. The request fails explicitly rather than truncating data
+or returning partial success. Consumers must retain their last complete dataset.
+This does not impose new Expense write validation or silently exclude oversized
+records. Support for arbitrary-size records requires a separate transport design;
+staging acceptance below establishes completeness for the actual seeded history.
+
 Migration 009 must be applied before enabling the endpoint. The existing deployment
 runner grants runtime SELECT/INSERT/UPDATE/DELETE on all public tables after migration.
 No new credentials or Production change is needed/authorized.

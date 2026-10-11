@@ -76,28 +76,44 @@ public class ExpenseHistoryBoundaryTests
         using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
         for (var id = 1; id <= 120; id++) factory.Postgres.SeedExpense(Stored(id, "2026-07-02T00:00:00.123456Z"));
         using var client = factory.CreateClient();
-        var ids = new List<int>();
-        var url = $"/Expense/history?pageSize={pageSize}";
-        string? snapshotId = null;
 
         // Act
+        var pages = await ReadAllHistoryPagesAsync(client, pageSize);
+
+        // Assert
+        AssertCompleteHistory(pages);
+        Assert.Empty(factory.SheetsHandler.ReadRanges);
+    }
+
+    private sealed record ObservedPage(HttpStatusCode Status, bool NoStore, JsonElement Body);
+
+    private static async Task<List<ObservedPage>> ReadAllHistoryPagesAsync(HttpClient client, int pageSize)
+    {
+        var pages = new List<ObservedPage>();
+        var url = $"/Expense/history?pageSize={pageSize}";
         do
         {
             using var response = await client.GetAsync(url);
-            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-            Assert.True(response.Headers.CacheControl!.NoStore);
             var page = await response.Content.ReadFromJsonAsync<JsonElement>();
-            snapshotId ??= page.GetProperty("snapshotId").GetString();
-            Assert.Equal(snapshotId, page.GetProperty("snapshotId").GetString());
-            Assert.Equal(120, page.GetProperty("totalCount").GetInt64());
-            ids.AddRange(Ids(page));
+            pages.Add(new(response.StatusCode, response.Headers.CacheControl?.NoStore == true, page));
             url = page.GetProperty("nextCursor").ValueKind == JsonValueKind.Null ? string.Empty : Next(page, pageSize);
         } while (url.Length > 0);
+        return pages;
+    }
 
-        // Assert
+    private static void AssertCompleteHistory(List<ObservedPage> pages)
+    {
+        var snapshotId = pages[0].Body.GetProperty("snapshotId").GetString();
+        Assert.All(pages, page =>
+        {
+            Assert.Equal(HttpStatusCode.OK, page.Status);
+            Assert.True(page.NoStore);
+            Assert.Equal(snapshotId, page.Body.GetProperty("snapshotId").GetString());
+            Assert.Equal(120, page.Body.GetProperty("totalCount").GetInt64());
+        });
+        var ids = pages.SelectMany(page => Ids(page.Body)).ToList();
         Assert.Equal(Enumerable.Range(1, 120).Reverse(), ids);
         Assert.Equal(120, ids.Distinct().Count());
-        Assert.Empty(factory.SheetsHandler.ReadRanges);
     }
 
     [Fact]
@@ -105,22 +121,40 @@ public class ExpenseHistoryBoundaryTests
     {
         // Arrange
         using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
-        factory.Postgres.SeedExpense(Stored(1, "2026-01-01T00:00:00Z"), committed: false);
-        factory.Postgres.SeedExpense(Stored(2, "2026-07-02T00:00:00Z"));
-        factory.Postgres.SeedExpense(Stored(3, "2026-07-01T00:00:00Z"));
+        SeedConcurrentHistory(factory.Postgres);
         using var client = factory.CreateClient();
         var first = await client.GetFromJsonAsync<JsonElement>("/Expense/history?pageSize=1");
 
         // Act
-        factory.Postgres.CommitStagedExpenses();
-        var created = await client.PostAsJsonAsync("/Expense", new { bookingDate = "2025-01-01", amount = "0", category = "Test" });
-        factory.Postgres.ReplaceStoredExpense(3, Stored(3, "2026-07-01T00:00:00Z", "999", "Changed", "Changed category"));
+        using var created = await CommitAndChangeExpensesAsync(client, factory.Postgres);
         var last = await client.GetFromJsonAsync<JsonElement>(Next(first, 1));
         var replay = await client.GetFromJsonAsync<JsonElement>(Next(first, 1));
         var fresh = await client.GetFromJsonAsync<JsonElement>("/Expense/history?pageSize=100");
+        var oldSnapshotAgain = await client.GetFromJsonAsync<JsonElement>(Next(first, 1));
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        AssertFrozenHistory(first, last, replay);
+        AssertFreshHistory(first, last, fresh, oldSnapshotAgain);
+    }
+
+    private static void SeedConcurrentHistory(FakePostgresDataApiClient postgres)
+    {
+        postgres.SeedExpense(Stored(1, "2026-01-01T00:00:00Z"), committed: false);
+        postgres.SeedExpense(Stored(2, "2026-07-02T00:00:00Z"));
+        postgres.SeedExpense(Stored(3, "2026-07-01T00:00:00Z"));
+    }
+
+    private static async Task<HttpResponseMessage> CommitAndChangeExpensesAsync(HttpClient client, FakePostgresDataApiClient postgres)
+    {
+        postgres.CommitStagedExpenses();
+        var created = await client.PostAsJsonAsync("/Expense", new { bookingDate = "2025-01-01", amount = "0", category = "Test" });
+        postgres.ReplaceStoredExpense(3, Stored(3, "2026-07-01T00:00:00Z", "999", "Changed", "Changed category"));
+        return created;
+    }
+
+    private static void AssertFrozenHistory(JsonElement first, JsonElement last, JsonElement replay)
+    {
         Assert.Equal(new[] { 2 }, Ids(first));
         Assert.Equal(new[] { 3 }, Ids(last));
         Assert.Equal(first.GetProperty("snapshotId").GetString(), last.GetProperty("snapshotId").GetString());
@@ -131,9 +165,12 @@ public class ExpenseHistoryBoundaryTests
         Assert.Equal("Original", expense.GetProperty("description").GetString());
         Assert.Equal("Restaurants", expense.GetProperty("category").GetString());
         Assert.Equal("-123456789.1234567890123456789", expense.GetProperty("amount").GetString());
+    }
+
+    private static void AssertFreshHistory(JsonElement first, JsonElement last, JsonElement fresh, JsonElement oldSnapshotAgain)
+    {
         Assert.Equal(new[] { 2, 3, 1, 4 }, Ids(fresh));
         Assert.NotEqual(first.GetProperty("snapshotId").GetString(), fresh.GetProperty("snapshotId").GetString());
-        var oldSnapshotAgain = await client.GetFromJsonAsync<JsonElement>(Next(first, 1));
         Assert.Equal(last.GetRawText(), oldSnapshotAgain.GetRawText());
     }
 
@@ -201,6 +238,29 @@ public class ExpenseHistoryBoundaryTests
         Assert.Equal(HttpStatusCode.BadRequest, tampered.StatusCode);
         Assert.Equal(HttpStatusCode.Gone, expired.StatusCode);
         Assert.DoesNotContain("expenses", await expired.Content.ReadAsStringAsync());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task History_ShouldRejectExpiryDuringContinuation_WhenPageReadFollowsCursorLookup(bool cleanup)
+    {
+        // Arrange
+        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        factory.Postgres.SeedExpense(Stored(1, "2026-07-01T00:00:00Z"));
+        factory.Postgres.SeedExpense(Stored(2, "2026-07-02T00:00:00Z"));
+        using var client = factory.CreateClient();
+        var page = await client.GetFromJsonAsync<JsonElement>("/Expense/history?pageSize=1");
+        factory.Postgres.ExpireBeforeHistoryPage = true;
+        factory.Postgres.CleanUpBeforeHistoryPage = cleanup;
+
+        // Act
+        var response = await client.GetAsync(Next(page, 1));
+        var body = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        Assert.Equal(HttpStatusCode.Gone, response.StatusCode);
+        Assert.DoesNotContain("expenses", body);
     }
 
     [Theory]
@@ -275,14 +335,17 @@ public class ExpenseHistoryBoundaryTests
         Assert.Equal(JsonValueKind.Null, final.GetProperty("nextCursor").ValueKind);
     }
 
-    [Fact]
-    public async Task History_ShouldFailInsteadOfReturningPartialPage_WhenProviderReturnsFewerRowsThanSnapshotCount()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task History_ShouldFailInsteadOfReturningPartialPage_WhenProviderReturnsFewerRowsThanSnapshotCount(bool sentinel)
     {
         // Arrange
         using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres" };
         factory.Postgres.NextResults.Enqueue(new PostgresResult([], [[PostgresValue.FromString(Guid.NewGuid().ToString()),
             PostgresValue.FromString("2026-10-12T00:00:00Z"), PostgresValue.FromLong(1), PostgresValue.FromLong(1)]], 0));
-        factory.Postgres.NextResults.Enqueue(new PostgresResult([], [], 0));
+        factory.Postgres.NextResults.Enqueue(new PostgresResult([], sentinel
+            ? [Enumerable.Repeat(PostgresValue.Null(), 8).Append(PostgresValue.FromString("false")).ToList()] : [], 0));
         using var client = factory.CreateClient();
 
         // Act

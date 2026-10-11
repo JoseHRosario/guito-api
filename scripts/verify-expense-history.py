@@ -7,6 +7,7 @@ import os
 import subprocess
 import urllib.parse
 import urllib.request
+from zoneinfo import ZoneInfo
 
 
 REGION = "eu-west-1"
@@ -29,7 +30,7 @@ def instant(value):
 def canonical(expense):
     return (
         expense["id"], instant(expense["bookingDate"]),
-        decimal.Decimal(expense["amount"]), expense["currency"],
+        expense["amount"], expense["currency"],
         expense["description"], expense["category"], expense["creatorEmail"],
         instant(expense["creationDate"]), instant(expense["updateDate"]),
     )
@@ -74,7 +75,7 @@ def export_history(human=False):
     previous_order = None
     pages = 0
     while True:
-        query = {"pageSize": 37}
+        query = {"pageSize": 7}
         if cursor is not None:
             query["cursor"] = cursor
         headers = {"Authorization": os.environ["GUITO_TARGET_AGENT_KEY"],
@@ -96,8 +97,14 @@ def export_history(human=False):
         if page["snapshotId"] != snapshot_id or page["totalCount"] != total:
             raise RuntimeError("Snapshot metadata changed between pages")
         for expense in page["expenses"]:
-            if not isinstance(expense["amount"], str):
-                raise RuntimeError("Exact amount must be JSON text")
+            if not isinstance(expense["amount"], str) or not decimal.Decimal(expense["amount"]).is_finite():
+                raise RuntimeError("Exact amount must be finite JSON text")
+            for field in ("bookingDate", "creationDate", "updateDate"):
+                if expense[field] is None:
+                    continue
+                timestamp = datetime.datetime.fromisoformat(expense[field].replace("Z", "+00:00"))
+                if timestamp.utcoffset() != timestamp.astimezone(ZoneInfo("Europe/Lisbon")).utcoffset():
+                    raise RuntimeError("Expense timestamp is not presented with its Europe/Lisbon offset")
             record = canonical(expense)
             order = (record[1], record[0])
             if previous_order is not None and order >= previous_order:
