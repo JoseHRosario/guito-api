@@ -99,6 +99,9 @@ to stale Sheets after Postgres writes is not a valid rollback without reconcilia
 
 The deployed-test runner always exercises date-only Sheets CRUD in the dedicated
 smoke tab; cleanup uses the returned ID and runs even if the first list assertion fails.
+This runner revision requires the new `bookingDate`/integer-ID/exact-string-amount API
+contract. Use it against updated staging (or production only after approved cutover),
+not the unchanged pre-cutover production API; it does not negotiate legacy contracts.
 Normal redeploys apply pending migrations without resetting expense data.
 
 **Compatibility gate:** the frozen Sheets schema retains date-only precision and
