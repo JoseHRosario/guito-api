@@ -6,10 +6,10 @@ namespace Guito.HistoricalImport;
 
 internal sealed class ImportSheetsClientProvider(string keyFile) : IGooglesheetsClientProvider
 {
-    public Task<SheetsService> GetAsync(CancellationToken cancellationToken = default)
+    public async Task<SheetsService> GetAsync(CancellationToken cancellationToken = default)
     {
         using var stream = File.OpenRead(keyFile);
-        var credential = GoogleCredential.FromStream(stream).CreateScoped(SheetsService.Scope.SpreadsheetsReadonly);
-        return Task.FromResult(new SheetsService(new BaseClientService.Initializer { HttpClientInitializer = credential, ApplicationName = "Guito historical snapshot (read only)" }));
+        var credential = (await GoogleCredential.FromStreamAsync(stream, cancellationToken)).CreateScoped(SheetsService.Scope.SpreadsheetsReadonly);
+        return new SheetsService(new BaseClientService.Initializer { HttpClientInitializer = credential, ApplicationName = "Guito historical snapshot (read only)" });
     }
 }

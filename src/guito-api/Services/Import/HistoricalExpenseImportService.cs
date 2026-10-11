@@ -8,7 +8,7 @@ public sealed class HistoricalExpenseImportService(IFrozenExpenseSnapshotReposit
     public async Task<HistoricalImportReport> ImportAsync(HistoricalImportRequest request, CancellationToken cancellationToken = default)
     {
         var snapshot = request.Snapshot;
-        if (snapshot.FirstRow < 1 || snapshot.LastRow < snapshot.FirstRow || snapshot.Rows.Count != snapshot.LastRow - snapshot.FirstRow + 1 || snapshot.UnformattedRows?.Count != snapshot.Rows.Count)
+        if (!HistoricalSnapshotValidator.HasCompleteBounds(snapshot.FirstRow, snapshot.LastRow, snapshot.Rows.Count))
             throw new ArgumentException("Snapshot must account for every bounded row.");
         var report = new HistoricalImportReport { SnapshotId = source.Identify(snapshot), Rows = source.ReadRows(snapshot).ToList() };
         report.SourceTotal = ExactImportTotal.Sum(report.Rows.Where(r => r.Expected != null).Select(r => r.Expected!.Amount));

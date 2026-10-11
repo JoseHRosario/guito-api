@@ -27,51 +27,90 @@ public sealed class ImportDatabaseTransport : IPostgresDataApiClient
         cancellationToken.ThrowIfCancellationRequested();
         if (Context.CurrentTransactionId == null) throw new InvalidOperationException("Import write/read is outside a unit of work.");
         var values = parameters!.ToDictionary(p => p.Name, p => p.Value);
-        string Text(string key) => values[key].StringValue!;
-        int Number(string key) => checked((int)values[key].LongValue!);
-        var key = values.ContainsKey("row") ? Text("snapshot") + ":" + Number("row") : "";
-        PostgresResult Result(params IReadOnlyList<PostgresValue>[] rows) => new([], rows, 0);
-        var result = Result();
-        if (sql.Contains("pg_advisory_xact_lock")) return Task.FromResult(result);
-        if (sql.StartsWith("SELECT current_snapshot_id")) result = Heads.TryGetValue(Text("source"), out var head) ? Result([PostgresValue.FromString(head)]) : result;
-        else if (sql.StartsWith("INSERT INTO expense_import_sources")) Heads[Text("source")] = Text("snapshot");
-        else if (sql.StartsWith("SELECT CAST(reconciliation")) result = _plans.TryGetValue(Text("snapshot"), out var plan) ? Result([PostgresValue.FromString(plan)]) : result;
-        else if (sql.StartsWith("INSERT INTO expense_import_snapshots")) _plans.TryAdd(Text("snapshot"), Text("reconciliation"));
-        else if (sql.StartsWith("INSERT INTO expense_import_rows"))
-        {
-            foreach (var row in JsonDocument.Parse(Text("rows")).RootElement.EnumerateArray())
-                _rows.TryAdd(Text("snapshot") + ":" + row.GetProperty("source_row").GetInt32(), new(row.GetProperty("raw_json").GetRawText(), row.GetProperty("classification").GetString()!));
-        }
-        else if (sql.StartsWith("SELECT CAST(raw_json"))
-        {
-            var row = _rows[key];
-            result = Result([PostgresValue.FromString(row.Raw), row.ExpenseId is { } id ? PostgresValue.FromLong(id) : PostgresValue.Null(), row.Exclusion is { } exclusion ? PostgresValue.FromString(exclusion) : PostgresValue.Null()]);
-        }
-        else if (sql.StartsWith("SELECT source_row"))
-            result = Result(_rows.Where(r => r.Key.StartsWith(Text("snapshot") + ":") && r.Value.Classification is not ("Blank" or "NonExpense") && int.Parse(r.Key.Split(':').Last()) > values["cursor"].LongValue).OrderBy(r => int.Parse(r.Key.Split(':').Last())).Take(100).Select(r => (IReadOnlyList<PostgresValue>)new[] { PostgresValue.FromLong(int.Parse(r.Key.Split(':').Last())), PostgresValue.FromString(r.Value.Raw), r.Value.ExpenseId is { } previousId ? PostgresValue.FromLong(previousId) : PostgresValue.Null(), r.Value.Exclusion is { } previousExclusion ? PostgresValue.FromString(previousExclusion) : PostgresValue.Null() }).ToArray());
-        else if (sql.StartsWith("UPDATE expense_import_rows SET expense_id"))
-        {
-            if (_rows.Any(r => r.Key.StartsWith(Text("snapshot") + ":") && r.Key != key && r.Value.ExpenseId == Number("expense"))) throw new InvalidOperationException("Unique snapshot expense violated.");
-            _rows[key] = _rows[key] with { ExpenseId = Number("expense") };
-        }
-        else if (sql.StartsWith("UPDATE expense_import_rows SET exclusion")) _rows[key] = _rows[key] with { Exclusion = Text("exclusion") };
-        else if (sql.StartsWith("SELECT id FROM categories")) result = Categories.TryGetValue(Text("name"), out var categoryId) ? Result([PostgresValue.FromLong(categoryId)]) : result;
-        else if (sql.StartsWith("INSERT INTO expenses"))
-        {
-            if (Text("description") == FailDescription) throw new InvalidOperationException("Simulated interrupted row write.");
-            var id = ++_sequence;
-            _expenses[id] = [PostgresValue.FromLong(id), values["booking_date"], values["amount"], values["description"], PostgresValue.FromString(Categories.Single(c => c.Value == values["category_id"].LongValue).Key), values["creator_email"], PostgresValue.FromString("2026-10-11T12:00:00Z"), PostgresValue.Null()];
-            result = Result([PostgresValue.FromLong(id)]);
-        }
-        else if (sql.StartsWith("SELECT e.id"))
-        {
-            var row = _expenses[Number("expense")].ToArray();
-            if (CorruptAmount) row[2] = PostgresValue.FromString("999");
-            result = Result(row);
-        }
-        else throw new InvalidOperationException("Unsupported import transport statement: " + sql);
-        return Task.FromResult(result);
+        return Task.FromResult(ExecuteStatement(sql, values));
     }
+
+    private PostgresResult ExecuteStatement(string sql, Dictionary<string, PostgresValue> values) => sql switch
+    {
+        var s when s.Contains("pg_advisory_xact_lock") => Result(),
+        var s when s.Contains("expense_import_sources") || s.Contains("expense_import_snapshots") => ExecuteSnapshot(sql, values),
+        var s when s.StartsWith("INSERT INTO expense_import_rows") => ArchiveRows(values),
+        var s when s.StartsWith("SELECT CAST(raw_json") => ReadRow(values),
+        var s when s.StartsWith("SELECT source_row") => ReadPrevious(values),
+        var s when s.StartsWith("UPDATE expense_import_rows") => UpdateRow(sql, values),
+        var s when s.StartsWith("SELECT id FROM categories") => Categories.TryGetValue(Text(values, "name"), out var id) ? Result([PostgresValue.FromLong(id)]) : Result(),
+        var s when s.StartsWith("INSERT INTO expenses") => CreateExpense(values),
+        var s when s.StartsWith("SELECT e.id") => ReadExpense(values),
+        _ => throw new InvalidOperationException($"Unsupported import transport statement: {sql}")
+    };
+
+    private PostgresResult ExecuteSnapshot(string sql, Dictionary<string, PostgresValue> values)
+    {
+        if (sql.StartsWith("SELECT current_snapshot_id"))
+            return Heads.TryGetValue(Text(values, "source"), out var head) ? Result([PostgresValue.FromString(head)]) : Result();
+        if (sql.StartsWith("SELECT CAST(reconciliation"))
+            return _plans.TryGetValue(Text(values, "snapshot"), out var plan) ? Result([PostgresValue.FromString(plan)]) : Result();
+        if (sql.StartsWith("INSERT INTO expense_import_sources")) Heads[Text(values, "source")] = Text(values, "snapshot");
+        else _plans.TryAdd(Text(values, "snapshot"), Text(values, "reconciliation"));
+        return Result();
+    }
+
+    private PostgresResult ArchiveRows(Dictionary<string, PostgresValue> values)
+    {
+        using var document = JsonDocument.Parse(Text(values, "rows"));
+        foreach (var row in document.RootElement.EnumerateArray())
+            _rows.TryAdd($"{Text(values, "snapshot")}:{row.GetProperty("source_row").GetInt32()}",
+                new(row.GetProperty("raw_json").GetRawText(), row.GetProperty("classification").GetString()!));
+        return Result();
+    }
+
+    private PostgresResult ReadRow(Dictionary<string, PostgresValue> values)
+    {
+        var row = _rows[RowKey(values)];
+        return Result([PostgresValue.FromString(row.Raw), OptionalId(row.ExpenseId), OptionalText(row.Exclusion)]);
+    }
+
+    private PostgresResult ReadPrevious(Dictionary<string, PostgresValue> values) =>
+        Result(_rows.Where(r => r.Key.StartsWith($"{Text(values, "snapshot")}:") && r.Value.Classification is not ("Blank" or "NonExpense")
+            && SourceRow(r.Key) > values["cursor"].LongValue).OrderBy(r => SourceRow(r.Key)).Take(100)
+            .Select(r => (IReadOnlyList<PostgresValue>)new[] { PostgresValue.FromLong(SourceRow(r.Key)),
+                PostgresValue.FromString(r.Value.Raw), OptionalId(r.Value.ExpenseId), OptionalText(r.Value.Exclusion) }).ToArray());
+
+    private PostgresResult UpdateRow(string sql, Dictionary<string, PostgresValue> values)
+    {
+        var key = RowKey(values);
+        if (sql.StartsWith("UPDATE expense_import_rows SET exclusion"))
+        { _rows[key] = _rows[key] with { Exclusion = Text(values, "exclusion") }; return Result(); }
+        if (_rows.Any(r => r.Key.StartsWith($"{Text(values, "snapshot")}:") && r.Key != key && r.Value.ExpenseId == Number(values, "expense")))
+            throw new InvalidOperationException("Unique snapshot expense violated.");
+        _rows[key] = _rows[key] with { ExpenseId = Number(values, "expense") };
+        return Result();
+    }
+
+    private PostgresResult CreateExpense(Dictionary<string, PostgresValue> values)
+    {
+        if (Text(values, "description") == FailDescription) throw new InvalidOperationException("Simulated interrupted row write.");
+        var id = ++_sequence;
+        _expenses[id] = [PostgresValue.FromLong(id), values["booking_date"], values["amount"], values["description"],
+            PostgresValue.FromString(Categories.Single(c => c.Value == values["category_id"].LongValue).Key), values["creator_email"],
+            PostgresValue.FromString("2026-10-11T12:00:00Z"), PostgresValue.Null()];
+        return Result([PostgresValue.FromLong(id)]);
+    }
+
+    private PostgresResult ReadExpense(Dictionary<string, PostgresValue> values)
+    {
+        var row = _expenses[Number(values, "expense")].ToArray();
+        if (CorruptAmount) row[2] = PostgresValue.FromString("999");
+        return Result(row);
+    }
+
+    private static PostgresResult Result(params IReadOnlyList<PostgresValue>[] rows) => new([], rows, 0);
+    private static string Text(Dictionary<string, PostgresValue> values, string key) => values[key].StringValue!;
+    private static int Number(Dictionary<string, PostgresValue> values, string key) => checked((int)values[key].LongValue!);
+    private static string RowKey(Dictionary<string, PostgresValue> values) => $"{Text(values, "snapshot")}:{Number(values, "row")}";
+    private static int SourceRow(string key) => int.Parse(key.Split(':').Last());
+    private static PostgresValue OptionalId(int? id) => id is { } value ? PostgresValue.FromLong(value) : PostgresValue.Null();
+    private static PostgresValue OptionalText(string? text) => text is { } value ? PostgresValue.FromString(value) : PostgresValue.Null();
 
     public Task<string> BeginTransactionAsync(CancellationToken cancellationToken = default)
     {

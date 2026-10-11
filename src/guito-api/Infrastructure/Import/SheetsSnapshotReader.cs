@@ -2,12 +2,11 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Google.Apis.Sheets.v4;
 using GuitoApi.Infrastructure.Sheets;
-using GuitoApi.Model;
 namespace GuitoApi.Infrastructure.Import;
 
 public sealed class SheetsSnapshotReader(IGooglesheetsClientProvider provider)
 {
-    public async Task<HistoricalExpenseSnapshot> CaptureAsync(string spreadsheetId, string tab, int firstRow,
+    public async Task<FrozenSheetsSnapshot> CaptureAsync(string spreadsheetId, string tab, int firstRow,
         int lastRow, string currency = "EUR", string decimalSeparator = ".", string dateFormat = "yyyy-MM-dd", CancellationToken cancellationToken = default)
     {
         if (firstRow < 1 || lastRow < firstRow || lastRow - firstRow > 100000 || !Regex.IsMatch(tab, @"^[A-Za-z0-9 _-]+$"))

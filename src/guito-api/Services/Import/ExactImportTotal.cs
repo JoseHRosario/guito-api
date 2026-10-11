@@ -15,7 +15,7 @@ internal static class ExactImportTotal
             total += ((bits[3] & int.MinValue) == 0 ? coefficient : -coefficient) * BigInteger.Pow(10, 28 - scale);
         }
         var digits = BigInteger.Abs(total).ToString(CultureInfo.InvariantCulture).PadLeft(29, '0');
-        var text = (total.Sign < 0 ? "-" : "") + digits[..^28] + "." + digits[^28..];
+        var text = $"{(total.Sign < 0 ? "-" : "")}{digits[..^28]}.{digits[^28..]}";
         return text.TrimEnd('0').TrimEnd('.');
     }
 }

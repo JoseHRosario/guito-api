@@ -1,5 +1,22 @@
 name: historical-import-rehearsal
 on:
+  workflow_call:
+    inputs:
+      last_row:
+        required: true
+        type: string
+      decimal_separator:
+        required: true
+        type: string
+      date_format:
+        required: true
+        type: string
+      retry_run_id:
+        type: string
+        default: ''
+      approval_file:
+        type: string
+        default: ''
   workflow_dispatch:
     inputs:
       last_row:
@@ -29,7 +46,10 @@ permissions:
   id-token: write
   actions: read
 concurrency:
-  group: ci-cd-staging
+  # The registered ci-cd caller already owns ci-cd-staging for the entire run.
+  # A distinct child lane avoids waiting on its own parent; standalone dispatch
+  # still shares the deployment lane. github.workflow is the caller workflow name.
+  group: ${{ github.workflow == 'ci-cd' && format('historical-import-child-{0}', github.run_id) || 'ci-cd-staging' }}
   cancel-in-progress: false
 jobs:
   rehearse:

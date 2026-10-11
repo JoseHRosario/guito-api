@@ -21,6 +21,30 @@ on:
         type: choice
         options: [staging, production]
         default: staging
+      rehearse_history:
+        description: 'Opt-in staging historical import after deployment (never on push)'
+        type: boolean
+        default: false
+      last_row:
+        description: 'Operator-verified final source grid row; required for rehearsal'
+        type: string
+        default: ''
+      decimal_separator:
+        description: 'Operator-verified source decimal separator (. or ,)'
+        type: string
+        default: ''
+      date_format:
+        description: 'Operator-verified source date format'
+        type: string
+        default: ''
+      retry_run_id:
+        description: 'Prior run ID whose protected frozen archive must be reused'
+        type: string
+        default: ''
+      approval_file:
+        description: 'Reviewed repo-relative snapshot-scoped approval manifest'
+        type: string
+        default: ''
 
 permissions:
   id-token: write   # OIDC federation with AWS (guito-api-deploy role)
@@ -38,12 +62,26 @@ jobs:
     permissions:
       contents: read   # never touches AWS — no id-token here
     steps:
+      - name: Validate manual rehearsal request
+        if: github.event_name == 'workflow_dispatch' && inputs.rehearse_history
+        env:
+          TARGET: ${{ inputs.environment }}
+          LAST_ROW: ${{ inputs.last_row }}
+          DECIMAL_SEPARATOR: ${{ inputs.decimal_separator }}
+          DATE_FORMAT: ${{ inputs.date_format }}
+        run: |
+          test "$TARGET" = staging
+          [[ "$LAST_ROW" =~ ^[1-9][0-9]*$ ]]
+          case "$DECIMAL_SEPARATOR" in '.'|',') ;; *) exit 1 ;; esac
+          case "$DATE_FORMAT" in yyyy-MM-dd|dd/MM/yyyy|d/M/yyyy|MM/dd/yyyy) ;; *) exit 1 ;; esac
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
       - name: Run hermetic IAM reconciliation tests
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_reconcile_iam.py' -v
+      - name: Run hermetic import workflow safety tests
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_import_workflow.py' -v
       - name: Run unit tests (no Integration category — those run post-deploy)
         run: dotnet test --filter "Category!=Integration"
 
@@ -69,6 +107,22 @@ jobs:
         run: ENV=staging EXPENSE_STORE=Postgres ./deploy/deploy.sh
       - name: Smoke — auth contract (Google token + agent key) and business round-trip
         run: ./scripts/run-deployed-tests.sh staging
+
+  historical-import:
+    name: opt-in frozen history rehearsal (staging only)
+    needs: deploy-staging
+    if: github.event_name == 'workflow_dispatch' && inputs.environment == 'staging' && inputs.rehearse_history
+    permissions:
+      contents: read
+      id-token: write
+      actions: read
+    uses: ./.github/workflows/historical-import-rehearsal.yml
+    with:
+      last_row: ${{ inputs.last_row }}
+      decimal_separator: ${{ inputs.decimal_separator }}
+      date_format: ${{ inputs.date_format }}
+      retry_run_id: ${{ inputs.retry_run_id }}
+      approval_file: ${{ inputs.approval_file }}
 
   deploy-production:
     name: deploy + smoke (production)

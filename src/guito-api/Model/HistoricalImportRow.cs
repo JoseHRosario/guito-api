@@ -1,6 +1,8 @@
 namespace GuitoApi.Model;
 
-public sealed class HistoricalImportRow
+// Row-level import evidence: Expected is typed application data; read-back fields
+// stay exact text for protected parity reports, not HTTP or database transport.
+public sealed record HistoricalImportRow
 {
     public int SourceRow { get; init; }
     public string RawJson { get; init; } = "";

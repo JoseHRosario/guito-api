@@ -7,6 +7,43 @@ namespace GuitoApi.Tests;
 
 public class HistoricalExpenseImportTests
 {
+    [Theory]
+    [InlineData(0, 5)]
+    [InlineData(5, 4)]
+    [InlineData(5, 6)]
+    public async Task ImportAsync_ShouldRejectIncompleteBounds_WhenApplicationSnapshotDoesNotCoverItsRange(int firstRow, int lastRow)
+    {
+        // Arrange
+        var handler = new FakeSheetsHttpHandler { LatestValuesJson = "[]" };
+        var database = new ImportDatabaseTransport();
+        var snapshot = (await ImportHarness.CaptureAsync(handler, 5, 5)).ToDomain() with { FirstRow = firstRow, LastRow = lastRow };
+
+        // Act
+        await Assert.ThrowsAsync<ArgumentException>(() => ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = snapshot }));
+
+        // Assert
+        Assert.Empty(database.Heads);
+        Assert.Equal(0, database.ExpenseCount);
+    }
+
+    [Fact]
+    public async Task ImportAsync_ShouldKeepSourceClassificationUnchanged_WhenReportRowsAreUpdated()
+    {
+        // Arrange
+        var handler = new FakeSheetsHttpHandler { LatestValuesJson = """[["2026-07-10","","","1.23","Coffee","Restaurants","creator@example.com"]]""" };
+        var database = new ImportDatabaseTransport();
+        var snapshot = (await ImportHarness.CaptureAsync(handler, 5, 5)).ToDomain();
+
+        // Act
+        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = snapshot });
+
+        // Assert
+        Assert.True(report.ReadyForCutover);
+        Assert.Equal("Imported", Assert.Single(report.Rows).Status);
+        Assert.Equal("Pending", Assert.Single(snapshot.Rows).Status);
+        Assert.Null(snapshot.Rows[0].ExpenseId);
+    }
+
     [Fact]
     public async Task ImportAsync_ShouldAccountForCompleteHistory_WhenBlankRowsAndDuplicatesExist()
     {
@@ -16,24 +53,10 @@ public class HistoricalExpenseImportTests
         var importer = ImportHarness.Create(handler, database);
 
         // Act
-        var report = await importer.ImportAsync(new HistoricalImportRequest { Snapshot = await ImportHarness.CaptureAsync(handler, 5, 7) });
+        var report = await importer.ImportAsync(new HistoricalImportRequest { Snapshot = (await ImportHarness.CaptureAsync(handler, 5, 7)).ToDomain() });
 
         // Assert
-        Assert.True(report.ReadyForCutover);
-        Assert.Equal(3, report.Rows.Count);
-        Assert.Equal(2, report.ImportedCount);
-        Assert.Equal("2.46", report.ImportedTotal);
-        Assert.Equal(2, report.Rows.Where(r => r.ExpenseId != null).Select(r => r.ExpenseId).Distinct().Count());
-        Assert.Equal("Blank", report.Rows[1].Status);
-        Assert.All(report.Rows.Where(r => r.ExpenseId != null), row =>
-        {
-            Assert.Equal("2026-07-10T00:00:00+01:00", row.BookingDate);
-            Assert.Equal("original@example.com", row.CreatorEmail);
-            Assert.Null(row.UpdateDate);
-            Assert.NotNull(row.CreationDate);
-        });
-        Assert.Equal(Enumerable.Repeat("Expenses!B5:H7", 4), handler.ReadRanges);
-        Assert.Empty(handler.AppendBodies);
+        AssertCompleteHistory(report, handler);
     }
     [Fact]
     public async Task ImportAsync_ShouldBlockReadiness_WhenPreviouslyMalformedRowDisappearsWithoutResolution()
@@ -42,12 +65,12 @@ public class HistoricalExpenseImportTests
         var handler = new FakeSheetsHttpHandler { LatestValuesJson = """[["bad","","","1.23","Coffee","Restaurants","original@example.com"]]""" };
         var database = new ImportDatabaseTransport();
         var importer = ImportHarness.Create(handler, database);
-        var initial = await importer.ImportAsync(new HistoricalImportRequest { Snapshot = await ImportHarness.CaptureAsync(handler, 5, 5) });
+        var initial = await importer.ImportAsync(new HistoricalImportRequest { Snapshot = (await ImportHarness.CaptureAsync(handler, 5, 5)).ToDomain() });
         handler.LatestValuesJson = "[]";
         var changed = await ImportHarness.CaptureAsync(handler, 5, 5);
 
         // Act
-        var report = await importer.ImportAsync(new HistoricalImportRequest { Snapshot = changed,
+        var report = await importer.ImportAsync(new HistoricalImportRequest { Snapshot = changed.ToDomain(),
             Reconciliation = new ImportReconciliation { PreviousSnapshotId = initial.SnapshotId, ApprovedBy = "José", Reason = "Review" } });
 
         // Assert
@@ -62,11 +85,11 @@ public class HistoricalExpenseImportTests
         var handler = new FakeSheetsHttpHandler { LatestValuesJson = """[["bad","","","1.23","Coffee","Restaurants","original@example.com"]]""" };
         var database = new ImportDatabaseTransport();
         var snapshot = await ImportHarness.CaptureAsync(handler, 5, 5);
-        var request = new HistoricalImportRequest { Snapshot = snapshot, Exclusions = new() { [5] = new("José", "Not an expense; reviewed original row") } };
+        var request = new HistoricalImportRequest { Snapshot = snapshot.ToDomain(), Exclusions = new() { [5] = new("José", "Not an expense; reviewed original row") } };
 
         // Act
         await ImportHarness.Create(handler, database).ImportAsync(request);
-        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = snapshot });
+        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = snapshot.ToDomain() });
 
         // Assert
         Assert.True(report.ReadyForCutover);
@@ -89,19 +112,10 @@ public class HistoricalExpenseImportTests
         var database = new ImportDatabaseTransport();
 
         // Act
-        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = await ImportHarness.CaptureAsync(handler, 5, 5) });
+        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = (await ImportHarness.CaptureAsync(handler, 5, 5)).ToDomain() });
 
         // Assert
-        Assert.True(report.ReadyForCutover);
-        var row = Assert.Single(report.Rows);
-        Assert.Equal(expected, row.Amount);
-        Assert.Equal(expected, report.SourceTotal);
-        Assert.Equal(expected, report.ImportedTotal);
-        Assert.Equal("  ORIGINAL merchant  ", row.Description);
-        Assert.Equal("Original@Example.com", row.CreatorEmail);
-        Assert.Equal("Restaurants", row.Category);
-        Assert.Equal("2026-01-10T00:00:00+00:00", row.BookingDate);
-        Assert.StartsWith("2026-10-11", row.CreationDate);
+        AssertExactFinancialValues(report, expected);
     }
 
     [Theory]
@@ -121,7 +135,7 @@ public class HistoricalExpenseImportTests
         var database = new ImportDatabaseTransport();
 
         // Act
-        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = await ImportHarness.CaptureAsync(handler, 5, 5) });
+        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = (await ImportHarness.CaptureAsync(handler, 5, 5)).ToDomain() });
 
         // Assert
         Assert.False(report.ReadyForCutover);
@@ -139,7 +153,7 @@ public class HistoricalExpenseImportTests
         var database = new ImportDatabaseTransport();
 
         // Act
-        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = await ImportHarness.CaptureAsync(handler, 5, 10) });
+        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = (await ImportHarness.CaptureAsync(handler, 5, 10)).ToDomain() });
 
         // Assert
         Assert.True(report.ReadyForCutover);
@@ -155,25 +169,15 @@ public class HistoricalExpenseImportTests
         var handler = new FakeSheetsHttpHandler { LatestValuesJson = """[["2026-07-10","","","1.23","First","Restaurants","creator@example.com"],["2026-07-10","","","4.56","Fail","Restaurants","creator@example.com"],["2026-07-10","","","1.23","First","Restaurants","creator@example.com"]]""" };
         var database = new ImportDatabaseTransport { FailDescription = "Fail" };
         var snapshot = await ImportHarness.CaptureAsync(handler, 5, 7);
-        var first = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = snapshot });
+        var first = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = snapshot.ToDomain() });
         database.FailDescription = null;
 
         // Act
-        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = snapshot });
-        var repeated = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = snapshot });
+        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = snapshot.ToDomain() });
+        var repeated = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = snapshot.ToDomain() });
 
         // Assert
-        Assert.False(first.ReadyForCutover);
-        Assert.Equal(2, first.ImportedCount);
-        Assert.Equal("Failed", first.Rows[1].Status);
-        Assert.True(report.ReadyForCutover);
-        Assert.True(repeated.ReadyForCutover);
-        Assert.Equal(3, database.ExpenseCount);
-        Assert.Equal("7.02", report.ImportedTotal);
-        Assert.Equal(first.Rows[0].ExpenseId, report.Rows[0].ExpenseId);
-        Assert.Equal(first.Rows[2].ExpenseId, report.Rows[2].ExpenseId);
-        Assert.Equal(report.Rows.Select(r => r.ExpenseId), repeated.Rows.Select(r => r.ExpenseId));
-        Assert.True(database.Rollbacks > 0);
+        AssertResumedHistory(first, report, repeated, database);
     }
 
     [Fact]
@@ -183,10 +187,10 @@ public class HistoricalExpenseImportTests
         var handler = new FakeSheetsHttpHandler { LatestValuesJson = """[["2026-07-10","","","1.23","Coffee","Restaurants","creator@example.com"]]""" };
         var database = new ImportDatabaseTransport { LoseCommitAcknowledgement = true };
         var snapshot = await ImportHarness.CaptureAsync(handler, 5, 5);
-        var first = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = snapshot });
+        var first = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = snapshot.ToDomain() });
 
         // Act
-        var repeated = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = snapshot });
+        var repeated = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = snapshot.ToDomain() });
 
         // Assert
         Assert.False(first.ReadyForCutover);
@@ -201,11 +205,11 @@ public class HistoricalExpenseImportTests
         // Arrange
         var handler = new FakeSheetsHttpHandler { LatestValuesJson = """[["2026-07-10","","","1.23","Coffee","Restaurants","creator@example.com"]]""" };
         var database = new ImportDatabaseTransport();
-        var first = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = await ImportHarness.CaptureAsync(handler, 5, 5) });
+        var first = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = (await ImportHarness.CaptureAsync(handler, 5, 5)).ToDomain() });
         handler.LatestValuesJson = handler.LatestValuesJson.Replace("1.23", "2.34");
 
         // Act
-        var changed = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = await ImportHarness.CaptureAsync(handler, 5, 5) });
+        var changed = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = (await ImportHarness.CaptureAsync(handler, 5, 5)).ToDomain() });
 
         // Assert
         Assert.False(changed.ReadyForCutover);
@@ -220,9 +224,9 @@ public class HistoricalExpenseImportTests
         // Arrange
         var handler = new FakeSheetsHttpHandler { LatestValuesJson = """[["2026-07-10","","","1.23","Coffee","Restaurants","creator@example.com"]]""" };
         var database = new ImportDatabaseTransport();
-        var initial = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = await ImportHarness.CaptureAsync(handler, 5, 5) });
+        var initial = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = (await ImportHarness.CaptureAsync(handler, 5, 5)).ToDomain() });
         handler.LatestValuesJson = """[[],["2026-07-10","","","1.23","Coffee","Restaurants","creator@example.com"],["2026-07-10","","","1.23","Coffee","Restaurants","creator@example.com"]]""";
-        var request = new HistoricalImportRequest { Snapshot = await ImportHarness.CaptureAsync(handler, 5, 7), Reconciliation = new ImportReconciliation
+        var request = new HistoricalImportRequest { Snapshot = (await ImportHarness.CaptureAsync(handler, 5, 7)).ToDomain(), Reconciliation = new ImportReconciliation
             { PreviousSnapshotId = initial.SnapshotId, ApprovedBy = "José", Reason = "Row moved, second is a new purchase", ReuseRows = new() { [6] = 5 }, NewRows = [7] } };
 
         // Act
@@ -230,11 +234,7 @@ public class HistoricalExpenseImportTests
         var repeated = await ImportHarness.Create(handler, database).ImportAsync(request);
 
         // Assert
-        Assert.True(report.ReadyForCutover);
-        Assert.True(repeated.ReadyForCutover);
-        Assert.Equal(initial.Rows[0].ExpenseId, report.Rows[1].ExpenseId);
-        Assert.NotEqual(report.Rows[1].ExpenseId, report.Rows[2].ExpenseId);
-        Assert.Equal(2, database.ExpenseCount);
+        AssertReconciledDuplicate(initial, report, repeated, database);
     }
 
     [Fact]
@@ -245,7 +245,7 @@ public class HistoricalExpenseImportTests
         var database = new ImportDatabaseTransport { CorruptAmount = true };
 
         // Act
-        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = await ImportHarness.CaptureAsync(handler, 5, 5) });
+        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = (await ImportHarness.CaptureAsync(handler, 5, 5)).ToDomain() });
 
         // Assert
         Assert.False(report.ReadyForCutover);
@@ -260,11 +260,11 @@ public class HistoricalExpenseImportTests
         // Arrange
         var handler = new FakeSheetsHttpHandler { LatestValuesJson = """[["2026-07-10","","","1.23","Coffee","Restaurants","creator@example.com"]]""" };
         var database = new ImportDatabaseTransport();
-        var first = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = await ImportHarness.CaptureAsync(handler, 5, 5) });
+        var first = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = (await ImportHarness.CaptureAsync(handler, 5, 5)).ToDomain() });
         handler.LatestValuesJson = "[]";
 
         // Act
-        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = await ImportHarness.CaptureAsync(handler, 5, 5),
+        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = (await ImportHarness.CaptureAsync(handler, 5, 5)).ToDomain(),
             Reconciliation = new ImportReconciliation { PreviousSnapshotId = first.SnapshotId, ApprovedBy = "José", Reason = "Investigate removed row", RetainPreviousRows = [5] } });
 
         // Assert
@@ -280,31 +280,10 @@ public class HistoricalExpenseImportTests
         var handler = new FakeSheetsHttpHandler { LatestValuesJson = System.Text.Json.JsonSerializer.Serialize(source) };
         var database = new ImportDatabaseTransport();
         var original = await ImportHarness.CaptureAsync(handler, 5, 129);
-        var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-        try
-        {
-            var path = await SnapshotArchive.SaveAsync(directory, original);
-            var loaded = await SnapshotArchive.LoadAsync(path);
-            var first = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = loaded });
-            handler.LatestValuesJson = System.Text.Json.JsonSerializer.Serialize(new[] { Array.Empty<string>() }.Concat(source));
-            var changed = await ImportHarness.CaptureAsync(handler, 5, 130);
 
-            // Act
-            var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = changed,
-                Reconciliation = new ImportReconciliation { PreviousSnapshotId = first.SnapshotId, ApprovedBy = "José", Reason = "One blank row inserted",
-                    ReuseRows = Enumerable.Range(6, 125).ToDictionary(i => i, i => i - 1) } });
-
-            // Assert
-            Assert.True(first.ReadyForCutover);
-            Assert.True(report.ReadyForCutover);
-            Assert.Equal(125, report.ImportedCount);
-            Assert.Equal("153.75", report.ImportedTotal);
-            Assert.Equal(first.Rows.Select(r => r.ExpenseId), report.Rows.Skip(1).Select(r => r.ExpenseId));
-            Assert.Equal(125, database.ExpenseCount);
-            Assert.Equal(SnapshotArchive.Identity(original), SnapshotArchive.Identity(loaded));
-            Assert.Equal(path, await SnapshotArchive.SaveAsync(directory, original with { CapturedAt = original.CapturedAt.AddDays(1) }));
-        }
-        finally { Directory.Delete(directory, true); }
+        // Act / Assert: the archive fixture owns cleanup even when parity fails.
+        await ImportHarness.WithArchiveAsync(original, async (path, loaded) =>
+            await AssertPagedArchiveAsync(source, handler, database, original, path, loaded));
     }
 
     [Fact]
@@ -315,7 +294,7 @@ public class HistoricalExpenseImportTests
         var database = new ImportDatabaseTransport();
 
         // Act
-        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = await ImportHarness.CaptureAsync(handler, 5, 5) });
+        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = (await ImportHarness.CaptureAsync(handler, 5, 5)).ToDomain() });
 
         // Assert
         Assert.False(report.ReadyForCutover);
@@ -333,7 +312,7 @@ public class HistoricalExpenseImportTests
         var database = new ImportDatabaseTransport();
 
         // Act
-        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = await ImportHarness.CaptureAsync(handler, 5, 5, ",") });
+        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = (await ImportHarness.CaptureAsync(handler, 5, 5, ",")).ToDomain() });
 
         // Assert
         Assert.True(report.ReadyForCutover);
@@ -349,7 +328,7 @@ public class HistoricalExpenseImportTests
         var database = new ImportDatabaseTransport();
 
         // Act
-        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = await ImportHarness.CaptureAsync(handler, 5, 5) });
+        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = (await ImportHarness.CaptureAsync(handler, 5, 5)).ToDomain() });
 
         // Assert
         Assert.True(report.ReadyForCutover);
@@ -367,7 +346,7 @@ public class HistoricalExpenseImportTests
         var snapshot = await ImportHarness.CaptureAsync(handler, 5, 5);
 
         // Act
-        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = snapshot with { DateFormat = "dd/MM/yyyy" } });
+        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = (snapshot with { DateFormat = "dd/MM/yyyy" }).ToDomain() });
 
         // Assert
         Assert.True(report.ReadyForCutover);
@@ -381,7 +360,7 @@ public class HistoricalExpenseImportTests
         var database = new ImportDatabaseTransport();
 
         // Act
-        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = await ImportHarness.CaptureAsync(handler, 5, 6) });
+        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = (await ImportHarness.CaptureAsync(handler, 5, 6)).ToDomain() });
 
         // Assert
         Assert.True(report.ReadyForCutover);
@@ -398,14 +377,14 @@ public class HistoricalExpenseImportTests
         // Arrange
         var handler = new FakeSheetsHttpHandler { LatestValuesJson = """[["2026-07-10","","","1.23","Coffee","Restaurants","creator@example.com"]]""" };
         var database = new ImportDatabaseTransport();
-        var first = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = await ImportHarness.CaptureAsync(handler, 5, 5) });
+        var first = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = (await ImportHarness.CaptureAsync(handler, 5, 5)).ToDomain() });
         handler.LatestValuesJson = changedValue
             ? """[["2026-07-10","","","2.34","Coffee","Restaurants","creator@example.com"],[]]"""
             : """[["2026-07-10","","","1.23","Coffee","Restaurants","creator@example.com"],["2026-07-10","","","1.23","Coffee","Restaurants","creator@example.com"]]""";
         var plan = new ImportReconciliation { PreviousSnapshotId = first.SnapshotId, ApprovedBy = "José", Reason = "Review", ReuseRows = changedValue ? new() { [5] = 5 } : new() { [5] = 5, [6] = 5 } };
 
         // Act
-        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = await ImportHarness.CaptureAsync(handler, 5, 6), Reconciliation = plan });
+        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = (await ImportHarness.CaptureAsync(handler, 5, 6)).ToDomain(), Reconciliation = plan });
 
         // Assert
         Assert.False(report.ReadyForCutover);
@@ -423,12 +402,100 @@ public class HistoricalExpenseImportTests
         var database = new ImportDatabaseTransport();
 
         // Act
-        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = await ImportHarness.CaptureAsync(handler, 5, 5), Exclusions = new() { [5] = new(approver, reason) } });
+        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = (await ImportHarness.CaptureAsync(handler, 5, 5)).ToDomain(), Exclusions = new() { [5] = new(approver, reason) } });
 
         // Assert
         Assert.False(report.ReadyForCutover);
         Assert.Equal(0, report.ExcludedCount);
         Assert.NotEmpty(report.Exceptions);
         Assert.Equal(0, database.ExpenseCount);
+    }
+
+    private static void AssertCompleteHistory(HistoricalImportReport report, FakeSheetsHttpHandler handler)
+    {
+        Assert.True(report.ReadyForCutover);
+        Assert.Equal(3, report.Rows.Count);
+        Assert.Equal(2, report.ImportedCount);
+        Assert.Equal("2.46", report.ImportedTotal);
+        Assert.Equal(2, report.Rows.Where(r => r.ExpenseId != null).Select(r => r.ExpenseId).Distinct().Count());
+        Assert.Equal("Blank", report.Rows[1].Status);
+        Assert.All(report.Rows.Where(r => r.ExpenseId != null), AssertOriginalAudit);
+        Assert.Equal(Enumerable.Repeat("Expenses!B5:H7", 4), handler.ReadRanges);
+        Assert.Empty(handler.AppendBodies);
+    }
+
+    private static void AssertExactFinancialValues(HistoricalImportReport report, string expected)
+    {
+        Assert.True(report.ReadyForCutover);
+        var row = Assert.Single(report.Rows);
+        Assert.Equal(expected, row.Amount);
+        Assert.Equal(expected, report.SourceTotal);
+        Assert.Equal(expected, report.ImportedTotal);
+        Assert.Equal("  ORIGINAL merchant  ", row.Description);
+        Assert.Equal("Original@Example.com", row.CreatorEmail);
+        Assert.Equal("Restaurants", row.Category);
+        Assert.Equal("2026-01-10T00:00:00+00:00", row.BookingDate);
+        Assert.StartsWith("2026-10-11", row.CreationDate);
+    }
+
+    private static void AssertResumedHistory(HistoricalImportReport first, HistoricalImportReport report, HistoricalImportReport repeated, ImportDatabaseTransport database)
+    {
+        Assert.False(first.ReadyForCutover);
+        Assert.Equal(2, first.ImportedCount);
+        Assert.Equal("Failed", first.Rows[1].Status);
+        Assert.True(report.ReadyForCutover);
+        Assert.True(repeated.ReadyForCutover);
+        Assert.Equal(3, database.ExpenseCount);
+        Assert.Equal("7.02", report.ImportedTotal);
+        Assert.Equal(first.Rows[0].ExpenseId, report.Rows[0].ExpenseId);
+        Assert.Equal(first.Rows[2].ExpenseId, report.Rows[2].ExpenseId);
+        Assert.Equal(report.Rows.Select(r => r.ExpenseId), repeated.Rows.Select(r => r.ExpenseId));
+        Assert.True(database.Rollbacks > 0);
+    }
+
+    private static void AssertReconciledDuplicate(HistoricalImportReport initial, HistoricalImportReport report, HistoricalImportReport repeated, ImportDatabaseTransport database)
+    {
+        Assert.True(report.ReadyForCutover);
+        Assert.True(repeated.ReadyForCutover);
+        Assert.Equal(initial.Rows[0].ExpenseId, report.Rows[1].ExpenseId);
+        Assert.NotEqual(report.Rows[1].ExpenseId, report.Rows[2].ExpenseId);
+        Assert.Equal(2, database.ExpenseCount);
+    }
+
+    private static void AssertOriginalAudit(HistoricalImportRow row)
+    {
+        Assert.Equal("2026-07-10T00:00:00+01:00", row.BookingDate);
+        Assert.Equal("original@example.com", row.CreatorEmail);
+        Assert.Null(row.UpdateDate);
+        Assert.NotNull(row.CreationDate);
+    }
+
+    private static async Task AssertPagedArchiveAsync(string[][] source, FakeSheetsHttpHandler handler, ImportDatabaseTransport database,
+        FrozenSheetsSnapshot original, string path, FrozenSheetsSnapshot loaded)
+    {
+        // Arrange
+        var first = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = loaded.ToDomain() });
+        handler.LatestValuesJson = System.Text.Json.JsonSerializer.Serialize(new[] { Array.Empty<string>() }.Concat(source));
+        var changed = await ImportHarness.CaptureAsync(handler, 5, 130);
+
+        // Act
+        var report = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = changed.ToDomain(),
+            Reconciliation = new ImportReconciliation { PreviousSnapshotId = first.SnapshotId, ApprovedBy = "José", Reason = "One blank row inserted",
+                ReuseRows = Enumerable.Range(6, 125).ToDictionary(i => i, i => i - 1) } });
+
+        // Assert
+        AssertPagedParity(first, report, database);
+        Assert.Equal(SnapshotArchive.Identity(original), SnapshotArchive.Identity(loaded));
+        Assert.Equal(path, await SnapshotArchive.SaveAsync(Path.GetDirectoryName(path)!, original with { CapturedAt = original.CapturedAt.AddDays(1) }));
+    }
+
+    private static void AssertPagedParity(HistoricalImportReport first, HistoricalImportReport report, ImportDatabaseTransport database)
+    {
+        Assert.True(first.ReadyForCutover);
+        Assert.True(report.ReadyForCutover);
+        Assert.Equal(125, report.ImportedCount);
+        Assert.Equal("153.75", report.ImportedTotal);
+        Assert.Equal(first.Rows.Select(r => r.ExpenseId), report.Rows.Skip(1).Select(r => r.ExpenseId));
+        Assert.Equal(125, database.ExpenseCount);
     }
 }

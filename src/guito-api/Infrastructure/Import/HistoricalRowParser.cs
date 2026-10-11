@@ -10,7 +10,7 @@ public static class HistoricalRowParser
 {
     private static readonly JsonSerializerOptions DecimalOptions = new() { Converters = { new ExactDecimalJsonConverter() } };
 
-    public static HistoricalImportRow Parse(HistoricalExpenseSnapshot snapshot, int offset)
+    public static HistoricalImportRow Parse(FrozenSheetsSnapshot snapshot, int offset)
     {
         var raw = snapshot.Rows[offset];
         var unformatted = snapshot.UnformattedRows?[offset] ?? raw;
@@ -21,7 +21,7 @@ public static class HistoricalRowParser
         { row.Status = "Malformed"; row.Exception = exception.Message; return row; }
     }
 
-    private static HistoricalImportRow ParseExpense(HistoricalExpenseSnapshot snapshot, JsonElement raw, HistoricalImportRow row)
+    private static HistoricalImportRow ParseExpense(FrozenSheetsSnapshot snapshot, JsonElement raw, HistoricalImportRow row)
     {
         if (raw.ValueKind != JsonValueKind.Array || raw.GetArrayLength() > 7) throw new FormatException("Expected frozen B:H row layout.");
         var cells = raw.EnumerateArray().Select(CellText).ToArray();
@@ -31,6 +31,11 @@ public static class HistoricalRowParser
         // Only formula-only Year/Month rows are non-expenses. Any business cell is relevant.
         if (new[] { 0, 3, 4, 5, 6 }.All(i => string.IsNullOrWhiteSpace(Cell(cells, i))))
         { row.Status = "NonExpense"; return row; }
+        return ParseRelevantExpense(snapshot, row, cells, effective);
+    }
+
+    private static HistoricalImportRow ParseRelevantExpense(FrozenSheetsSnapshot snapshot, HistoricalImportRow row, string[] cells, JsonElement effective)
+    {
         if (snapshot.Currency != "EUR") throw new FormatException("Source convention must explicitly be EUR.");
         if (snapshot.DateFormat is not ("yyyy-MM-dd" or "dd/MM/yyyy" or "d/M/yyyy" or "MM/dd/yyyy"))
             throw new FormatException("Unsupported explicit source date convention.");

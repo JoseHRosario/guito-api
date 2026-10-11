@@ -46,7 +46,7 @@ internal static class ImportCommand
     private static async Task<int> ValidateAsync(string[] args)
     {
         var snapshot = await LoadVerifiedAsync(args[1]);
-        var rows = Enumerable.Range(0, snapshot.Rows.Count).Select(i => HistoricalRowParser.Parse(snapshot, i)).ToList();
+        var rows = snapshot.ToDomain().Rows;
         await File.WriteAllTextAsync(args[2], JsonSerializer.Serialize(rows, ReportOptions));
         Console.WriteLine($"Validated {rows.Count} bounded rows; {rows.Count(r => r.Status == "Malformed")} malformed. No database access.");
         return rows.Any(r => r.Status == "Malformed") ? 2 : 0;
@@ -64,7 +64,7 @@ internal static class ImportCommand
         return await WriteImportReportAsync(args, snapshot);
     }
 
-    private static async Task<int> WriteImportReportAsync(string[] args, HistoricalExpenseSnapshot snapshot)
+    private static async Task<int> WriteImportReportAsync(string[] args, FrozenSheetsSnapshot snapshot)
     {
         var request = await ReadRequestAsync(args, snapshot);
         using var tokenClient = new AmazonSecurityTokenServiceClient(RegionEndpoint.EUWest1);
@@ -82,16 +82,16 @@ internal static class ImportCommand
         return report.ReadyForCutover ? 0 : 2;
     }
 
-    private static async Task<HistoricalImportRequest> ReadRequestAsync(string[] args, HistoricalExpenseSnapshot snapshot)
+    private static async Task<HistoricalImportRequest> ReadRequestAsync(string[] args, FrozenSheetsSnapshot snapshot)
     {
-        if (args.Length == 4) return new() { Snapshot = snapshot };
+        if (args.Length == 4) return new() { Snapshot = snapshot.ToDomain() };
         using var document = JsonDocument.Parse(await File.ReadAllTextAsync(args[4]));
         if (document.RootElement.GetProperty("SnapshotId").GetString() != SnapshotArchive.Identity(snapshot))
             throw new InvalidOperationException("Approval document must name this exact frozen snapshot.");
         var exclusions = document.RootElement.TryGetProperty("Exclusions", out var value)
             ? value.Deserialize<Dictionary<int, ImportExclusion>>()! : [];
         var reconciliation = document.RootElement.TryGetProperty("Reconciliation", out var plan) ? plan.Deserialize<ImportReconciliation>() : null;
-        return new() { Snapshot = snapshot, Exclusions = exclusions, Reconciliation = reconciliation };
+        return new() { Snapshot = snapshot.ToDomain(), Exclusions = exclusions, Reconciliation = reconciliation };
     }
 
     private static DatabaseOptions StagingDatabase()
@@ -111,12 +111,11 @@ internal static class ImportCommand
         return (sheets.GetProperty("SpreadsheetId").GetString()!, anchor[0], int.Parse(anchor[1][1..], CultureInfo.InvariantCulture));
     }
 
-    private static async Task<HistoricalExpenseSnapshot> LoadVerifiedAsync(string path)
+    private static async Task<FrozenSheetsSnapshot> LoadVerifiedAsync(string path)
     {
         var snapshot = await SnapshotArchive.LoadAsync(path);
-        if (Path.GetFileName(path) != SnapshotArchive.Identity(snapshot) + ".snapshot.json") throw new InvalidDataException("Archive filename/content hash mismatch.");
-        if (snapshot.FirstRow < 1 || snapshot.LastRow < snapshot.FirstRow || snapshot.Rows.Count != snapshot.LastRow - snapshot.FirstRow + 1 || snapshot.UnformattedRows?.Count != snapshot.Rows.Count)
-            throw new InvalidDataException("Snapshot does not account for its complete bounded range.");
+        if (Path.GetFileName(path) != $"{SnapshotArchive.Identity(snapshot)}.snapshot.json") throw new InvalidDataException("Archive filename/content hash mismatch.");
+        FrozenSnapshotMapper.Validate(snapshot);
         return snapshot;
     }
 

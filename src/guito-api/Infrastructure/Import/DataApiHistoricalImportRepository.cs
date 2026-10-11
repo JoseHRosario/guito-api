@@ -54,7 +54,7 @@ public sealed class DataApiHistoricalImportRepository(IPostgresDataApiClient cli
 
     private Task<PostgresResult> ArchiveRowsAsync(string id, HistoricalImportRow[] rows, CancellationToken cancellationToken)
     {
-        var data = JsonSerializer.Serialize(rows.Select(r => new { source_row = r.SourceRow, raw_json = JsonDocument.Parse(r.RawJson).RootElement, classification = r.Status }));
+        var data = JsonSerializer.Serialize(rows.Select(r => new { source_row = r.SourceRow, raw_json = ParseOwnedJson(r.RawJson), classification = r.Status }));
         return ExecuteAsync("INSERT INTO expense_import_rows (snapshot_id, source_row, raw_json, classification) SELECT :snapshot, source_row, raw_json, classification FROM jsonb_to_recordset(CAST(:rows AS jsonb)) AS r(source_row integer, raw_json jsonb, classification text) ON CONFLICT (snapshot_id, source_row) DO NOTHING",
             [Text("snapshot", id), Text("rows", data)], cancellationToken);
     }
@@ -172,7 +172,12 @@ public sealed class DataApiHistoricalImportRepository(IPostgresDataApiClient cli
     private static PostgresParameter Number(string name, long value) => new(name, PostgresValue.FromLong(value));
     private static long ReadLong(PostgresValue value) => value.LongValue ?? long.Parse(value.StringValue!, CultureInfo.InvariantCulture);
     private static DateTimeOffset? Instant(PostgresValue value) => value.IsNull ? null : TimeService.InLisbon(DateTimeOffset.Parse(value.StringValue!, CultureInfo.InvariantCulture));
-    private static bool SameJson(string first, string second) => JsonElement.DeepEquals(JsonDocument.Parse(first).RootElement, JsonDocument.Parse(second).RootElement);
+    private static JsonElement ParseOwnedJson(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.Clone();
+    }
+    private static bool SameJson(string first, string second) => JsonElement.DeepEquals(ParseOwnedJson(first), ParseOwnedJson(second));
     private static void ValidateApproval(string approver, string reason)
     { if (string.IsNullOrWhiteSpace(approver) || string.IsNullOrWhiteSpace(reason)) throw new InvalidOperationException("Explicit approver and reason are required."); }
 }

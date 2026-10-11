@@ -48,29 +48,39 @@ never copy credentials into the repo or modify `~/.aws`. Agent AWS discovery req
 
 ## Exact rehearsal command
 
-After the workflow is available on the default branch (GitHub requirement for a new
-`workflow_dispatch` file), dispatch the reviewed feature SHA/ref. Set `LAST_ROW` to the
-verified final staging grid row, not the example here:
+Before merge, dispatch the **already registered** `ci-cd.yml` workflow against the
+reviewed feature ref containing these changes. The new reusable workflow does not
+need its own default-branch registration. This performs the usual staging deploy
+and smoke first, then the explicitly requested import; normal pushes and default
+manual deployments never import. Set all source conventions from operator verification:
 
 ```bash
-LAST_ROW=1000 # replace with José-verified source bound
+# Set LAST_ROW, DECIMAL_SEPARATOR and DATE_FORMAT only after José verifies the
+# complete source bounds/conventions and pauses source/API Expense writes.
 REF=feature/129-historical-import
-gh workflow run historical-import-rehearsal.yml \
+gh workflow run ci-cd.yml \
   --repo JoseHRosario/guito-api --ref "$REF" \
-  -f last_row="$LAST_ROW" -f decimal_separator='.'
+  -f environment=staging -f rehearse_history=true \
+  -f last_row="$LAST_ROW" -f decimal_separator="$DECIMAL_SEPARATOR" \
+  -f date_format="$DATE_FORMAT"
 ```
 
-The workflow does not deploy/apply DDL; run the existing staging deployment first.
-It serializes with staging deployment via `ci-cd-staging`, captures the source,
-archives it before import, commits bounded rows individually, reads each persisted
-Expense back, reruns the same snapshot to exercise idempotency, and encrypts evidence
-on both successful and blocked runs. Exit **0** means report readiness; **2** means
-exceptions/failed parity/blocking; **1** is operational failure. Watch the exact run,
-not just the initial dispatch response. No amount/description/creator or provider
-error details are printed into public CI logs.
+`IMPORT_ARCHIVE_PASSWORD` must already exist on the staging environment. Production
+plus rehearsal is rejected before deployment. The caller owns `ci-cd-staging` across
+deploy, smoke and rehearsal; the reusable child has a distinct per-run concurrency
+key so it cannot deadlock waiting for its parent. Standalone dispatch of
+`historical-import-rehearsal.yml` remains available after default-branch registration
+and shares the staging lane, but does not deploy/apply DDL itself.
 
-If unavailable before merge, review/merge the workflow first; do not replace the
-pipeline with local live writes. No rehearsal was run as part of this implementation.
+The workflow captures the source, archives it before import, commits bounded rows
+individually, reads every persisted Expense back, reruns the same snapshot for
+idempotency, and encrypts evidence on successful and blocked runs. Exit **0** means
+report readiness; **2** means exceptions/failed parity/blocking; **1** is operational
+failure. Watch the exact run, not merely the dispatch response. No financial cells
+or provider error details are printed into public CI logs.
+
+No live rehearsal was run as part of these fixes. Missing protected secret and
+operator source verification remain prerequisites, not facts established by tests.
 
 ## Retry, inspect, and reconcile
 
@@ -99,9 +109,11 @@ To retry an interrupted import, use the prior run ID; the workflow retrieves the
 same frozen archive without Google access/recapture:
 
 ```bash
-gh workflow run historical-import-rehearsal.yml \
+gh workflow run ci-cd.yml \
   --repo JoseHRosario/guito-api --ref "$REF" \
-  -f last_row="$LAST_ROW" -f retry_run_id="$PRIOR_RUN_ID"
+  -f environment=staging -f rehearse_history=true \
+  -f last_row="$LAST_ROW" -f decimal_separator="$DECIMAL_SEPARATOR" \
+  -f date_format="$DATE_FORMAT" -f retry_run_id="$PRIOR_RUN_ID"
 ```
 
 Fix transport/category-mirror prerequisites through approved pipelines, then retry.
