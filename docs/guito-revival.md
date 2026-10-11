@@ -52,6 +52,15 @@ The MVP is complete when the app is deployed and usable end-to-end:
 2. **Build and deploy the connected UI — MVP**: Angular 22 rewrite (ADR-0002, ADR-0006), Google PKCE sign-in, authenticated latest-expenses and manual-create flows against the deployed API, S3+CloudFront hosting, and UI CI/CD/e2e checks. Verify the complete deployed user journey against real Sheets data.
 3. **Post-MVP / Phase 2 or 3**: PSD2 bank synchronization behind the provider interface and UI transaction matching (T4, issue #5); then prioritize other deferred features such as OpenRouter extraction and the installable CLI. Confirm the bank provider's current availability, consent model, and pricing before implementation.
 
+## Expense migration after MVP
+
+ADR-0015 and issues #126/#128 supersede the Expense-only Sheets assumptions above.
+Categories and smoke remain Sheets-authoritative. Issue #129 completed the one-off
+historical import and verified identical reruns in staging and production. José
+removed the temporary provenance tables after verification; import tooling and its
+DDL are retired. Production storage cutover remains separate under #132. See
+[the historical import record](historical-expense-import.md) and ADR-0016.
+
 ## Relevant GitHub issues
 
 - MVP API/auth foundation: #2, #3, #13; API CI/CD: #6.
