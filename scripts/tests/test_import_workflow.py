@@ -65,7 +65,8 @@ class HistoricalImportWorkflowTests(unittest.TestCase):
                 step = steps.split(f'      - name: {name}\n', 1)[1].split('      - ', 1)[0]
                 self.assertIn('        env:\n          ARCHIVE_PASSWORD: ${{ secrets.IMPORT_ARCHIVE_PASSWORD }}\n', step)
         self.assertNotIn('secrets: inherit', self.caller)
-        self.assertNotIn('IMPORT_ARCHIVE_PASSWORD:', self.caller)
+        self.assertIn('    secrets:\n      IMPORT_ARCHIVE_PASSWORD: ${{ secrets.IMPORT_ARCHIVE_PASSWORD }}', self.caller)
+        self.assertIn('    secrets:\n      IMPORT_ARCHIVE_PASSWORD:\n        required: false', self.child)
         self.assertNotIn('ARCHIVE_PASSWORD=', self.child)
 
     def test_protected_evidence_steps_fail_closed_and_round_trip_without_printing_secret(self):

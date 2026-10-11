@@ -1,6 +1,9 @@
 name: historical-import-rehearsal
 on:
   workflow_call:
+    secrets:
+      IMPORT_ARCHIVE_PASSWORD:
+        required: false
     inputs:
       last_row:
         required: true
