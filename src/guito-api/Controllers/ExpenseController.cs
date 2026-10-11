@@ -37,6 +37,12 @@ namespace GuitoApi.Controllers
             return await _listLatestExpensesService.ListLatestAsync(count, cancellationToken);
         }
 
+        [HttpGet("history")]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public Task<ExpenseHistory> HistoryAsync([FromServices] IReadExpenseHistoryService service,
+            CancellationToken cancellationToken, [FromQuery] int pageSize = 100, [FromQuery] int pageIndex = 0) =>
+            service.ReadAsync(pageSize, pageIndex, cancellationToken);
+
         [HttpGet("match")]
         [ResponseCache(Duration = 120, Location = ResponseCacheLocation.Any)]
         public async Task<ExpenseMatchList> MatchExpensesAsync(CancellationToken cancellationToken)
