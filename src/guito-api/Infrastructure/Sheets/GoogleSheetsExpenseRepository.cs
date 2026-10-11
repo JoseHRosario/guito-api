@@ -1,12 +1,11 @@
 using Google.Apis.Sheets.v4;
 using Google.Apis.Sheets.v4.Data;
 using GuitoApi.Configuration;
-using GuitoApi.DataTransferObjects.Input;
-using GuitoApi.DataTransferObjects.Output;
+using GuitoApi.Model;
+using GuitoApi.Services;
 using GuitoApi.Exceptions;
 using GuitoApi.Infrastructure.Sheets;
 using GuitoApi.Repositories;
-using GuitoApi.Services;
 using Microsoft.Extensions.Options;
 using System.Globalization;
 using System.Text.RegularExpressions;
@@ -24,34 +23,35 @@ namespace GuitoApi.Infrastructure.Sheets
     {
         private readonly AppConfigurationOptions _options;
         private readonly IGooglesheetsClientProvider _googlesheetsService;
-        private readonly IUserIdentityResolver _userIdentityResolver;
         private readonly ISheetScopeResolver _sheetScopeResolver;
 
         public GoogleSheetsExpenseRepository(
             IOptions<AppConfigurationOptions> options,
             IGooglesheetsClientProvider googlesheetsService,
-            IUserIdentityResolver userIdentityResolver,
             ISheetScopeResolver sheetScopeResolver)
         {
             _options = options.Value;
             _googlesheetsService = googlesheetsService;
-            _userIdentityResolver = userIdentityResolver;
             _sheetScopeResolver = sheetScopeResolver;
         }
 
-        public async Task<string> CreateAsync(ExpenseCreate value, CancellationToken cancellationToken = default)
+        public async Task<int> CreateAsync(ExpenseDraft value, CancellationToken cancellationToken = default)
         {
+            // The frozen Sheets schema has date-only occurrence precision. Never
+            // acknowledge an intraday instant that this adapter cannot retain.
+            if (value.BookingDate.TimeOfDay != TimeSpan.Zero)
+                throw new ProblemException(409, "Timestamped expenses require the Postgres Expense store; this environment remains on Sheets.");
             SheetsService service = await _googlesheetsService.GetAsync(cancellationToken);
 
             var appendResponse = await AppendExpenseRowAsync(service, value, cancellationToken);
             var appendedRowIndex = ResolveAppendedRowIndex(appendResponse);
             await BackfillYearMonthFormulasAsync(service, appendedRowIndex, cancellationToken);
 
-            return appendedRowIndex.ToString(CultureInfo.InvariantCulture);
+            return appendedRowIndex;
         }
 
         private async Task<AppendValuesResponse> AppendExpenseRowAsync(SheetsService service,
-            ExpenseCreate value, CancellationToken cancellationToken)
+            ExpenseDraft value, CancellationToken cancellationToken)
         {
             ValueRange valueRange = new ValueRange
             {
@@ -71,15 +71,15 @@ namespace GuitoApi.Infrastructure.Sheets
             return await appendRequest.ExecuteAsync(cancellationToken);
         }
 
-        private IList<object> BuildExpenseRow(ExpenseCreate value) => new List<object>
+        private IList<object> BuildExpenseRow(ExpenseDraft value) => new List<object>
         {
-            value.Date.ToString("yyyy-MM-dd"),
+            value.BookingDate.ToString("yyyy-MM-dd"),
             "", // Year
             "", // Month
             value.Amount,
             NormalizeDescription(value.Description),
             value.Category,
-            _userIdentityResolver.GetEmail()
+            value.CreatorEmail
         };
 
         // The append response's updated range ("...!B53:G53") carries the appended
@@ -116,7 +116,7 @@ namespace GuitoApi.Infrastructure.Sheets
             await updateRequest.ExecuteAsync(cancellationToken);
         }
 
-        public async Task<IReadOnlyList<ExpenseListLatestDetail>> ListLatestAsync(int limit, CancellationToken cancellationToken = default)
+        public async Task<IReadOnlyList<ExpenseSummary>> ListLatestAsync(int limit, CancellationToken cancellationToken = default)
         {
             SheetsService service = await _googlesheetsService.GetAsync(cancellationToken);
 
@@ -129,7 +129,7 @@ namespace GuitoApi.Infrastructure.Sheets
             return await ReadLatestExpensesAsync(service, limit, lastRowIndex.Value, firstDataRow, cancellationToken);
         }
 
-        private async Task<IReadOnlyList<ExpenseListLatestDetail>> ReadLatestExpensesAsync(SheetsService service,
+        private async Task<IReadOnlyList<ExpenseSummary>> ReadLatestExpensesAsync(SheetsService service,
             int limit, int lastRowIndex, int firstDataRow, CancellationToken cancellationToken)
         {
             var firstRowIndex = Math.Max(lastRowIndex - limit + 1, firstDataRow);
@@ -139,24 +139,24 @@ namespace GuitoApi.Infrastructure.Sheets
                 service.Spreadsheets.Values.Get(_options.Googlesheets.SpreadsheetId, range);
 
             ValueRange response = await request.ExecuteAsync(cancellationToken);
-            return MapExpenseRows(response.Values);
+            return MapExpenseRows(response.Values, firstRowIndex);
         }
 
-        private static IReadOnlyList<ExpenseListLatestDetail> MapExpenseRows(IList<IList<object>>? values)
+        private static IReadOnlyList<ExpenseSummary> MapExpenseRows(IList<IList<object>>? values, int firstRowIndex)
         {
             if (values is not { Count: > 0 })
                 return [];
 
-            var output = new List<ExpenseListLatestDetail>();
+            var output = new List<ExpenseSummary>();
             for (var i = 0; i < values.Count; i++)
             {
-                if (string.IsNullOrWhiteSpace(values[i]?[0]?.ToString()))
+                if (values[i] is not { Count: > 0 } || string.IsNullOrWhiteSpace(values[i][0]?.ToString()))
                     continue;
 
-                output.Add(new ExpenseListLatestDetail
+                output.Add(new ExpenseSummary
                 {
-                    StoredOrder = i + 1,
-                    Date = ParseDate(values[i]?[0]),
+                    Id = firstRowIndex + i,
+                    BookingDate = ParseDate(values[i]?[0]) is { } date ? TimeService.Midnight(date) : null,
                     Amount = ParseDecimal(values[i]?[3]),
                     Description = values[i]?[4]?.ToString(),
                     Category = values[i]?[5]?.ToString(),
@@ -167,7 +167,7 @@ namespace GuitoApi.Infrastructure.Sheets
             return output;
         }
 
-        public async Task DeleteAsync(string id, CancellationToken cancellationToken = default)
+        public async Task DeleteAsync(int id, CancellationToken cancellationToken = default)
         {
             // The Smoke-scoped delete per ADR-0009. Operates ONLY on the
             // environment's Smoke Test tab — the route /Smoke/{id} is the scope
@@ -175,7 +175,7 @@ namespace GuitoApi.Infrastructure.Sheets
             // anchor and never consults the request scope header. Verify-then-
             // delete (reads the row back before deleting the dimension) makes it
             // idempotent on retry.
-            var appendedRowIndex = ParseId(id);
+            var appendedRowIndex = id;
             var (tabTitle, firstDataRow, _) = ParseAnchor(_options.Googlesheets.ExpensesSmokeRange);
             if (appendedRowIndex < firstDataRow)
                 throw new ExpenseNotFoundException(id);
@@ -188,13 +188,6 @@ namespace GuitoApi.Infrastructure.Sheets
                 throw new ExpenseNotFoundException(id);
 
             await DeleteRowDimensionAsync(service, spreadsheetId, sheetId, appendedRowIndex, cancellationToken);
-        }
-
-        private static int ParseId(string id)
-        {
-            return int.TryParse(id, NumberStyles.None, CultureInfo.InvariantCulture, out var row)
-                ? row
-                : throw new ExpenseNotFoundException(id);
         }
 
         private static string NormalizeDescription(string description) =>

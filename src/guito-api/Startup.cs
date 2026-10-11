@@ -5,6 +5,7 @@ using GuitoApi.Infrastructure.Postgres;
 using GuitoApi.Infrastructure.Secrets;
 using GuitoApi.Infrastructure.Sheets;
 using GuitoApi.Infrastructure.AI;
+using GuitoApi.Infrastructure.Validation;
 using GuitoApi.Infrastructure.EnableBanking;
 using GuitoApi.Services.BankAuth;
 using GuitoApi.Exceptions;
@@ -35,7 +36,7 @@ namespace GuitoApi
                 .ReadFrom.Configuration(Configuration)
                 .CreateLogger();
 
-            services.AddControllers();
+            services.AddControllers(options => options.Filters.Add<ExpenseCreateValidationFilter>());
             services.AddProblemDetails();
             services.AddEndpointsApiExplorer();
             services.AddSwaggerGen();
@@ -82,7 +83,22 @@ namespace GuitoApi
             services.AddScoped<IRevokeGoogleTokenService, RevokeGoogleTokenService>();
             services.AddHttpClient(RevokeGoogleTokenService.HttpClientName);
 
-            services.AddScoped<IExpenseRepository, GoogleSheetsExpenseRepository>();
+            services.AddScoped<IExpenseRepository>(sp =>
+            {
+                // ADR-0009 smoke CRUD remains quarantined in Sheets, even when
+                // personal expenses use Postgres. Cleanup is Sheets-only without a header too.
+                var request = sp.GetRequiredService<IHttpContextAccessor>().HttpContext?.Request;
+                if (sp.GetRequiredService<ISheetScopeResolver>().IsSmokeScope
+                    || request?.Path.StartsWithSegments("/Smoke", StringComparison.OrdinalIgnoreCase) == true)
+                    return ActivatorUtilities.CreateInstance<GoogleSheetsExpenseRepository>(sp);
+                return sp.GetRequiredService<IOptions<AppConfigurationOptions>>().Value.ExpenseStore switch
+                {
+                    "Sheets" => ActivatorUtilities.CreateInstance<GoogleSheetsExpenseRepository>(sp),
+                    "Postgres" when !sp.GetRequiredService<IWebHostEnvironment>().IsProduction() => ActivatorUtilities.CreateInstance<DataApiPostgresExpenseRepository>(sp),
+                    "Postgres" => throw new InvalidOperationException("Production Expense Postgres cutover is not yet approved."),
+                    _ => throw new InvalidOperationException("Unknown ExpenseStore; expected Sheets or Postgres.")
+                };
+            });
             services.AddScoped<ICategoryRepository, GoogleSheetsCategoryRepository>();
 
             services.AddScoped<ICreateExpenseService, CreateExpenseService>();

@@ -27,7 +27,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-cd-${{ github.event_name == 'workflow_dispatch' && inputs.environment || github.ref }}
+  # Every staging deployment shares one lane to avoid overlapping writes.
+  group: ci-cd-${{ ((github.event_name == 'workflow_dispatch' && inputs.environment == 'production') || (github.event_name == 'push' && github.ref_name == 'master')) && 'production' || 'staging' }}
   cancel-in-progress: false
 
 jobs:
@@ -65,7 +66,7 @@ jobs:
           role-to-assume: arn:aws:iam::497087877832:role/guito-api-deploy
           aws-region: eu-west-1
       - name: Deploy API + authorizer (staging)
-        run: ENV=staging ./deploy/deploy.sh
+        run: ENV=staging EXPENSE_STORE=Postgres ./deploy/deploy.sh
       - name: Smoke — auth contract (Google token + agent key) and business round-trip
         run: ./scripts/run-deployed-tests.sh staging
 

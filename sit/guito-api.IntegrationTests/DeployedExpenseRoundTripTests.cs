@@ -26,9 +26,10 @@ public class DeployedExpenseRoundTripTests
         using var client = DeployedEndpointFixture.CreateAgentClient(DeployedEndpointFixture.AgentKey);
         client.DefaultRequestHeaders.Add("X-Sheet-Scope", "smoke");
         var marker = $"integration-test {DateTime.UtcNow:yyyyMMddHHmmss}";
+        var lisbonNow = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Europe/Lisbon"));
         var expense = new ExpensePayload
         {
-            Date = DateTime.UtcNow,
+            BookingDate = lisbonNow.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
             Amount = 0.01m,
             Description = marker,
             Category = "Integration Tests",
@@ -39,20 +40,24 @@ public class DeployedExpenseRoundTripTests
         Assert.Equal(HttpStatusCode.OK, createResponse.StatusCode);
         var id = await ReadCreatedIdAsync(createResponse);
 
-        var listResponse = await client.GetAsync("/Expense/latest/5");
-        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
-        var listedBefore = await IsListedAsync(listResponse, expense, marker);
-        Assert.True(listedBefore, "created expense was not listed before delete");
+        try
+        {
+            var listResponse = await client.GetAsync("/Expense/latest/100");
+            Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+            Assert.True(await IsListedAsync(listResponse, expense, id), "created expense was not listed before delete");
+        }
+        finally
+        {
+            // Cleanup is pinned to smoke scope by the server, even if listing fails.
+            var deleteResponse = await client.DeleteAsync($"/Smoke/{id}");
+            Assert.Equal(HttpStatusCode.OK, deleteResponse.StatusCode);
+        }
 
-        // DELETE /Smoke/{id} is scoped to the Smoke Test tab by the route itself.
-        var deleteResponse = await client.DeleteAsync($"/Smoke/{id}");
-        Assert.Equal(HttpStatusCode.OK, deleteResponse.StatusCode);
-
-        var finalListResponse = await client.GetAsync("/Expense/latest/5");
+        var finalListResponse = await client.GetAsync("/Expense/latest/100");
         Assert.Equal(HttpStatusCode.OK, finalListResponse.StatusCode);
-        var listedAfter = await IsListedAsync(finalListResponse, expense, marker);
+        var listedAfter = await IsIdentityListedAsync(finalListResponse, id);
 
-        // Assert — the row came back after the delete (sheet back to pre-run state for this row).
+        // Assert — cleanup removed only this test identity.
         Assert.False(listedAfter, "deleted expense is still listed after DELETE /Smoke");
     }
 
@@ -71,23 +76,31 @@ public class DeployedExpenseRoundTripTests
     private static async Task<int> ReadCreatedIdAsync(HttpResponseMessage createResponse)
     {
         var created = (await createResponse.Content.ReadFromJsonAsync<ExpenseCreated>(_jsonOptions))!;
-        return created.Id ?? throw new InvalidOperationException("POST /expense returned no Id");
+        return created.Id > 0 ? created.Id : throw new InvalidOperationException("POST /expense returned no positive Id");
     }
 
-    /// <summary>True when the live list contains this round-trip's own row (marker + amount + category).</summary>
-    private static async Task<bool> IsListedAsync(HttpResponseMessage response, ExpensePayload expense, string marker)
+    /// <summary>True when the live list contains this round-trip's integer identity and payload.</summary>
+    private static async Task<bool> IsListedAsync(HttpResponseMessage response, ExpensePayload expense, int id)
     {
         var latest = (await response.Content.ReadFromJsonAsync<ExpenseListLatest>(_jsonOptions))!;
         var expenses = latest.Expenses ?? throw new InvalidOperationException("list payload had no Expenses array");
         return expenses.Any(e =>
+            e.Id == id &&
             e.Amount == expense.Amount &&
-            e.Category == expense.Category &&
-            e.Description?.Contains(marker["integration-test ".Length..], StringComparison.Ordinal) == true);
+            e.Category == expense.Category && e.BookingDate?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) == expense.BookingDate &&
+            string.Equals(e.Description, expense.Description, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static async Task<bool> IsIdentityListedAsync(HttpResponseMessage response, int id)
+    {
+        var latest = (await response.Content.ReadFromJsonAsync<ExpenseListLatest>(_jsonOptions))!;
+        return (latest.Expenses ?? throw new InvalidOperationException("list payload had no Expenses array"))
+            .Any(expense => expense.Id == id);
     }
 
     private sealed class ExpensePayload
     {
-        public DateTime Date { get; set; }
+        public string BookingDate { get; set; } = "";
         public decimal Amount { get; set; }
         public string? Description { get; set; }
         public string? Category { get; set; }
@@ -95,7 +108,7 @@ public class DeployedExpenseRoundTripTests
 
     private sealed class ExpenseCreated
     {
-        public int? Id { get; set; }
+        public int Id { get; set; }
     }
 
     private sealed class ExpenseListLatest
@@ -105,7 +118,9 @@ public class DeployedExpenseRoundTripTests
 
     private sealed class ExpenseListLatestDetail
     {
-        public DateTime? Date { get; set; }
+        public int Id { get; set; }
+        public DateTimeOffset? BookingDate { get; set; }
+        [System.Text.Json.Serialization.JsonNumberHandling(System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString)]
         public decimal? Amount { get; set; }
         public string? Description { get; set; }
         public string? Category { get; set; }

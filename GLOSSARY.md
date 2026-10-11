@@ -4,10 +4,13 @@ Personal expense-tracking system (API + webapp) used to control expenses and max
 
 ## Glossary
 
-- **Expense** — a spending record. Stored as a row in a Google Sheet; created manually, extracted by AI, or matched from a bank transaction.
-- **Expense Amount** — the Expense's value, stored and transmitted **positive**; that it is an outflow is implied by it being an Expense. See ADR 0010. _Avoid_: negative amounts, sign convention.
-- **Expense Id** — the opaque identifier of an Expense, returned by the API and never interpreted by callers. Today the row index in the spreadsheet; later a database key. _Avoid_: row, row index (in API payloads).
-- **Smoke scope** — the datastore override requested by the `X-Sheet-Scope: smoke` header: writes and list reads resolve to the Smoke Test tab instead of the real tabs. Intended only for deployed-endpoint integration tests; any authenticated caller may send it (it grants less than the agent key already does). See ADR 0009.
+- **Expense** — a spending record. Stored in the environment-selected Expense Store (Sheets by default, opt-in Postgres); created manually, extracted by AI, or matched from a bank transaction.
+- **Expense Amount** — the Expense's exact decimal value; the API accepts positive, zero and negative values without rounding. Manual-entry UI conventions remain positive. See ADR-0015 (supersedes ADR-0010's API validation).
+- **Expense Id** — an Int32 JSON number passed unchanged by callers. In Postgres it is an immutable database-generated integer identity key, independent of content and row position. The compatibility Sheets adapter exposes a real absolute row ID, but it is transient and not durable across row movement. There is no `storedOrder`; a slice ordinal is never identity.
+- **Expense occurrence** — when spending happened, submitted through the sole create `bookingDate` JSON string bound to DateTimeOffset (date-only or explicit-offset ISO8601), returned as `bookingDate` in Europe/Lisbon and stored in `booking_date` as a timezone-aware instant. Legacy date-only records use midnight on their original Lisbon day, not UTC midnight.
+- **Expense audit timestamps** — `create_date` and nullable `update_date` (wire `creationDate` / `updateDate`) describe actual record lifecycle events, not purchase time. `update_date` has no default and remains null until an explicit user update. Sheets lacks these values and returns null; historical values are not fabricated.
+- **Expense Store** — one environment-controlled read/write authority, Sheets by default or opt-in Postgres outside Production. No equal-authority dual writes. See ADR-0015.
+- **Smoke scope** — the datastore override requested by the `X-Sheet-Scope: smoke` header: writes and list reads always resolve to the Smoke Test tab in Sheets, including when Postgres is personal Expense authority. `/Smoke/{id}` cleanup likewise uses only Sheets; Postgres has no smoke records. Intended only for deployed-endpoint integration tests; any authenticated caller may send it (it grants less than the agent key already does). See ADR 0009.
 - **Smoke Test tab** — a bare, formula-free tab (anchor `B5`) in each environment's spreadsheet where the deployed integration suite exercises the write path. Real tabs are never written by tests. _Avoid_: dummy data, test sheet.
 - **Category** — label grouping expenses for analysis. Lives in its own sheet.
 - **Match** — the act of pairing a bank **Transaction** with an Expense (or creating an Expense from it).

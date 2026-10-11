@@ -1,25 +1,24 @@
 ﻿using GuitoApi.DataTransferObjects.Output;
+using GuitoApi.Model;
 using GuitoApi.Repositories;
 
-namespace GuitoApi.Services.Expense
+namespace GuitoApi.Services.Expense;
+
+public class ListLatestExpensesService(IExpenseRepository repository) : IListLatestExpensesService
 {
-    /// <summary>
-    /// Adapter over <see cref="IExpenseRepository"/> (repository-pattern refactor,
-    /// ADR 0011): keeps the IListLatestExpensesService contract so controllers and
-    /// the wire shape are unchanged, while every Sheets behavior moved into the
-    /// repository layer.
-    /// </summary>
-    public class ListLatestExpensesService : IListLatestExpensesService
+    public async Task<ExpenseListLatest> ListLatestAsync(int count, CancellationToken cancellationToken = default)
     {
-        private readonly IExpenseRepository _expenseRepository;
-
-        public ListLatestExpensesService(IExpenseRepository expenseRepository) =>
-            _expenseRepository = expenseRepository;
-
-        public async Task<ExpenseListLatest> ListLatestAsync(int count, CancellationToken cancellationToken = default)
-        {
-            var expenses = await _expenseRepository.ListLatestAsync(count, cancellationToken);
-            return new ExpenseListLatest { Expenses = [.. expenses] };
-        }
+        if (count is < 1 or > 100)
+            throw new GuitoApi.Exceptions.ProblemException(400, "Latest count must be between 1 and 100.");
+        var expenses = await repository.ListLatestAsync(count, cancellationToken);
+        return new ExpenseListLatest { Expenses = expenses.Select(ToOutput).ToList() };
     }
+
+    private static ExpenseListLatestDetail ToOutput(ExpenseSummary expense) => new()
+    {
+        Id = expense.Id, BookingDate = expense.BookingDate,
+        CreationDate = expense.CreationDate, UpdateDate = expense.UpdateDate, Currency = expense.Currency,
+        Amount = expense.Amount, Description = expense.Description, Category = expense.Category,
+        CreatorEmail = expense.CreatorEmail
+    };
 }

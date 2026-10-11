@@ -1,6 +1,6 @@
 # Guito API
 
-Personal expense-tracking API. Guito helps José control expenses and maximize savings: expenses are created manually, extracted by AI from free-form input, or matched from bank transactions. The API performs CRUD on a Google Spreadsheet, which is the system's datastore, and exposes an HTTP API consumed by the Guito web UI and by CLI/AI agents.
+Personal expense-tracking API. Guito helps José control expenses and maximize savings: expenses are created manually, extracted by AI from free-form input, or matched from bank transactions. The API exposes HTTP endpoints consumed by the Guito web UI and CLI/AI agents. Sheets remains the default Expense authority; staged Postgres migration uses the existing Aurora Data API infrastructure.
 
 > Currently under revival (2026): migrating to AWS, modernizing the stack, and fixing bank sync. See the [revival plan](docs/guito-revival.md) and [issue #1](https://github.com/JoseHRosario/guito-api/issues/1).
 
@@ -26,7 +26,7 @@ Google (ID token)            CLI / AI agents (X-Api-Key)
 ```
 
 - **Runtime**: .NET 10 on AWS Lambda (managed dotnet10 runtime, arm64, eu-west-1) behind API Gateway HTTP API; logs in CloudWatch. Two functions: `guito-api` (the app) and `guito-api-authorizer` (the edge auth gate).
-- **Datastore**: a Google Spreadsheet, accessed with a dedicated service account — no database, no migration.
+- **Datastore**: Sheets remains the default/production Expense and Category authority. Aurora PostgreSQL via RDS Data API stores Bank Transactions and the Categories mirror; Expense reads/writes can opt into Postgres outside Production (ADR-0015).
 - **Auth**: dual scheme — a personal `X-Api-Key` for CLI/AI agents and Google ID tokens for the UI (issue #13/#8). API Gateway allows one CUSTOM authorizer per route, so the `guito-key-authorizer` REQUEST authorizer is a single function dispatching on the `Authorization` header (its sole identity source): `Bearer <jwt>` → Google ID-token validation (RS256 against Google's JWKS, issuer/audience/expiry/allowlisted-email checks), raw value → agent-key validation. The two validators are independent — neither path falls back into the other. The same checks repeat inside the API (`ApiKeyMiddleware` / `GoogleIdTokenMiddleware`) as defense-in-depth, and each middleware is path-aware: agent requests carry the key in **both** `X-Api-Key` and `Authorization`; human requests carry the ID token in **both** `Authorization: Bearer <token>` and `x-google-idtoken` (see the sample requests in `src/guito-api/Rest/guito-api.http`). Human-path config (`GOOGLE_CLIENT_ID`, `GOOGLE_ALLOWED_EMAILS`) arrives via Lambda env vars set in `deploy/deploy.sh` §3b; unset → human path deny-closed.
 - **Human-token smoke**: the OAuth consent happens once (OAuth Playground, `openid email` scope); the refresh token lives in SSM SecureString `/guito-api/human-auth`, and fresh ID tokens are minted unattended via the Google token endpoint — so the live positive smoke needs no human in the loop.
 - **Bank sync**: PSD2 transaction retrieval behind `IListTransactionsService` — Enable Banking (free "Restricted Production" tier) is the provider, selected by `AppConfiguration:BankProvider`; consents are re-authenticated manually (~90 days). Provider adapter ships with the T4 Phase-2 work (issue #5 / ADR-0004).
@@ -48,6 +48,68 @@ scripts/run-deployed-tests.sh                 # deployed-staging integration tes
 ```
 
 Configuration comes from `appsettings.{Environment}.json` plus environment variables (Google service account credentials, Sheets ids, bank-provider credentials). Application secrets are stored as SSM Parameter Store SecureStrings in deployed environments; database credentials remain in Secrets Manager because RDS Data API requires it (ADR 0008) — never commit either. Base/`appsettings.json` targets the DEV spreadsheet; `appsettings.Production.json` targets prod.
+
+## Expense contract and staged Postgres rollout
+
+`POST /Expense` binds one required `bookingDate` to a `DateTimeOffset`; its JSON value is
+a string: `yyyy-MM-dd` for legacy Lisbon midnight, or explicit-offset ISO8601 for a known occurrence instant. It also accepts
+exact-decimal `amount` (positive, zero or negative; a JSON number, including exponent notation, or an
+invariant decimal string), description and category. Amounts must be exactly
+representable by .NET decimal: a 96-bit coefficient and scale 0–28 after removing
+trailing zeros. Inputs requiring rounding, underflow or overflow return 400; equivalent
+trailing-zero representations are accepted. Latest and AI extraction responses expose
+one `amount` as invariant exact decimal text (null for an absent latest amount), avoiding
+JavaScript Number rounding; there is no duplicate amount field.
+Timestamp `bookingDate` accepts any explicit offset (including UTC `Z`); the server preserves
+the instant and derives its Europe/Lisbon calendar day. For example,
+`"bookingDate":"2026-07-01T23:30:00.123456Z"` becomes Lisbon July 2, 00:30, with all
+microseconds retained. Naive datetime strings (including unresolved DST gaps or
+repetitions), invalid/missing dates, and more than six fractional digits return 400,
+not rounding. The removed request properties `date` and `occurredAt` return 400 even if null (case-insensitive);
+other unknown request properties remain tolerated. Latest has one `bookingDate`
+occurrence instant: time-enabled clients resubmit it as POST `bookingDate`, not as a second
+field. AI extraction exposes `bookingDate` with its existing DateTime day precision
+(an offset-free midnight), not a known instant. Clients submit that calendar day as
+`yyyy-MM-dd`. Legacy/prod clients send only `yyyy-MM-dd`; intraday timestamps
+against frozen date-only Sheets return 409 rather than silently losing time. Currency defaults
+to EUR; non-EUR values are rejected. Create returns `{ "id": 123 }` (an Int32 JSON number).
+
+`GET /Expense/latest/{count}` (1–100) returns `expenses` with numeric `id`,
+`bookingDate`, `currency`, `creationDate`, `updateDate`, amount, description, category
+and creatorEmail. Postgres stores generated integer IDs (returned as JSON numbers),
+`booking_date`, an exact numeric amount, `category_id` referencing the seeded categories
+mirror, `create_date`, and nullable `update_date`. No currency or test-scope column is
+stored. EUR remains a compatibility wire value. Latest orders booking date then integer
+ID descending; `updateDate` is null until an explicit update. Unknown category names
+not present in the mirror return 422; requests never seed categories.
+Latest has no `storedOrder`, `date` or `occurredAt` aliases; callers use `id`.
+`X-Sheet-Scope: smoke` explicitly selects the dedicated Sheets smoke tab for create/list,
+regardless of the normal Expense Store. `DELETE /Smoke/{id}` is Sheets-only cleanup;
+it never deletes Postgres expenses.
+
+`AppConfiguration:ExpenseStore` selects the normal adapter (default `Sheets`).
+GitHub Actions selects Postgres for staging and Sheets for production. Deployment and
+migration execution run only in the pipeline, not from an agent's local shell.
+
+The existing migration runner applies resumable `005_expenses.sql` before deployment.
+Omitting `EXPENSE_STORE` preserves any existing staging Lambda override. Production
+is pinned to Sheets and runtime rejects Postgres there until a later cutover approval.
+No import, export, matching or production migration is included in #128. Reverting
+to stale Sheets after Postgres writes is not a valid rollback without reconciliation.
+
+The deployed-test runner always exercises date-only Sheets CRUD in the dedicated
+smoke tab; cleanup uses the returned ID and runs even if the first list assertion fails.
+This runner revision requires the new `bookingDate`/integer-ID/exact-string-amount API
+contract. Use it against updated staging (or production only after approved cutover),
+not the unchanged pre-cutover production API; it does not negotiate legacy contracts.
+Normal redeploys apply pending migrations without resetting expense data.
+
+**Compatibility gate:** the frozen Sheets schema retains date-only precision and
+transient absolute row IDs; audit timestamps are null. Legacy creates still work.
+Intraday creates return 409 rather than silently losing time. Roll the time-enabled
+UI out only to Postgres-enabled staging, not production yet. Real persistence,
+constraints and resumable migration execution remain separate deployed acceptance;
+hermetic HTTP fakes cannot prove them. See [ADR-0015](docs/adr/0015-postgres-expenses-and-lisbon-occurrence.md).
 
 ## Deployment
 

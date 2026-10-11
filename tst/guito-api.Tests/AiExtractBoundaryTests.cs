@@ -25,8 +25,9 @@ namespace GuitoApi.Tests
 
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
             var body = await response.Content.ReadFromJsonAsync<JsonDocument>();
-            Assert.Equal("2026-10-02", body!.RootElement.GetProperty("date").GetDateTime().ToString("yyyy-MM-dd"));
-            Assert.Equal(2.30m, body.RootElement.GetProperty("amount").GetDecimal());
+            Assert.Equal("2026-10-02T00:00:00", body!.RootElement.GetProperty("bookingDate").GetString());
+            Assert.False(body.RootElement.TryGetProperty("date", out _));
+            Assert.Equal(2.30m, decimal.Parse(body.RootElement.GetProperty("amount").GetString()!, System.Globalization.CultureInfo.InvariantCulture));
             Assert.Equal("Cafe No Coco Verde", body.RootElement.GetProperty("description").GetString());
             Assert.Equal("Restaurants", body.RootElement.GetProperty("category").GetString());
 
@@ -39,6 +40,32 @@ namespace GuitoApi.Tests
             Assert.Contains("Restaurants", decisionRequest);
             Assert.Contains("cafe 2,30 no Coco Verde", decisionRequest);
             Assert.Equal("Bearer test-openrouter-key", factory.OpenRouterHandler.DecisionAuthorizationHeaders.Last());
+        }
+
+        [Fact]
+        public async Task Extract_ShouldExposeExactAmountText_WhenModelDecimalExceedsJavascriptPrecision()
+        {
+            // Arrange
+            using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres" };
+            factory.Postgres.PersistExpenses = true;
+            factory.OpenRouterHandler.ChatResponseContent =
+                "{\"date\": \"2026-07-02\", \"amount\": 123456789.1234567890123456789, \"description\": \"Cafe\"}";
+            using var client = factory.CreateClient();
+
+            // Act
+            var response = await client.PostAsJsonAsync("/AI/extract", new ExpenseExtract { Prompt = "cafe" });
+
+            // Assert
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(JsonValueKind.String, body.GetProperty("amount").ValueKind);
+            Assert.False(body.TryGetProperty("amountExact", out _));
+            Assert.Equal(123456789.1234567890123456789m, decimal.Parse(body.GetProperty("amount").GetString()!, System.Globalization.CultureInfo.InvariantCulture));
+            Assert.Equal("123456789.1234567890123456789", body.GetProperty("amount").GetString());
+            var created = await client.PostAsJsonAsync("/Expense", new { bookingDate = body.GetProperty("bookingDate").GetDateTime().ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), amount = body.GetProperty("amount").GetString(), category = body.GetProperty("category").GetString() });
+            Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+            var latest = (await client.GetFromJsonAsync<JsonElement>("/Expense/latest/1")).GetProperty("expenses");
+            Assert.Equal(body.GetProperty("amount").GetString(), Assert.Single(latest.EnumerateArray()).GetProperty("amount").GetString());
         }
 
         [Fact]
@@ -65,7 +92,7 @@ namespace GuitoApi.Tests
 
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
             var body = await response.Content.ReadFromJsonAsync<JsonDocument>();
-            Assert.Equal(2.30m, body!.RootElement.GetProperty("amount").GetDecimal());
+            Assert.Equal(2.30m, decimal.Parse(body!.RootElement.GetProperty("amount").GetString()!, System.Globalization.CultureInfo.InvariantCulture));
         }
 
         [Fact]
@@ -95,7 +122,7 @@ namespace GuitoApi.Tests
             var body = await response.Content.ReadFromJsonAsync<JsonDocument>();
             var lisbonToday = TimeZoneInfo.ConvertTimeFromUtc(
                 DateTime.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Europe/Lisbon")).Date;
-            Assert.Equal(lisbonToday, body!.RootElement.GetProperty("date").GetDateTime());
+            Assert.Equal(lisbonToday, body!.RootElement.GetProperty("bookingDate").GetDateTime());
         }
 
         [Fact]

@@ -82,6 +82,9 @@ else
   echo "No custom-domain mapping for $API_NAME — using $GUITO_TARGET_BASE_URL."
 fi
 
+# Business smoke CRUD always targets the isolated Sheets tab (ADR-0009),
+# including when personal expenses are Postgres-authoritative. No personal writes.
+
 # --- Resolve both agent keys from SSM Parameter Store -----------------------------
 secret_key() {
   aws --region "$REGION" ssm get-parameter --with-decryption --name "$1" \

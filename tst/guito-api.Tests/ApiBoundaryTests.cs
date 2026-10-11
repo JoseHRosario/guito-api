@@ -24,37 +24,39 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task CreateExpense_ShouldReturnBadRequest_WhenAmountIsNegative()
+    public async Task CreateExpense_ShouldAppendExactAmount_WhenAmountIsNegative()
     {
         using var factory = new CustomWebApplicationFactory();
         var client = factory.CreateClient();
         var response = await client.PostAsJsonAsync("/expense", new ExpenseCreate
         {
-            Date = new DateTime(2026, 10, 2),
+            BookingDate = DateTimeOffset.Parse("2026-10-02T00:00:00+01:00"),
             Amount = -42.50m,
             Description = "negative test",
             Category = "Restaurants",
         });
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Empty(factory.SheetsHandler.AppendBodies);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var body = JsonDocument.Parse(Assert.Single(factory.SheetsHandler.AppendBodies));
+        Assert.Equal(-42.50m, body.RootElement.GetProperty("values")[0][3].GetDecimal());
     }
 
     [Fact]
-    public async Task CreateExpense_ShouldReturnBadRequest_WhenAmountIsZero()
+    public async Task CreateExpense_ShouldAppendExactAmount_WhenAmountIsZero()
     {
         using var factory = new CustomWebApplicationFactory();
         var client = factory.CreateClient();
         var response = await client.PostAsJsonAsync("/expense", new ExpenseCreate
         {
-            Date = new DateTime(2026, 10, 2),
+            BookingDate = DateTimeOffset.Parse("2026-10-02T00:00:00+01:00"),
             Amount = 0m,
             Description = "zero test",
             Category = "Restaurants",
         });
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Empty(factory.SheetsHandler.AppendBodies);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var body = JsonDocument.Parse(Assert.Single(factory.SheetsHandler.AppendBodies));
+        Assert.Equal(0m, body.RootElement.GetProperty("values")[0][3].GetDecimal());
     }
 
     [Fact]
@@ -64,7 +66,7 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
         var client = factory.CreateClient();
         var response = await client.PostAsJsonAsync("/expense", new ExpenseCreate
         {
-            Date = new DateTime(2026, 10, 2),
+            BookingDate = DateTimeOffset.Parse("2026-10-02T00:00:00+01:00"),
             Amount = 0.01m,
             Description = "minimum amount",
             Category = "Restaurants",
@@ -80,7 +82,7 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
         var client = _factory.CreateClient();
         var response = await client.PostAsJsonAsync("/expense", new ExpenseCreate
         {
-            Date = new DateTime(2026, 9, 21),
+            BookingDate = DateTimeOffset.Parse("2026-09-21T00:00:00+01:00"),
             Amount = 42.50m,
             Description = "coffee shop",
             Category = "Restaurants",
@@ -102,6 +104,37 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
         Assert.Contains($"{dateColumn}!C{FakeSheetsHttpHandler.NextRowIndex}", sheets.UpdateRanges.Last());
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CreateExpense_ShouldKeepLegacyDateOnlyContract_WhenProductionUsesDefaultSheets(bool amountAsString)
+    {
+        // Arrange
+        using var factory = new CustomWebApplicationFactory { Environment = "Production" };
+        factory.SheetsHandler.LatestValuesJson = """
+            [["2026-07-02", "", "", "42.50", "Coffee", "Restaurants", "user@example.test"]]
+            """;
+        using var client = factory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
+        client.DefaultRequestHeaders.Add("X-Api-Key", "test-agent-key");
+        object amount = amountAsString ? "42.50" : (object)42.50m;
+
+        // Act
+        var created = await client.PostAsJsonAsync("/Expense", new { bookingDate = "2026-07-02", amount });
+        var latest = (await client.GetFromJsonAsync<JsonElement>("/Expense/latest/1")).GetProperty("expenses");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        Assert.Contains("2026-07-02", Assert.Single(factory.SheetsHandler.AppendBodies));
+        Assert.Empty(factory.Postgres.ExecutedSql);
+        var expense = Assert.Single(latest.EnumerateArray());
+        Assert.Equal(JsonValueKind.String, expense.GetProperty("amount").ValueKind);
+        Assert.Equal(42.50m, decimal.Parse(expense.GetProperty("amount").GetString()!, System.Globalization.CultureInfo.InvariantCulture));
+        Assert.False(expense.TryGetProperty("amountExact", out _));
+        Assert.False(expense.TryGetProperty("date", out _));
+        Assert.False(expense.TryGetProperty("occurredAt", out _));
+        Assert.False(expense.TryGetProperty("storedOrder", out _));
+    }
+
     [Fact]
     public async Task ListLatestAsync_ShouldReadRowsFromSpreadsheet_WhenExpensesExist()
     {
@@ -116,7 +149,7 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
         Assert.Equal(12.50m, first.Amount);
         Assert.Equal("Coffee", first.Description);
         Assert.Equal("Restaurants", first.Category);
-        Assert.Equal(new DateTime(2026, 9, 20), first.Date);
+        Assert.Equal(new DateTime(2026, 9, 20), first.BookingDate?.Date);
     }
 
     [Fact]

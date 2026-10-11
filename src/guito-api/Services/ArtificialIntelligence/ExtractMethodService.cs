@@ -34,7 +34,7 @@ namespace GuitoApi.Services.ArtificialIntelligence
 
             return new ExpenseExtracted
             {
-                Date = extracted.Date,
+                BookingDate = extracted.Date,
                 Amount = amount,
                 Description = extracted.Description,
                 Category = category,

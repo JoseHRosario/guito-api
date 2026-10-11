@@ -1,5 +1,5 @@
 using GuitoApi.Configuration;
-using GuitoApi.DataTransferObjects.Input;
+using GuitoApi.Model;
 using GuitoApi.Exceptions;
 using GuitoApi.Infrastructure.Sheets;
 using GuitoApi.Repositories;
@@ -15,15 +15,15 @@ public class GoogleSheetsExpenseRepositoryTests
     private GoogleSheetsExpenseRepository CreateRepository() =>
         new(Options.Create(_options),
             new FakeGooglesheetsClientProvider(_handler),
-            new FakeUserIdentityResolver(),
             new FakeSheetScopeResolver(_options));
 
-    private static ExpenseCreate AnExpense() => new()
+    private static ExpenseDraft AnExpense() => new()
     {
-        Date = new DateTime(2026, 10, 2),
+        BookingDate = new DateTimeOffset(2026, 10, 2, 0, 0, 0, TimeSpan.FromHours(1)),
         Amount = 2.30m,
         Description = "morning coffee",
-        Category = "Restaurants"
+        Category = "Restaurants",
+        CreatorEmail = FakeUserIdentityResolver.Email
     };
 
     [Fact]
@@ -60,7 +60,7 @@ public class GoogleSheetsExpenseRepositoryTests
     }
 
     [Fact]
-    public async Task CreateAsync_ShouldReturnOpaqueId_WhenExpenseCreated()
+    public async Task CreateAsync_ShouldReturnIntegerId_WhenExpenseCreated()
     {
         // Arrange
         var repository = CreateRepository();
@@ -69,7 +69,7 @@ public class GoogleSheetsExpenseRepositoryTests
         var id = await repository.CreateAsync(AnExpense());
 
         // Assert
-        Assert.Equal(FakeSheetsHttpHandler.NextRowIndex.ToString(), id);
+        Assert.Equal(FakeSheetsHttpHandler.NextRowIndex, id);
     }
 
     [Fact]
@@ -90,7 +90,7 @@ public class GoogleSheetsExpenseRepositoryTests
     }
 
     [Fact]
-    public async Task ListLatestAsync_ShouldReturnStoredOrderExpenses_WhenRowsExist()
+    public async Task ListLatestAsync_ShouldReturnAbsoluteRowIdentities_WhenRowsExist()
     {
         // Arrange
         var repository = CreateRepository();
@@ -100,10 +100,11 @@ public class GoogleSheetsExpenseRepositoryTests
 
         // Assert
         Assert.Equal(3, expenses.Count);
-        Assert.Equal([1, 2, 3], expenses.Select(e => e.StoredOrder));
+        var firstRow = TestSheetsConfiguration.FirstDataRow(_options);
+        Assert.Equal([firstRow, firstRow + 1, firstRow + 2], expenses.Select(e => e.Id));
         Assert.Equal(12.50m, expenses[0].Amount);
         Assert.Equal("Coffee", expenses[0].Description);
-        Assert.Equal(new DateTime(2026, 9, 20), expenses[0].Date);
+        Assert.Equal(new DateTimeOffset(2026, 9, 20, 0, 0, 0, TimeSpan.FromHours(1)), expenses[0].BookingDate);
         Assert.Equal("Restaurants", expenses[0].Category);
         Assert.Equal("user@example.com", expenses[0].CreatorEmail);
     }
@@ -114,7 +115,7 @@ public class GoogleSheetsExpenseRepositoryTests
         // Arrange
         _handler.SmokeRowExists = true;
         var repository = CreateRepository();
-        var id = FakeSheetsHttpHandler.NextRowIndex.ToString();
+        var id = FakeSheetsHttpHandler.NextRowIndex;
 
         // Act
         await repository.DeleteAsync(id);
@@ -136,7 +137,7 @@ public class GoogleSheetsExpenseRepositoryTests
 
         // Act
         var exception = await Assert.ThrowsAsync<ExpenseNotFoundException>(
-            () => repository.DeleteAsync(FakeSheetsHttpHandler.NextRowIndex.ToString()));
+            () => repository.DeleteAsync(FakeSheetsHttpHandler.NextRowIndex));
 
         // Assert
         Assert.Contains(FakeSheetsHttpHandler.NextRowIndex.ToString(), exception.Message);
@@ -151,7 +152,7 @@ public class GoogleSheetsExpenseRepositoryTests
 
         // Act
         var exception = await Assert.ThrowsAsync<ExpenseNotFoundException>(
-            () => repository.DeleteAsync((firstDataRow - 1).ToString()));
+            () => repository.DeleteAsync(firstDataRow - 1));
 
         // Assert
         Assert.Equal($"Expense {firstDataRow - 1} not found", exception.Message);

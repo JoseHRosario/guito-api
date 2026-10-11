@@ -26,13 +26,13 @@ namespace GuitoApi.Services.Expense
             var expensesTask = _expenseRepository.ListLatestAsync(10, cancellationToken);
             await Task.WhenAll(transactionsTask, expensesTask);
             var transactions = transactionsTask.Result.Transactions.OrderByDescending(x => x.Date);
-            var expenses = expensesTask.Result.OrderByDescending(x => x.Date);
+            var expenses = expensesTask.Result.OrderByDescending(x => x.BookingDate?.Date);
             foreach (var transaction in transactions)
             {
                 var matchingExpense = expenses
                     .FirstOrDefault(x => x.Amount >= GetAmountLowerLimit(transaction.Amount)
                     && x.Amount <= GetAmountUpperLimit(transaction.Amount)
-                    && x.Date == transaction.Date);
+                    && x.BookingDate?.Date == transaction.Date);
 
                 var match = new ExpenseMatch
                 {
@@ -60,14 +60,14 @@ namespace GuitoApi.Services.Expense
             // Add all expenses that didn't match
             foreach (var expense in expenses)
             {
-                if (output.Matches.Any(x => x?.Date == expense.Date 
+                if (output.Matches.Any(x => x?.Date == expense.BookingDate?.Date
                                     && x?.Expense?.Amount >= GetAmountLowerLimit(expense.Amount)
                                     && x?.Expense?.Amount <= GetAmountUpperLimit(expense.Amount)))
                     continue;
 
                 var match = new ExpenseMatch
                 {
-                    Date = expense.Date,
+                    Date = expense.BookingDate?.Date,
                     Expense = new ExpenseMatchDetail
                     {
                         Amount = expense.Amount,
