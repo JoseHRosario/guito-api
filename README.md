@@ -91,11 +91,7 @@ to stale Sheets after Postgres writes is not a valid rollback without reconcilia
 
 The deployed-test runner always exercises date-only Sheets CRUD in the dedicated
 smoke tab; cleanup uses the returned ID and runs even if the first list assertion fails.
-For the unreleased issue-128 migration only, an explicit staging workflow dispatch with
-`reset_staging_expenses=true` resets the staging table and its `005_expenses.sql` ledger
-entry before applying the revised migration. The reset is guarded to this issue's feature
-branch, staging database and GitHub deployment role, with no CASCADE or production path.
-Normal redeploys never reset the table.
+Normal redeploys apply pending migrations without resetting expense data.
 
 **Compatibility gate:** the frozen Sheets schema retains date-only precision and
 transient absolute row IDs; audit timestamps are null. Legacy creates still work.

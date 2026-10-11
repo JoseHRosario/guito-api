@@ -21,17 +21,13 @@ on:
         type: choice
         options: [staging, production]
         default: staging
-      reset_staging_expenses:
-        description: 'Drop staging expenses and reset migration 005 (issue 128 branch only)'
-        type: boolean
-        default: false
 
 permissions:
   id-token: write   # OIDC federation with AWS (guito-api-deploy role)
   contents: read
 
 concurrency:
-  # Every staging deploy/reset shares one lane; a manual reset cannot race a push.
+  # Every staging deployment shares one lane to avoid overlapping writes.
   group: ci-cd-${{ ((github.event_name == 'workflow_dispatch' && inputs.environment == 'production') || (github.event_name == 'push' && github.ref_name == 'master')) && 'production' || 'staging' }}
   cancel-in-progress: false
 
@@ -42,13 +38,6 @@ jobs:
     permissions:
       contents: read   # never touches AWS — no id-token here
     steps:
-      - name: Validate explicit staging reset request
-        if: github.event_name == 'workflow_dispatch' && inputs.reset_staging_expenses == true
-        env:
-          TARGET_ENVIRONMENT: ${{ inputs.environment }}
-        run: |
-          test "$TARGET_ENVIRONMENT" = staging
-          test "$GITHUB_REF" = refs/heads/feature/128-postgres-expenses
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
@@ -76,12 +65,6 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::497087877832:role/guito-api-deploy
           aws-region: eu-west-1
-      - name: Reset staging expenses for migration 005 rehearsal
-        if: github.event_name == 'workflow_dispatch' && inputs.reset_staging_expenses == true
-        env:
-          ENV: staging
-          GUITO_RESET_STAGING_EXPENSES: 'true'
-        run: python3 deploy/reset-staging-expenses.py
       - name: Deploy API + authorizer (staging)
         run: ENV=staging EXPENSE_STORE=Postgres ./deploy/deploy.sh
       - name: Smoke — auth contract (Google token + agent key) and business round-trip
