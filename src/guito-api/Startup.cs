@@ -37,7 +37,6 @@ namespace GuitoApi
                 .CreateLogger();
 
             services.AddControllers(options => options.Filters.Add<ExpenseCreateValidationFilter>());
-            services.AddScoped<GuitoApi.Infrastructure.Serialization.ExpenseListResponseLimitFilter>();
             services.AddProblemDetails();
             services.AddEndpointsApiExplorer();
             services.AddSwaggerGen();

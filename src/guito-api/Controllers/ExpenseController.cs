@@ -28,7 +28,6 @@ namespace GuitoApi.Controllers
         }
 
         [HttpGet]
-        [ServiceFilter(typeof(GuitoApi.Infrastructure.Serialization.ExpenseListResponseLimitFilter))]
         public Task<ExpenseListLatest> ListAsync([FromQuery] string? category, [FromQuery] string? month,
             CancellationToken cancellationToken) => _listExpensesService.ListAsync(category, month, cancellationToken);
 

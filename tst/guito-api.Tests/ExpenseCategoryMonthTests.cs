@@ -279,35 +279,23 @@ public class ExpenseCategoryMonthTests
         Assert.Empty(factory.SheetsHandler.ReadRanges);
     }
 
-    [Theory]
-    [InlineData('x', 2_000_000)]
-    [InlineData('é', 333_334)]
-    [InlineData('"', 1_000_000)]
-    public async Task List_ShouldFailBeforeResponseStarts_WhenCompleteJsonExceedsResponseBudget(char character, int count)
+    [Fact]
+    public async Task List_ShouldSerializeCompleteResult_WhenFakeProviderReturnsLargeDescription()
     {
-        // Arrange
+        // The fake bypasses real Data API transport limits; this verifies MVC only.
         using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        var description = new string('x', 2_000_001);
+        factory.Postgres.SeedExpense(1, "2026-10-10T10:00:00Z", "0", "Test", description: description);
         using var client = factory.CreateClient();
-        await CreateOversizedExpenseAsync(client, character, count);
-
-        // Act
-        var response = await client.GetAsync("/Expense?category=Test&month=2026-10");
-
-        // Assert
-        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
-        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
-        var body = await response.Content.ReadAsStringAsync();
-        Assert.Contains("complete", body, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("expenses", body);
-    }
-
-    private static async Task CreateOversizedExpenseAsync(HttpClient client, char character, int count)
-    {
-        using var created = await client.PostAsJsonAsync("/Expense", new
-        {
-            bookingDate = "2026-10-10", amount = "0", category = "Test", description = new string(character, count)
-        });
-        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        using var response = await client.GetAsync("/Expense?category=Test&month=2026-10");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
+        var body = await response.Content.ReadAsByteArrayAsync();
+        Assert.True(body.Length > 2_000_000);
+        using var document = JsonDocument.Parse(body);
+        var expense = Assert.Single(document.RootElement.GetProperty("expenses").EnumerateArray());
+        Assert.Equal(1, expense.GetProperty("id").GetInt32());
+        Assert.Equal(description, expense.GetProperty("description").GetString());
     }
 
     [Theory]

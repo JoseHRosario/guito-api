@@ -54,10 +54,10 @@ Configuration comes from `appsettings.{Environment}.json` plus environment varia
 `GET /Expense?category=Startup&month=2026-10` returns every exact-category Expense
 in the requested Europe/Lisbon booking month, ordered by booking date then ID descending.
 Requires Postgres Expense authority; Sheets returns 409 and production cutover stays blocked.
-There is no pagination or record cap: transport/complete-response limits fail explicitly,
-never with a partial success. See the [Paperclip consumer contract](docs/expense-category-month.md)
+There is no pagination or record cap: Data API failures return an explicit error,
+never a partial success. Responses use ordinary MVC JSON serialization. See the [Paperclip consumer contract](docs/expense-category-month.md)
 for required query parameters, exact amount strings, deployed `Authorization` + `X-Api-Key`
-headers, response shape, errors and the all-or-fail response budget.
+headers, response shape, errors and provider transport constraints.
 
 ## Expense contract and staged Postgres rollout
 

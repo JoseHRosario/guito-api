@@ -88,7 +88,7 @@ Expected query errors use `application/problem+json` ProblemDetails:
 | 400 | Missing/empty category or month; malformed/non-calendar `YYYY-MM`. |
 | 422 | Nonblank category has no exact Postgres mirror match. |
 | 409 | Sheets is selected, including smoke scope. No alternate Postgres dataset is queried. |
-| 502 | Data API provider failure/response limit, unsupported exact database amount, or the complete JSON response exceeds the application budget. No partial array is returned. |
+| 502 | Data API provider failure/response limit or unsupported exact database amount. No partial array is returned. |
 | 500 | Unexpected server failure, or the existing unapproved Production/Postgres cutover guard. |
 
 Authentication errors retain the existing gateway/API contracts, not the query's
@@ -101,23 +101,21 @@ and a database failure cannot produce an empty/partial success. The
 [RDS Data API terminates responses above 1 MiB](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/data-api.limitations.html).
 The API does not silently page or truncate around that transport constraint.
 
-After fetching and mapping every row, the API serializes the entire JSON before
-starting a response and enforces a **2,000,000-byte UTF-8 JSON budget**, counting
-escaped text and the full response shape. It emits the exact serialization checked.
-This conservative budget leaves room for proxy-envelope JSON escaping or base64
-expansion under [Lambda's 6 MB synchronous response quota](https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html),
-which is tighter than API Gateway's payload ceiling. Exceeding the budget returns
-502 ProblemDetails, never `200` with a shortened array or serialization-time truncation.
-The database transport limit may be reached first. A future pagination decision is
-out of scope; consumers must surface these failures rather than interpreting them
-as no spending.
+After fetching and mapping every row, the API uses ordinary MVC JSON serialization,
+like the other Expense endpoints. There is no endpoint-specific response byte limit
+or alternate serializer. Provider and deployed infrastructure payload limits still
+apply; this does not guarantee that arbitrarily large results can be delivered.
+A future pagination decision is out of scope; consumers must surface failures rather
+than interpreting them as no spending.
 
 ## Verification scope
 
 Hermetic HTTP tests run controller → service → real Postgres repository → fake Data
 API transport. Seeded transport rows independently exercise SQL predicates/order,
 DST/range edges, attribution and precision. They do not prove live PostgreSQL execution,
-DDL, privileges, persistence or deployed gateway behavior. Production cutover remains
+DDL, privileges, persistence or deployed gateway behavior. The large-response MVC
+regression uses a fake provider that bypasses real Data API transport limits; it does
+not prove that Data API can deliver a response of that size. Production cutover remains
 separately gated. Run local verification without credentials:
 
 ```bash
