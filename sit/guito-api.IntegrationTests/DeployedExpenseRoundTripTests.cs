@@ -29,7 +29,7 @@ public class DeployedExpenseRoundTripTests
         var lisbonNow = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Europe/Lisbon"));
         var expense = new ExpensePayload
         {
-            Date = lisbonNow.Date,
+            Date = lisbonNow.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
             Amount = 0.01m,
             Description = marker,
             Category = "Integration Tests",
@@ -87,7 +87,7 @@ public class DeployedExpenseRoundTripTests
         return expenses.Any(e =>
             e.Id == id &&
             e.Amount == expense.Amount &&
-            e.Category == expense.Category && e.Date == expense.Date &&
+            e.Category == expense.Category && e.Date?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) == expense.Date &&
             string.Equals(e.Description, expense.Description, StringComparison.OrdinalIgnoreCase));
     }
 
@@ -100,7 +100,7 @@ public class DeployedExpenseRoundTripTests
 
     private sealed class ExpensePayload
     {
-        public DateTime Date { get; set; }
+        public string Date { get; set; } = "";
         public decimal Amount { get; set; }
         public string? Description { get; set; }
         public string? Category { get; set; }

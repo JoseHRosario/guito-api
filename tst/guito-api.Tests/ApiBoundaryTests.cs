@@ -30,7 +30,7 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
         var client = factory.CreateClient();
         var response = await client.PostAsJsonAsync("/expense", new ExpenseCreate
         {
-            Date = new DateTime(2026, 10, 2),
+            Date = "2026-10-02",
             Amount = -42.50m,
             Description = "negative test",
             Category = "Restaurants",
@@ -48,7 +48,7 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
         var client = factory.CreateClient();
         var response = await client.PostAsJsonAsync("/expense", new ExpenseCreate
         {
-            Date = new DateTime(2026, 10, 2),
+            Date = "2026-10-02",
             Amount = 0m,
             Description = "zero test",
             Category = "Restaurants",
@@ -66,7 +66,7 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
         var client = factory.CreateClient();
         var response = await client.PostAsJsonAsync("/expense", new ExpenseCreate
         {
-            Date = new DateTime(2026, 10, 2),
+            Date = "2026-10-02",
             Amount = 0.01m,
             Description = "minimum amount",
             Category = "Restaurants",
@@ -82,7 +82,7 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
         var client = _factory.CreateClient();
         var response = await client.PostAsJsonAsync("/expense", new ExpenseCreate
         {
-            Date = new DateTime(2026, 9, 21),
+            Date = "2026-09-21",
             Amount = 42.50m,
             Description = "coffee shop",
             Category = "Restaurants",

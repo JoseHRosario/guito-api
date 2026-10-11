@@ -41,15 +41,19 @@ still comes only from the authenticated identity.
 `create_date`; `update_date` is nullable, has no default and stays null on creation.
 Only a future explicit user update may set it; no update operation exists in this slice.
 The compatible wire names remain `occurredAt`, `creationDate`, `updateDate`.
-Occurrence is never an audit timestamp. HTTP renders all instants in Europe/Lisbon. New time-enabled clients
-supply an explicit-offset ISO8601 `occurredAt` alongside the existing `date`. The
-instant may use any valid explicit offset (including UTC `Z`); the server normalizes
-it to Europe/Lisbon without changing the instant or precision, then compares its
-Lisbon day with the submitted `date`, not the input offset's calendar day. A known
-instant is not reinterpreted as a Lisbon wall clock. Naive local times, including
+Occurrence is never an audit timestamp. HTTP renders all instants in Europe/Lisbon.
+Create has one required `date` string, mapped to `booking_date`: either `yyyy-MM-dd`
+or an explicit-offset ISO8601 timestamp. The instant may use any valid explicit offset
+(including UTC `Z`); the server normalizes it to Europe/Lisbon without changing the
+instant or microseconds, deriving the internal calendar day from that normalized instant.
+A known instant is not reinterpreted as a Lisbon wall clock. The removed request field
+`occurredAt` is rejected with 400 (including null and casing variants) using targeted
+unmapped-property validation; other unknown properties remain tolerated. Output `date`
+and `occurredAt` stay unchanged. Time-enabled clients send latest `occurredAt` as create
+`date`; legacy/prod clients send only `yyyy-MM-dd`. No database migration is needed. Naive local times, including
 spring DST gaps and unresolved autumn repetitions, are rejected; time-enabled clients
 must resolve local input using Lisbon DST rules before submitting an explicit instant.
-Inputs finer than PostgreSQL microseconds are rejected rather than rounded.
+Timestamp inputs with more than six fractional digits are rejected rather than rounded.
 Date-only clients map to unambiguous Lisbon midnight, not midnight UTC or request time.
 Missing dates are invalid. Output keeps compatible date datetimes plus occurrence,
 currency and audit fields. Create and latest IDs are strings; latest orders occurrence

@@ -12,6 +12,27 @@ namespace GuitoApi.Tests;
 public class PostgresExpenseBoundaryTests
 {
     [Theory]
+    [InlineData("occurredAt", "2026-07-02T14:00:00+01:00", HttpStatusCode.BadRequest)]
+    [InlineData("OccurredAt", null, HttpStatusCode.BadRequest)]
+    [InlineData("OCCURREDAT", "garbage", HttpStatusCode.BadRequest)]
+    [InlineData("futureMetadata", "ignored", HttpStatusCode.OK)]
+    public async Task CreateExpense_ShouldRejectRemovedOccurrencePropertyOnly_WhenUnmappedInputReceived(string property, string? value, HttpStatusCode expected)
+    {
+        // Arrange
+        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var client = factory.CreateClient();
+        var payload = new Dictionary<string, object?> { ["date"] = "2026-07-02", ["amount"] = 1m, ["category"] = "Test", [property] = value };
+
+        // Act
+        var response = await client.PostAsJsonAsync("/Expense", payload);
+
+        // Assert
+        Assert.Equal(expected, response.StatusCode);
+        if (expected == HttpStatusCode.BadRequest) Assert.Empty(factory.Postgres.ExecutedSql);
+        Assert.Empty(factory.SheetsHandler.AppendBodies);
+    }
+
+    [Theory]
     [InlineData(true)]
     [InlineData(false)]
     public async Task CreateExpense_ShouldReturnIntegerIdentity_WhenDataApiEncodesIdsAsTextOrLong(bool textIds)
@@ -160,6 +181,8 @@ public class PostgresExpenseBoundaryTests
     [Theory]
     [InlineData("2026-07-01T23:30:00.123456Z", "2026-07-02T00:30:00.123456+01:00")]
     [InlineData("2026-07-02T09:30:00.123456+10:00", "2026-07-02T00:30:00.123456+01:00")]
+    [InlineData("2026-07-02T00:30:00.123456+10:00", "2026-07-01T15:30:00.123456+01:00")]
+    [InlineData("2026-07-01T23:30:00.123456-10:00", "2026-07-02T10:30:00.123456+01:00")]
     public async Task CreateAndList_ShouldNormalizeKnownInstant_WhenInputOffsetIsNotLisbon(string occurredAt, string expected)
     {
         // Arrange
@@ -167,7 +190,7 @@ public class PostgresExpenseBoundaryTests
         using var client = factory.CreateClient();
 
         // Act
-        var created = await client.PostAsJsonAsync("/Expense", new { date = "2026-07-02", occurredAt, amount = 1m, category = "Test" });
+        var created = await client.PostAsJsonAsync("/Expense", new { date = occurredAt, amount = 1m, category = "Test" });
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, created.StatusCode);
@@ -175,30 +198,47 @@ public class PostgresExpenseBoundaryTests
         var expense = Assert.Single(latest.EnumerateArray());
         Assert.Equal(DateTimeOffset.Parse(occurredAt).UtcTicks, expense.GetProperty("occurredAt").GetDateTimeOffset().UtcTicks);
         Assert.Equal(DateTimeOffset.Parse(expected).ToString("O"), expense.GetProperty("occurredAt").GetDateTimeOffset().ToString("O"));
-        Assert.Equal(new DateTime(2026, 7, 2), expense.GetProperty("date").GetDateTime());
+        Assert.Equal(DateTimeOffset.Parse(expected).Date, expense.GetProperty("date").GetDateTime());
+
+        // Latest-prefill compatibility: submit the unchanged output instant through the sole input date.
+        var resubmitted = await client.PostAsJsonAsync("/Expense", new
+        {
+            date = expense.GetProperty("occurredAt").GetString(),
+            amount = expense.GetProperty("amountExact").GetString(), category = expense.GetProperty("category").GetString()
+        });
+        Assert.Equal(HttpStatusCode.OK, resubmitted.StatusCode);
+        var repeated = (await client.GetFromJsonAsync<JsonElement>("/Expense/latest/1")).GetProperty("expenses")[0];
+        Assert.Equal(expense.GetProperty("occurredAt").GetString(), repeated.GetProperty("occurredAt").GetString());
+        Assert.Equal(expense.GetProperty("amountExact").GetString(), repeated.GetProperty("amountExact").GetString());
     }
 
     [Theory]
-    [InlineData("2026-03-29", "2026-03-29T01:30:00+00:00", HttpStatusCode.OK)]
-    [InlineData("2026-03-29", "2026-03-29T01:30:00+01:00", HttpStatusCode.OK)]
-    [InlineData("2026-10-25", "2026-10-25T01:30:00+01:00", HttpStatusCode.OK)]
-    [InlineData("2026-10-25", "2026-10-25T01:30:00+00:00", HttpStatusCode.OK)]
-    [InlineData("2026-10-10", "2026-10-10T14:00:00Z", HttpStatusCode.OK)]
-    [InlineData("2026-10-10", "2026-10-10T14:00:00", HttpStatusCode.BadRequest)]
-    [InlineData("2026-10-10", "2026-10-11T14:00:00+01:00", HttpStatusCode.BadRequest)]
-    [InlineData("2026-10-10", "2026-10-10T14:00:00.1234567+01:00", HttpStatusCode.BadRequest)]
-    [InlineData("2026-10-10", "garbage", HttpStatusCode.BadRequest)]
-    [InlineData("2026-07-01", "2026-07-01T23:30:00.123456Z", HttpStatusCode.BadRequest)]
-    [InlineData("2026-03-29", "2026-03-29T01:30:00", HttpStatusCode.BadRequest)]
-    [InlineData("2026-10-25", "2026-10-25T01:30:00", HttpStatusCode.BadRequest)]
-    public async Task CreateExpense_ShouldValidateLisbonDayAndPrecision_WhenExplicitInstantReceived(string date, string occurredAt, HttpStatusCode expected)
+    [InlineData("2026-03-29T01:30:00+00:00", HttpStatusCode.OK)]
+    [InlineData("2026-03-29T01:30:00+01:00", HttpStatusCode.OK)]
+    [InlineData("2026-10-25T01:30:00+01:00", HttpStatusCode.OK)]
+    [InlineData("2026-10-25T01:30:00+00:00", HttpStatusCode.OK)]
+    [InlineData("2026-10-10T14:00:00Z", HttpStatusCode.OK)]
+    [InlineData("2026-10-10T14:00:00", HttpStatusCode.BadRequest)]
+    [InlineData("2026-10-11T14:00:00+01:00", HttpStatusCode.OK)]
+    [InlineData("2026-10-10T14:00:00.1234567+01:00", HttpStatusCode.BadRequest)]
+    [InlineData("garbage", HttpStatusCode.BadRequest)]
+    [InlineData("2026-07-01T23:30:00.123456Z", HttpStatusCode.OK)]
+    [InlineData("2026-03-29T01:30:00", HttpStatusCode.BadRequest)]
+    [InlineData("2026-10-25T01:30:00", HttpStatusCode.BadRequest)]
+    [InlineData("2026-10-10T14:00:00.1234560+01:00", HttpStatusCode.BadRequest)]
+    [InlineData("2026-10-10T14:00:00.12345678+01:00", HttpStatusCode.BadRequest)]
+    [InlineData("2026-02-30", HttpStatusCode.BadRequest)]
+    [InlineData("2026-1-10", HttpStatusCode.BadRequest)]
+    [InlineData("", HttpStatusCode.BadRequest)]
+    [InlineData(null, HttpStatusCode.BadRequest)]
+    public async Task CreateExpense_ShouldValidateOffsetAndPrecision_WhenDateContainsExplicitInstant(string? date, HttpStatusCode expected)
     {
         // Arrange
         using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient();
 
         // Act
-        var response = await client.PostAsJsonAsync("/Expense", new { date, occurredAt, amount = 1m, description = "Test", category = "Test" });
+        var response = await client.PostAsJsonAsync("/Expense", new { date, amount = 1m, description = "Test", category = "Test" });
 
         // Assert
         Assert.Equal(expected, response.StatusCode);
@@ -206,7 +246,7 @@ public class PostgresExpenseBoundaryTests
         else
         {
             var listed = (await client.GetFromJsonAsync<JsonElement>("/Expense/latest/10")).GetProperty("expenses");
-            Assert.Equal(DateTimeOffset.Parse(occurredAt), Assert.Single(listed.EnumerateArray()).GetProperty("occurredAt").GetDateTimeOffset());
+            Assert.Equal(DateTimeOffset.Parse(date!), Assert.Single(listed.EnumerateArray()).GetProperty("occurredAt").GetDateTimeOffset());
         }
     }
 
@@ -365,7 +405,7 @@ public class PostgresExpenseBoundaryTests
         var ids = new List<string>();
         foreach (var time in new[] { "18:00:00", "09:00:00", "18:00:00" })
         {
-            var created = await client.PostAsJsonAsync("/Expense", new { date = "2026-10-10", occurredAt = $"2026-10-10T{time}+01:00", amount = 1m, description = "Duplicate", category = "Test" });
+            var created = await client.PostAsJsonAsync("/Expense", new { date = $"2026-10-10T{time}+01:00", amount = 1m, description = "Duplicate", category = "Test" });
             ids.Add((await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetString()!);
         }
 
@@ -459,7 +499,7 @@ public class PostgresExpenseBoundaryTests
         // Act
         var created = await client.PostAsJsonAsync("/Expense", new
         {
-            date = "2026-10-10", occurredAt = "2026-10-10T14:23:00.123456+01:00",
+            date = "2026-10-10T14:23:00.123456+01:00",
             amount = 123456789.123456789m, description = "Coffee", category = "Restaurants"
         });
         var id = JsonDocument.Parse(await created.Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetString();
@@ -546,7 +586,7 @@ public class PostgresExpenseBoundaryTests
         // Act
         var response = await client.PostAsJsonAsync("/Expense", new
         {
-            date = "2026-10-10", occurredAt = "2026-10-10T14:23:00+01:00",
+            date = "2026-10-10T14:23:00+01:00",
             amount = 123456789.123456789m, description = "Coffee", category = "Restaurants"
         });
 

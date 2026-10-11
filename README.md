@@ -51,19 +51,24 @@ Configuration comes from `appsettings.{Environment}.json` plus environment varia
 
 ## Expense contract and staged Postgres rollout
 
-`POST /Expense` accepts the existing `date` (`yyyy-MM-dd` or compatible datetime),
+`POST /Expense` accepts one required `date` string: `yyyy-MM-dd` for legacy
+Lisbon midnight, or explicit-offset ISO8601 for a known occurrence instant. It also accepts
 exact-decimal `amount` (positive, zero or negative; a JSON number, including exponent notation, or an
 invariant decimal string), description and category. Amounts must be exactly
 representable by .NET decimal: a 96-bit coefficient and scale 0–28 after removing
 trailing zeros. Inputs requiring rounding, underflow or overflow return 400; equivalent
 trailing-zero representations are accepted. Responses keep numeric `amount` and add
 `amountExact` text for clients that cannot preserve decimal precision in JSON numbers.
-Optional `occurredAt` is ISO8601 with any explicit offset (including UTC `Z`). The
-server preserves the instant and normalizes it to Europe/Lisbon; its Lisbon day must
-match the supplied `date`. Naive local times (including unresolved DST gaps or
-repetitions) are rejected. Timestamp precision is at most microseconds (finer inputs
-return 400, not rounding).
-Without occurrence time, the original date means Lisbon midnight. Currency defaults
+Timestamp `date` accepts any explicit offset (including UTC `Z`); the server preserves
+the instant and derives its Europe/Lisbon calendar day. For example,
+`"date":"2026-07-01T23:30:00.123456Z"` becomes Lisbon July 2, 00:30, with all
+microseconds retained. Naive datetime strings (including unresolved DST gaps or
+repetitions), invalid/missing dates, and more than six fractional digits return 400,
+not rounding. The removed request property `occurredAt` returns 400 even if null;
+other unknown request properties remain tolerated. Latest response `date`/`occurredAt`
+are unchanged: time-enabled clients resubmit latest `occurredAt` as POST `date`, not
+as a second field. Legacy/prod clients send only `yyyy-MM-dd`; intraday timestamps
+against frozen date-only Sheets return 409 rather than silently losing time. Currency defaults
 to EUR; non-EUR values are rejected. Create returns `{ "id": "opaque-string" }`.
 
 `GET /Expense/latest/{count}` (1–100) returns `expenses` with `id`, compatible `date`,

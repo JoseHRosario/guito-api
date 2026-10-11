@@ -44,7 +44,7 @@ public class SmokeScopeTests
         using var factory = new CustomWebApplicationFactory();
         using var client = factory.CreateClient();
         var expense = ValidExpense();
-        expense.OccurredAt = "2026-09-21T14:00:00+01:00";
+        expense.Date = "2026-09-21T14:00:00+01:00";
 
         // Act
         var response = await client.PostAsJsonAsync("/Expense", expense);
@@ -75,7 +75,7 @@ public class SmokeScopeTests
 
     private static ExpenseCreate ValidExpense() => new()
     {
-        Date = new DateTime(2026, 9, 21),
+        Date = "2026-09-21",
         Amount = 5.00m,
         Description = "smoke espresso",
         Category = "Restaurants",

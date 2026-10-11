@@ -10,26 +10,23 @@ public static class ExpenseTime
 
     public static DateTimeOffset InLisbon(DateTimeOffset instant) => TimeZoneInfo.ConvertTime(instant, Lisbon);
 
-    public static DateTimeOffset Resolve(DateTime date, string? occurredAt)
+    public static DateTimeOffset Resolve(string date)
     {
-        if (occurredAt is null)
-            return Midnight(date);
-        if (!Regex.IsMatch(occurredAt, @"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,7})?(Z|[+-]\d{2}:\d{2})$")
-            || !DateTimeOffset.TryParse(occurredAt, CultureInfo.InvariantCulture, DateTimeStyles.None, out var instant))
-            throw new ProblemException(400, "occurredAt must be ISO8601 with an explicit offset.");
-        if (instant.Ticks % 10 != 0)
-            throw new ProblemException(400, "occurredAt precision must not exceed microseconds.");
-        var lisbonInstant = InLisbon(instant);
-        if (lisbonInstant.Date != date.Date)
-            throw new ProblemException(400, "occurredAt must match date in Europe/Lisbon.");
-        return lisbonInstant;
+        if (string.IsNullOrWhiteSpace(date))
+            throw new ProblemException(400, "date is required.");
+        if (DateTime.TryParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day))
+            return Midnight(day);
+        if (!Regex.IsMatch(date, @"\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?(Z|[+-][0-9]{2}:[0-9]{2})\z")
+            || !DateTimeOffset.TryParse(date, CultureInfo.InvariantCulture, DateTimeStyles.None, out var instant))
+            throw new ProblemException(400, "date must be yyyy-MM-dd or ISO8601 with an explicit offset and at most six fractional digits.");
+        return InLisbon(instant);
     }
 
     public static DateTimeOffset Midnight(DateTime date)
     {
         var local = DateTime.SpecifyKind(date.Date, DateTimeKind.Unspecified);
         if (Lisbon.IsInvalidTime(local) || Lisbon.IsAmbiguousTime(local))
-            throw new ProblemException(400, "Legacy date has no unambiguous Lisbon midnight; supply occurredAt.");
+            throw new ProblemException(400, "Legacy date has no unambiguous Lisbon midnight; supply an explicit-offset timestamp in date.");
         return new DateTimeOffset(local, Lisbon.GetUtcOffset(local));
     }
 }

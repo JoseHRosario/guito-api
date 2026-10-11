@@ -10,11 +10,10 @@ public class CreateExpenseService(IExpenseRepository repository, IUserIdentityRe
 {
     public async Task<ExpenseCreated> CreateAsync(ExpenseCreate value, CancellationToken cancellationToken = default)
     {
-        if (value.Date == default)
-            throw new GuitoApi.Exceptions.ProblemException(400, "date is required.");
+        var occurredAt = ExpenseTime.Resolve(value.Date);
         var draft = new ExpenseDraft
         {
-            Date = value.Date.Date, OccurredAt = ExpenseTime.Resolve(value.Date, value.OccurredAt),
+            Date = occurredAt.Date, OccurredAt = occurredAt,
             Amount = value.Amount, Currency = value.Currency,
             Description = value.Description, Category = value.Category, CreatorEmail = identity.GetEmail()
         };

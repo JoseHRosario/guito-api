@@ -104,7 +104,7 @@ public class ApiKeyBoundaryTests : IClassFixture<CustomWebApplicationFactory>
         var client = ClientWith(gate: true, headerValue: StoredValue);
         var response = await client.PostAsJsonAsync("/expense", new ExpenseCreate
         {
-            Date = new DateTime(2026, 9, 23),
+            Date = "2026-09-23",
             Amount = 9.80m,
             Description = "espresso",
             Category = "Restaurants",
