@@ -8,6 +8,7 @@ public sealed record HistoricalImportRow
     public string RawJson { get; init; } = "";
     public string Status { get; set; } = "Pending";
     public string? Exception { get; set; }
+    public string? FormattingDifference { get; init; }
     public ExpenseDraft? Expected { get; init; }
     public ImportExclusion? Exclusion { get; set; }
     public int? ExpenseId { get; set; }

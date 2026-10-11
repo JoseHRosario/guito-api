@@ -27,6 +27,18 @@ Description, category case/spacing and creator text are not normalized. Categori
 must have an exact mirror match. Booking day resolves to original Lisbon midnight;
 `create_date` is the actual database write time and `update_date` stays null.
 
+José approved preserving a genuine stored EUR numeric amount despite rounded currency
+display (#129): the source's exact underlying numeric token is authoritative. Never
+replace it with the formatted amount or infer a cent-rounding tolerance. Validate
+display currency/grouping and exact decimal syntax independently; reject unsupported
+precision in either view. Unequal numeric/display amounts produce a per-row nonblocking
+`FormattingDifference` note with both original tokens retained in protected `RawJson`.
+This records a difference, not proof of rounding: format metadata is not in the frozen
+snapshot. Underlying text still requires exact displayed agreement, and absent/invalid
+underlying cells remain errors. The approved row 41 case persists EUR 0.011, not its
+EUR 0.01 display; parity/totals use 0.011. Parser notes/classification do not change the
+immutable snapshot hash, so retry the prior archive and preserve committed provenance.
+
 Each Expense insert and its `(snapshot_id, source_row)` provenance link commit in one
 ambient Data API unit of work. A transaction advisory lock serializes source imports,
 including concurrent processes and head supersession. UNIQUE snapshot/Expense mapping

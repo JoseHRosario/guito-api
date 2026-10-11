@@ -42,8 +42,14 @@ never copy credentials into the repo or modify `~/.aws`. Agent AWS discovery req
    explicitly declared EUR convention or a single explicit EUR/€ prefix or suffix.
    Dot decimals allow comma thousands grouping only with a 1–3 digit first group
    followed by exactly three digits per group (for example `€1,234.56`). Comma decimals
-   remain ungrouped. Both displayed and underlying numeric/text amounts must be exactly
-   representable and equal; hidden display rounding is a blocker, never silently accepted.
+   remain ungrouped. Both views must be well-formed and exactly representable. A stored
+   underlying **numeric** token is authoritative, without rounding, even when display
+   formatting hides precision. Each unequal display/number pair carries a nonblocking
+   `FormattingDifference` audit note and both original tokens in `RawJson`. Underlying
+   text still requires exact displayed agreement; missing/invalid values never fall back
+   to the display. This is José's approved source-precision policy, not a cent tolerance
+   or a claim that every differing display is proven rounding (format metadata is not
+   captured). Repeated capture reads and the operator write pause remain required.
    USD/conflicting currency markers, malformed grouping, unsupported date layouts/precision,
    missing category/creator and unknown mirror
    labels are exceptions, not repaired guesses. Do not reformat the live sheet to
@@ -71,7 +77,14 @@ gh workflow run ci-cd.yml \
   -f date_format="$DATE_FORMAT"
 ```
 
-`IMPORT_ARCHIVE_PASSWORD` must already exist on the staging environment. Production
+`IMPORT_ARCHIVE_PASSWORD` must already exist on the staging environment. The reusable
+job binds `environment: staging` and resolves this secret only in the three consuming
+steps (preflight, retry recovery, encryption), not job-level `env`. Environment secrets
+are supplied by that job's environment, not forwarded by the caller; adding
+`secrets: inherit`/a required `workflow_call` secret is not a substitute for environment
+binding. Do not copy the password to a repository secret or `$GITHUB_ENV`.
+See [GitHub's environment-secret rules for reusable workflows](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#using-inputs-and-secrets-in-a-reusable-workflow).
+Production
 plus rehearsal is rejected before deployment. The caller owns `ci-cd-staging` across
 deploy, smoke and rehearsal; the reusable child has a distinct per-run concurrency
 key so it cannot deadlock waiting for its parent. Standalone dispatch of
@@ -85,8 +98,24 @@ report readiness; **2** means exceptions/failed parity/blocking; **1** is operat
 failure. Watch the exact run, not merely the dispatch response. No financial cells
 or provider error details are printed into public CI logs.
 
-No live rehearsal was run as part of these fixes. Missing protected secret and
-operator source verification remain prerequisites, not facts established by tests.
+Run **38171349557** failed at the protected-evidence preflight with an empty resolved
+password, before capture/import; no snapshot/artifact or imported rows were produced.
+The staging environment secret's existence was operator-verified. The step-scoped
+resolution change is hermetically checked, but live secret resolution still needs
+verification in the next approved run. That next run must **capture anew**, not use
+`retry_run_id=38171349557`. For the operator-verified 987-row grid, EUR dot decimals
+and `M/d/yyyy` display, run the reviewed branch head:
+
+```bash
+gh workflow run ci-cd.yml \
+  --repo JoseHRosario/guito-api --ref feature/129-historical-import \
+  -f environment=staging -f rehearse_history=true \
+  -f last_row=987 -f decimal_separator=. -f date_format=M/d/yyyy
+```
+
+Offline validation of the protected actual capture accounts for 43 valid Expenses,
+940 blanks and zero exceptions, with the row 41 formatting-difference note. This
+does not establish live persistence or authorize production cutover.
 
 ## Retry, inspect, and reconcile
 
@@ -105,6 +134,12 @@ Inspect `report.json`, `retry-verification.json`, the hash-named `*.snapshot.jso
 and any `approval.json`. Expected amounts serialize as exact strings, actual amounts
 and all totals are exact text. Compare **every row**, not just aggregates. The row's
 raw evidence includes both formatted and underlying cells. The report separates
+nonblocking `FormattingDifference` notes from `Exception`; parity and totals use the
+exact underlying numeric amount, not the display. An equal-value trailing-zero or
+grouping change does not produce a difference note. Snapshot identity depends only on
+immutable raw capture and conventions, not parser policy or notes, so the approved
+policy can retry an older blocked snapshot without recapture or duplicate inserts.
+The report separates
 Blank, NonExpense, Malformed, Failed, parity mismatches, imported and excluded rows.
 `SourceTotal` includes valid source amounts, even failures/exclusions. `PersistedTotal`
 includes all read-back amounts, `ImportedTotal` only parity-verified rows, and
@@ -121,6 +156,9 @@ gh workflow run ci-cd.yml \
   -f last_row="$LAST_ROW" -f decimal_separator="$DECIMAL_SEPARATOR" \
   -f date_format="$DATE_FORMAT" -f retry_run_id="$PRIOR_RUN_ID"
 ```
+
+Only use a prior run with a downloadable authenticated artifact containing a captured
+snapshot. A pre-capture failure (including 38171349557) cannot be retried this way.
 
 Fix transport/category-mirror prerequisites through approved pipelines, then retry.
 A failed or lost-acknowledgement row may already have committed: never manually

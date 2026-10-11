@@ -359,15 +359,58 @@ public class HistoricalExpenseImportTests
         Assert.Equal("12.34", report.Rows[0].Amount);
         Assert.Contains("12,34", report.Rows[0].RawJson);
     }
+    [Fact]
+    public async Task ImportAsync_ShouldPreserveUnderlyingPrecisionWithAuditNote_WhenCurrencyDisplayRoundsStoredNumber()
+    {
+        // Arrange
+        var handler = new FakeSheetsHttpHandler { LatestValuesJson = """[["2026-07-10","","","€0.01","Coffee","Restaurants","creator@example.com"]]""",
+            UnformattedValuesJson = """[["2026-07-10","","",0.011,"Coffee","Restaurants","creator@example.com"]]""" };
+        var database = new ImportDatabaseTransport();
+        var snapshot = await ImportHarness.CaptureAsync(handler, 41, 41);
+        var snapshotId = SnapshotArchive.Identity(snapshot);
+
+        // Act
+        var first = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = snapshot.ToDomain() });
+        var retry = await ImportHarness.Create(handler, database).ImportAsync(new HistoricalImportRequest { Snapshot = snapshot.ToDomain() });
+
+        // Assert
+        Assert.True(first.ReadyForCutover);
+        Assert.True(retry.ReadyForCutover);
+        Assert.Empty(retry.Exceptions);
+        var row = Assert.Single(retry.Rows);
+        Assert.Equal(41, row.SourceRow);
+        Assert.Equal(0.011m, row.Expected!.Amount);
+        Assert.Equal("0.011", row.Amount);
+        Assert.Equal("0.011", retry.ImportedTotal);
+        Assert.True(row.Parity);
+        Assert.Null(row.Exception);
+        Assert.Equal(first.Rows[0].ExpenseId, row.ExpenseId);
+        Assert.Equal(1, database.ExpenseCount);
+        Assert.Equal(snapshotId, retry.SnapshotId);
+        using var evidence = System.Text.Json.JsonDocument.Parse(row.RawJson);
+        Assert.Equal("€0.01", evidence.RootElement.GetProperty("Formatted")[3].GetString());
+        Assert.Equal("0.011", evidence.RootElement.GetProperty("Unformatted")[3].GetRawText());
+        using var report = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(row));
+        Assert.True(report.RootElement.TryGetProperty("FormattingDifference", out var note));
+        Assert.Contains("underlying", note.GetString());
+        Assert.Empty(handler.AppendBodies);
+    }
+
     [Theory]
-    [InlineData("1.23 €", "1.234567890123456789", false)]
-    [InlineData("1,234.56", "1234.57", false)]
+    [InlineData("1.23 €", "1.234567890123456789", true)]
+    [InlineData("1,234.56", "1234.57", true)]
     [InlineData("1,234.5600", "1234.56", true)]
     [InlineData("1,234.56", "\"1,234.57\"", false)]
     [InlineData("1,234.56", "\"1,234.5600\"", true)]
     [InlineData("1.23", "0.12345678901234567890123456789", false)]
     [InlineData("1.23", "1e-29", false)]
-    public async Task ImportAsync_ShouldRequireExactDisplayAgreement_WhenUnderlyingAmountIsNumericOrText(string display, string underlying, bool valid)
+    [InlineData("€0.01", "79228162514264337593543950336", false)]
+    [InlineData("€0.01", "null", false)]
+    [InlineData("€0.01", "\"\"", false)]
+    [InlineData("€0.01", "\"0.011 USD\"", false)]
+    [InlineData("€0.01", "\"EUR 0.011 €\"", false)]
+    [InlineData("€0.01", "\"0,01.1\"", false)]
+    public async Task ImportAsync_ShouldPreferExactNumericAndRequireTextAgreement_WhenUnderlyingAmountIsNumericOrText(string display, string underlying, bool valid)
     {
         // Arrange
         var handler = new FakeSheetsHttpHandler { LatestValuesJson = System.Text.Json.JsonSerializer.Serialize(new[] { new[] { "2026-07-10", "", "", display, "Coffee", "Restaurants", "creator@example.com" } }),
@@ -384,7 +427,13 @@ public class HistoricalExpenseImportTests
         Assert.Equal(valid ? 1 : 0, database.ExpenseCount);
         using var raw = System.Text.Json.JsonDocument.Parse(report.Rows[0].RawJson);
         Assert.Equal(display, raw.RootElement.GetProperty("Formatted")[3].GetString());
-        Assert.Equal(underlying, raw.RootElement.GetProperty("Unformatted")[3].GetRawText());
+        using var original = System.Text.Json.JsonDocument.Parse(underlying);
+        Assert.True(System.Text.Json.JsonElement.DeepEquals(original.RootElement, raw.RootElement.GetProperty("Unformatted")[3]));
+        if (valid)
+        {
+            Assert.Equal(System.Text.Json.JsonSerializer.Deserialize<decimal>(underlying.Trim('"').Replace(",", "")), report.Rows[0].Expected!.Amount);
+            Assert.Equal(report.Rows[0].Expected!.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), report.Rows[0].Amount);
+        }
     }
     [Theory]
     [InlineData("7/10/2026", "M/d/yyyy", true)]

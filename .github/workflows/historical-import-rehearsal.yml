@@ -57,7 +57,6 @@ jobs:
     environment: staging
     timeout-minutes: 120
     env:
-      ARCHIVE_PASSWORD: ${{ secrets.IMPORT_ARCHIVE_PASSWORD }}
       RETRY_RUN_ID: ${{ inputs.retry_run_id }}
       APPROVAL_FILE: ${{ inputs.approval_file }}
       LAST_ROW: ${{ inputs.last_row }}
@@ -70,6 +69,9 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       - name: Validate protected evidence prerequisites
+        # Resolve the environment secret on the runner, after staging is bound.
+        env:
+          ARCHIVE_PASSWORD: ${{ secrets.IMPORT_ARCHIVE_PASSWORD }}
         run: |
           test -n "$ARCHIVE_PASSWORD"
           mkdir -p "$RUNNER_TEMP/import-evidence"
@@ -107,6 +109,8 @@ jobs:
           path: ${{ runner.temp }}/import-download
       - name: Recover frozen snapshot for retry
         if: inputs.retry_run_id != ''
+        env:
+          ARCHIVE_PASSWORD: ${{ secrets.IMPORT_ARCHIVE_PASSWORD }}
         run: |
           python3 -c 'import os,hmac,hashlib,pathlib; p=pathlib.Path(os.environ["RUNNER_TEMP"])/"import-download"; expected=(p/"evidence.mac").read_text().strip(); actual=hmac.new(os.environ["ARCHIVE_PASSWORD"].encode(),(p/"evidence.tar.enc").read_bytes(),hashlib.sha256).hexdigest(); assert hmac.compare_digest(expected,actual), "Protected archive authentication failed"'
           openssl enc -d -aes-256-cbc -pbkdf2 -in "$RUNNER_TEMP/import-download/evidence.tar.enc" -pass env:ARCHIVE_PASSWORD | tar -xz -C "$RUNNER_TEMP/import-evidence" --wildcards '*.snapshot.json'
@@ -128,6 +132,8 @@ jobs:
           dotnet run --project tools/Guito.HistoricalImport -- import "$GITHUB_WORKSPACE" "${snapshots[0]}" "$RUNNER_TEMP/import-evidence/retry-verification.json" "${approvals[@]}"
       - name: Encrypt evidence even when parity blocks readiness
         if: always()
+        env:
+          ARCHIVE_PASSWORD: ${{ secrets.IMPORT_ARCHIVE_PASSWORD }}
         run: |
           rm -f "$RUNNER_TEMP/import-google-key.json"
           test -n "$ARCHIVE_PASSWORD"

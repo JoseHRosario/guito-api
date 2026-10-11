@@ -46,7 +46,9 @@ public static class HistoricalRowParser
         var category = Cell(cells, 5);
         var creator = Cell(cells, 6);
         if (string.IsNullOrWhiteSpace(category) || string.IsNullOrWhiteSpace(creator)) throw new FormatException("Category and creator attribution are required.");
-        return new HistoricalImportRow { SourceRow = row.SourceRow, RawJson = row.RawJson, Expected = new ExpenseDraft
+        return new HistoricalImportRow { SourceRow = row.SourceRow, RawJson = row.RawJson,
+            FormattingDifference = amount != displayAmount ? "Displayed amount differs from the exact underlying numeric amount; underlying amount preserved. See RawJson for original tokens." : null,
+            Expected = new ExpenseDraft
         { BookingDate = TimeService.Midnight(date), Amount = amount, Description = Cell(cells, 4), Category = category, CreatorEmail = creator } };
     }
 
@@ -81,7 +83,9 @@ public static class HistoricalRowParser
         var parsed = amount.ValueKind == JsonValueKind.Number
             ? JsonSerializer.Deserialize<decimal>(amount.GetRawText(), DecimalOptions)
             : ParseAmount(CellText(amount), separator);
-        if (parsed != displayAmount) throw new FormatException("Underlying amount disagrees with the exact displayed amount.");
+        // Sheets currency formatting can hide precision; only stored numeric tokens are authoritative.
+        if (amount.ValueKind != JsonValueKind.Number && parsed != displayAmount)
+            throw new FormatException("Underlying text amount disagrees with the exact displayed amount.");
         return parsed;
     }
 
