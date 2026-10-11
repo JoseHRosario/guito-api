@@ -13,6 +13,12 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
     public bool PersistExpenses { get; set; }
     private readonly List<IReadOnlyList<PostgresValue>> _expenses = [];
 
+    public void SeedExpense(int id, string bookingDate, string amount, string category, string creatorEmail = "human@example.com", string description = "Original purchase") =>
+        _expenses.Add([PostgresValue.FromString(id.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            PostgresValue.FromString(bookingDate), PostgresValue.FromString(amount), PostgresValue.FromString(description),
+            PostgresValue.FromString(category), PostgresValue.FromString(creatorEmail),
+            PostgresValue.FromString("2027-02-01T10:00:00Z"), PostgresValue.Null()]);
+
     public Dictionary<string, long> ExpenseCategoryIds { get; } = new(StringComparer.Ordinal)
     {
         ["Test"] = 2147483648L, ["Restaurants"] = 2, ["Groceries"] = 3, ["Original category"] = 4
@@ -37,13 +43,28 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
         }
         if (sql.StartsWith("SELECT", StringComparison.Ordinal))
         {
-            var rows = _expenses.OrderByDescending(r => DateTimeOffset.Parse(r[1].StringValue!))
-                .ThenByDescending(r => int.Parse(r[0].StringValue!, System.Globalization.CultureInfo.InvariantCulture));
-            return new PostgresResult([], rows.Take((int)values["limit"].LongValue!).ToList(), 0);
+            return ReadExpenses(sql, values);
         }
         throw new InvalidOperationException("Unsupported expense statement in fake.");
     }
+    private PostgresResult ReadExpenses(string sql, Dictionary<string, PostgresValue> values)
+    {
+        IEnumerable<IReadOnlyList<PostgresValue>> rows = _expenses;
+        if (sql.Contains("e.category_id = :category_id", StringComparison.Ordinal))
+            rows = rows.Where(r => ExpenseCategoryIds[r[4].StringValue!] == values["category_id"].LongValue);
+        if (sql.Contains("e.booking_date >= CAST(:start AS timestamptz)", StringComparison.Ordinal))
+            rows = rows.Where(r => DateTimeOffset.Parse(r[1].StringValue!) >= DateTimeOffset.Parse(values["start"].StringValue!));
+        if (sql.Contains("e.booking_date < CAST(:end AS timestamptz)", StringComparison.Ordinal))
+            rows = rows.Where(r => values["end"].StringValue == "10000-01-01T00:00:00+00:00" || DateTimeOffset.Parse(r[1].StringValue!) < DateTimeOffset.Parse(values["end"].StringValue!));
+        if (sql.Contains("ORDER BY e.booking_date DESC, e.id DESC", StringComparison.Ordinal))
+            rows = rows.OrderByDescending(r => DateTimeOffset.Parse(r[1].StringValue!))
+                .ThenByDescending(r => int.Parse(r[0].StringValue!, System.Globalization.CultureInfo.InvariantCulture));
+        if (sql.Contains("LIMIT :limit", StringComparison.Ordinal)) rows = rows.Take((int)values["limit"].LongValue!);
+        return new PostgresResult([], rows.ToList(), 0);
+    }
+
     public Exception? ExecuteException { get; set; }
+    public int ExecuteExceptionAtCall { get; set; } = 1;
     public string? NextTransactionId { get; set; }
 
     public List<string> ExecutedSql { get; } = [];
@@ -61,7 +82,7 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
         ExecutedParameters.Add(parameters);
         ExecutedTransactionIds.Add(transactionId);
         ExecutedCancellationTokens.Add(cancellationToken);
-        if (ExecuteException is not null)
+        if (ExecuteException is not null && ExecutedSql.Count >= ExecuteExceptionAtCall)
             throw ExecuteException;
         if (PersistExpenses && NextResults.Count == 0 && (sql.Contains("expenses", StringComparison.Ordinal)
             || sql == "SELECT id FROM categories WHERE name = :name"))

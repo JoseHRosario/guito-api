@@ -9,6 +9,7 @@ namespace GuitoApi.Controllers
     [Route("[controller]")]
     public class ExpenseController : ControllerBase
     {
+        private readonly IListExpensesService _listExpensesService;
         private readonly ICreateExpenseService _createExpenseService;
         private readonly IListLatestExpensesService _listLatestExpensesService;
         private readonly IMatchExpensesService _matchExpensesService;
@@ -17,13 +18,19 @@ namespace GuitoApi.Controllers
         public ExpenseController(ICreateExpenseService createExpenseService, 
             IListLatestExpensesService listLatestExpensesService, 
             IMatchExpensesService matchExpensesService,
-            IDeleteExpenseRowService deleteExpenseRowService)
+            IDeleteExpenseRowService deleteExpenseRowService, IListExpensesService listExpensesService)
         {
+            _listExpensesService = listExpensesService;
             _createExpenseService = createExpenseService;
             _listLatestExpensesService = listLatestExpensesService;
             _matchExpensesService = matchExpensesService;
             _deleteExpenseRowService = deleteExpenseRowService;
         }
+
+        [HttpGet]
+        [ServiceFilter(typeof(GuitoApi.Infrastructure.Serialization.ExpenseListResponseLimitFilter))]
+        public Task<ExpenseListLatest> ListAsync([FromQuery] string? category, [FromQuery] string? month,
+            CancellationToken cancellationToken) => _listExpensesService.ListAsync(category, month, cancellationToken);
 
         [HttpPost]
         public async Task<ExpenseCreated> CreateAsync([FromBody] ExpenseCreate value, CancellationToken cancellationToken)

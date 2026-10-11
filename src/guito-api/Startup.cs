@@ -37,6 +37,7 @@ namespace GuitoApi
                 .CreateLogger();
 
             services.AddControllers(options => options.Filters.Add<ExpenseCreateValidationFilter>());
+            services.AddScoped<GuitoApi.Infrastructure.Serialization.ExpenseListResponseLimitFilter>();
             services.AddProblemDetails();
             services.AddEndpointsApiExplorer();
             services.AddSwaggerGen();
@@ -104,6 +105,7 @@ namespace GuitoApi
             services.AddScoped<ICreateExpenseService, CreateExpenseService>();
             services.AddScoped<IMatchExpensesService, MatchExpensesService>();
             services.AddScoped<IListLatestExpensesService, ListLatestExpensesService>();
+            services.AddScoped<IListExpensesService, ListExpensesService>();
             services.AddScoped<IDeleteExpenseRowService, DeleteExpenseService>();
             services.AddScoped<ISheetScopeResolver, SheetScopeResolver>();
             services.AddScoped<IListCategoryService, ListCategoryGoogleApisSheetsService>();

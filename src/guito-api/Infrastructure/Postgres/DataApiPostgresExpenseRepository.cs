@@ -21,6 +21,16 @@ public class DataApiPostgresExpenseRepository(IPostgresDataApiClient client) : I
         ORDER BY e.booking_date DESC, e.id DESC LIMIT :limit
         """;
 
+    private const string CategoryMonthSql = """
+        SELECT CAST(e.id AS text), CAST(e.booking_date AS text), CAST(e.amount AS text),
+               e.description, c.name, e.creator_email, CAST(e.create_date AS text), CAST(e.update_date AS text)
+        FROM expenses e JOIN categories c ON c.id = e.category_id
+        WHERE e.category_id = :category_id
+          AND e.booking_date >= CAST(:start AS timestamptz)
+          AND e.booking_date < CAST(:end AS timestamptz)
+        ORDER BY e.booking_date DESC, e.id DESC
+        """;
+
     public async Task<int> CreateAsync(ExpenseDraft value, CancellationToken cancellationToken = default)
     {
         var categoryId = await ResolveCategoryIdAsync(value.Category, cancellationToken);
@@ -51,6 +61,47 @@ public class DataApiPostgresExpenseRepository(IPostgresDataApiClient client) : I
         var result = await client.ExecuteAsync(LatestSql,
             [new("limit", PostgresValue.FromLong(limit))], cancellationToken: cancellationToken);
         return result.Rows.Select(ToSummary).ToList();
+    }
+
+    public async Task<IReadOnlyList<ExpenseSummary>> ListAsync(string category, DateTimeOffset start,
+        DateTimeOffset? endExclusiveOrStartOfYear10000, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await ReadAllAsync(category, start, endExclusiveOrStartOfYear10000, cancellationToken);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            throw new ProblemException(502, "The complete expense result contains an amount outside the exact decimal contract; no partial result was returned.");
+        }
+        catch (Amazon.RDSDataService.AmazonRDSDataServiceException)
+        {
+            // Data API rejects responses above its transport/row limits instead of paging.
+            // Never turn that (or a provider outage) into an empty/partial success.
+            throw new ProblemException(502, "The Data API could not return the complete expense result (provider failure or response limit); no partial result was returned.");
+        }
+    }
+
+    private async Task<IReadOnlyList<ExpenseSummary>> ReadAllAsync(string category, DateTimeOffset start,
+        DateTimeOffset? endExclusiveOrStartOfYear10000, CancellationToken cancellationToken)
+    {
+        var categoryId = await ResolveCategoryIdAsync(category, cancellationToken);
+        var result = await client.ExecuteAsync(CategoryMonthSql,
+            [new("category_id", PostgresValue.FromLong(categoryId)),
+             Text("start", start.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture)),
+             // PostgreSQL supports year 10000; DateTimeOffset does not. Null is the
+             // exclusive upper boundary of the last supported four-digit month.
+             Text("end", endExclusiveOrStartOfYear10000?.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture) ?? "10000-01-01T00:00:00+00:00")],
+            cancellationToken: cancellationToken);
+        return result.Rows.Select(ToExactSummary).ToList();
+    }
+
+    private static ExpenseSummary ToExactSummary(IReadOnlyList<PostgresValue> row)
+    {
+        // Existing read fields, but never allow decimal.Parse's rounding of an
+        // unconstrained PostgreSQL numeric to turn this complete result into false success.
+        _ = Infrastructure.Serialization.ExactDecimalJsonConverter.ParseExact(row[2].StringValue!);
+        return ToSummary(row);
     }
 
     private static ExpenseSummary ToSummary(IReadOnlyList<PostgresValue> row)

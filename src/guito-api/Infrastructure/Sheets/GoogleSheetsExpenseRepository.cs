@@ -35,6 +35,10 @@ namespace GuitoApi.Infrastructure.Sheets
             _sheetScopeResolver = sheetScopeResolver;
         }
 
+        public Task<IReadOnlyList<ExpenseSummary>> ListAsync(string category, DateTimeOffset start,
+            DateTimeOffset? endExclusiveOrStartOfYear10000, CancellationToken cancellationToken = default) =>
+            throw new ProblemException(409, "Category/month expense queries require the Postgres Expense store; Sheets is not supported.");
+
         public async Task<int> CreateAsync(ExpenseDraft value, CancellationToken cancellationToken = default)
         {
             // The frozen Sheets schema has date-only occurrence precision. Never

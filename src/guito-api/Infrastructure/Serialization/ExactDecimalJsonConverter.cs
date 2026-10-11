@@ -28,7 +28,7 @@ public sealed partial class ExactDecimalJsonConverter : JsonConverter<decimal>
     public override void Write(Utf8JsonWriter writer, decimal value, JsonSerializerOptions options) =>
         writer.WriteStringValue(value.ToString(CultureInfo.InvariantCulture));
 
-    private static decimal ParseExact(string text)
+    internal static decimal ParseExact(string text)
     {
         var match = DecimalToken().Match(text.Trim());
         if (!match.Success) throw InvalidAmount();
