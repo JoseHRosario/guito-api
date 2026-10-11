@@ -51,7 +51,7 @@ Configuration comes from `appsettings.{Environment}.json` plus environment varia
 
 ## Expense category/month query for agents
 
-`GET /Expense?category=startup&month=2026-10` returns every exact-category Expense
+`GET /Expense?category=Startup&month=2026-10` returns every exact-category Expense
 in the requested Europe/Lisbon booking month, ordered by booking date then ID descending.
 Requires Postgres Expense authority; Sheets returns 409 and production cutover stays blocked.
 There is no pagination or record cap: transport/complete-response limits fail explicitly,

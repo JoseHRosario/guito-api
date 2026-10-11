@@ -1,6 +1,6 @@
 # Expense category/month query — Paperclip consumer contract
 
-`GET /Expense?category=startup&month=2026-10` retrieves every individual matching
+`GET /Expense?category=Startup&month=2026-10` retrieves every individual matching
 Expense in one JSON response. This is a read operation, not aggregation or totals.
 It is available only when the selected Expense store is Postgres. Production remains
 Sheets-backed: issue #139 does not authorize cutover or deployment.
@@ -11,7 +11,7 @@ Use HTTPS against the intended environment. An agent must send the **same valid
 agent key in both headers**, with no Bearer prefix:
 
 ```http
-GET /Expense?category=startup&month=2026-10
+GET /Expense?category=Startup&month=2026-10
 Authorization: <agent-key>
 X-Api-Key: <agent-key>
 Accept: application/json
@@ -65,7 +65,7 @@ single-user visibility; `creatorEmail` is attribution, **not a filter**.
       "currency": "EUR",
       "amount": "-123456789.1234567890123456789",
       "description": "Original purchase",
-      "category": "startup",
+      "category": "Startup",
       "creatorEmail": "agent@example.com"
     }
   ]
