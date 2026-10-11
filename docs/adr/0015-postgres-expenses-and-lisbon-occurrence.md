@@ -29,7 +29,9 @@ responses have one invariant exact-text `amount` so clients can prefill/resubmit
 without a JavaScript Number conversion. The property remains decimal in the DTO with
 a property-specific converter; there is no duplicate amount field. The text expresses
 the supported decimal value, not arbitrary precision beyond .NET decimal. Latest
-returns null when amount is absent. AI extraction keeps its DateTime `date` output.
+returns null when amount is absent. AI extraction names its DateTime output
+`bookingDate`, retaining offset-free midnight serialization and calendar-day meaning;
+clients send that day as `yyyy-MM-dd`, not as an inferred instant.
 EUR remains the only supported wire currency and is returned as a compatibility constant;
 there is no currency column. `category_id bigint NOT NULL REFERENCES categories(id)`
 uses the existing seeded mirror. The adapter resolves the submitted category name by
@@ -44,7 +46,7 @@ still comes only from the authenticated identity.
 Only a future explicit user update may set it; no update operation exists in this slice.
 The wire names are `bookingDate`, `creationDate`, `updateDate`.
 Occurrence is never an audit timestamp. HTTP renders all instants in Europe/Lisbon.
-Create has one required `DateTimeOffset Date`, mapped to `booking_date`; its JSON
+Create has one required `DateTimeOffset BookingDate`, mapped to `booking_date`; its JSON
 string is either `yyyy-MM-dd`
 or an explicit-offset ISO8601 timestamp. The instant may use any valid explicit offset
 (including UTC `Z`); the server normalizes it to Europe/Lisbon without changing the
@@ -52,17 +54,19 @@ instant or microseconds. Internal ExpenseDraft and ExpenseSummary carry only
 BookingDate, with no duplicate calendar Date or OccurredAt. Summary BookingDate is
 nullable for malformed legacy Sheets cells. Sheets derives its stored calendar day
 inside the adapter from the normalized instant.
-A known instant is not reinterpreted as a Lisbon wall clock. The removed request field
-`occurredAt` is rejected with 400 (including null and casing variants) using targeted
-unmapped-property validation; other unknown properties remain tolerated. Latest returns
+A known instant is not reinterpreted as a Lisbon wall clock. The removed request fields
+`date` and `occurredAt` are rejected with 400 (including null and casing variants) using a targeted Infrastructure action filter over
+unmapped properties (DTOs contain data only); other unknown properties remain tolerated. Latest returns
 only `bookingDate` for occurrence. Time-enabled clients send latest `bookingDate` as create
-`date`; legacy/prod clients send only `yyyy-MM-dd`. No database migration is needed. Naive local times, including
+`bookingDate`; legacy/prod clients send only `yyyy-MM-dd`. No database migration is needed. Naive local times, including
 spring DST gaps and unresolved autumn repetitions, are rejected; time-enabled clients
 must resolve local input using Lisbon DST rules before submitting an explicit instant.
 Timestamp inputs with more than six fractional digits are rejected rather than rounded.
 Date-only clients map to unambiguous Lisbon midnight, not midnight UTC or request time.
 Missing dates are invalid. A property-specific converter in Infrastructure/Serialization
-binds and validates the transport date; services do not parse strings. Latest keeps
+binds and validates the transport date; services do not parse strings.
+A stateless `Services/TimeService` owns Lisbon instant normalization and legacy midnight
+resolution; domain models contain no time logic or clock abstraction. Latest keeps
 bookingDate, currency and nullable audit fields, without date/occurredAt aliases. Create
 and latest IDs are Int32 numbers; Data API text/Int64 values are checked before
 narrowing, independently of category/bank BIGINT IDs. Latest orders booking date

@@ -10,7 +10,7 @@ public class CreateExpenseService(IExpenseRepository repository, IUserIdentityRe
 {
     public async Task<ExpenseCreated> CreateAsync(ExpenseCreate value, CancellationToken cancellationToken = default)
     {
-        var bookingDate = ExpenseTime.InLisbon(value.Date);
+        var bookingDate = TimeService.InLisbon(value.BookingDate);
         var draft = new ExpenseDraft
         {
             BookingDate = bookingDate,

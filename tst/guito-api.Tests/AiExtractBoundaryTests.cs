@@ -25,7 +25,8 @@ namespace GuitoApi.Tests
 
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
             var body = await response.Content.ReadFromJsonAsync<JsonDocument>();
-            Assert.Equal("2026-10-02", body!.RootElement.GetProperty("date").GetDateTime().ToString("yyyy-MM-dd"));
+            Assert.Equal("2026-10-02T00:00:00", body!.RootElement.GetProperty("bookingDate").GetString());
+            Assert.False(body.RootElement.TryGetProperty("date", out _));
             Assert.Equal(2.30m, decimal.Parse(body.RootElement.GetProperty("amount").GetString()!, System.Globalization.CultureInfo.InvariantCulture));
             Assert.Equal("Cafe No Coco Verde", body.RootElement.GetProperty("description").GetString());
             Assert.Equal("Restaurants", body.RootElement.GetProperty("category").GetString());
@@ -61,7 +62,7 @@ namespace GuitoApi.Tests
             Assert.False(body.TryGetProperty("amountExact", out _));
             Assert.Equal(123456789.1234567890123456789m, decimal.Parse(body.GetProperty("amount").GetString()!, System.Globalization.CultureInfo.InvariantCulture));
             Assert.Equal("123456789.1234567890123456789", body.GetProperty("amount").GetString());
-            var created = await client.PostAsJsonAsync("/Expense", new { date = "2026-07-02", amount = body.GetProperty("amount").GetString(), category = body.GetProperty("category").GetString() });
+            var created = await client.PostAsJsonAsync("/Expense", new { bookingDate = body.GetProperty("bookingDate").GetDateTime().ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), amount = body.GetProperty("amount").GetString(), category = body.GetProperty("category").GetString() });
             Assert.Equal(HttpStatusCode.OK, created.StatusCode);
             var latest = (await client.GetFromJsonAsync<JsonElement>("/Expense/latest/1")).GetProperty("expenses");
             Assert.Equal(body.GetProperty("amount").GetString(), Assert.Single(latest.EnumerateArray()).GetProperty("amount").GetString());
@@ -121,7 +122,7 @@ namespace GuitoApi.Tests
             var body = await response.Content.ReadFromJsonAsync<JsonDocument>();
             var lisbonToday = TimeZoneInfo.ConvertTimeFromUtc(
                 DateTime.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Europe/Lisbon")).Date;
-            Assert.Equal(lisbonToday, body!.RootElement.GetProperty("date").GetDateTime());
+            Assert.Equal(lisbonToday, body!.RootElement.GetProperty("bookingDate").GetDateTime());
         }
 
         [Fact]

@@ -5,6 +5,7 @@ using GuitoApi.Infrastructure.Postgres;
 using GuitoApi.Infrastructure.Secrets;
 using GuitoApi.Infrastructure.Sheets;
 using GuitoApi.Infrastructure.AI;
+using GuitoApi.Infrastructure.Validation;
 using GuitoApi.Infrastructure.EnableBanking;
 using GuitoApi.Services.BankAuth;
 using GuitoApi.Exceptions;
@@ -35,7 +36,7 @@ namespace GuitoApi
                 .ReadFrom.Configuration(Configuration)
                 .CreateLogger();
 
-            services.AddControllers();
+            services.AddControllers(options => options.Filters.Add<ExpenseCreateValidationFilter>());
             services.AddProblemDetails();
             services.AddEndpointsApiExplorer();
             services.AddSwaggerGen();

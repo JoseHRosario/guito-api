@@ -22,7 +22,7 @@ public class PostgresExpenseBoundaryTests
         using var client = host.CreateClient();
 
         // Act
-        var response = await client.PostAsJsonAsync("/Expense", new { date = "2026-07-01T23:30:00.123456Z", amount = "-1.23" });
+        var response = await client.PostAsJsonAsync("/Expense", new { bookingDate = "2026-07-01T23:30:00.123456Z", amount = "-1.23" });
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -44,7 +44,7 @@ public class PostgresExpenseBoundaryTests
         using var client = factory.CreateClient();
 
         // Act
-        var response = await client.PostAsJsonAsync("/Expense", new { date = "2026-07-02", amount = 1, category = "Test" });
+        var response = await client.PostAsJsonAsync("/Expense", new { bookingDate = "2026-07-02", amount = 1, category = "Test" });
 
         // Assert
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
@@ -78,12 +78,32 @@ public class PostgresExpenseBoundaryTests
         Assert.Empty(factory.SheetsHandler.AppendBodies);
     }
 
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("{\"date\":\"2026-07-02\",\"amount\":1}")]
+    [InlineData("{\"occurredAt\":\"2026-07-02T14:00:00+01:00\",\"amount\":1}")]
+    public async Task CreateExpense_ShouldRequireBookingDate_WhenMissingOrOnlyRemovedFieldsProvided(string payload)
+    {
+        // Arrange
+        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres" };
+        using var client = factory.CreateClient();
+        using var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+
+        // Act
+        var response = await client.PostAsync("/Expense", content);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Empty(factory.Postgres.ExecutedSql);
+        Assert.Empty(factory.SheetsHandler.AppendBodies);
+    }
+
     private sealed class CapturingCreateService : GuitoApi.Services.Expense.ICreateExpenseService
     {
         public object? Date { get; private set; }
         public Task<GuitoApi.DataTransferObjects.Output.ExpenseCreated> CreateAsync(GuitoApi.DataTransferObjects.Input.ExpenseCreate value, CancellationToken cancellationToken = default)
         {
-            Date = value.Date;
+            Date = value.BookingDate;
             return Task.FromResult(new GuitoApi.DataTransferObjects.Output.ExpenseCreated { Id = 1 });
         }
     }
@@ -92,13 +112,16 @@ public class PostgresExpenseBoundaryTests
     [InlineData("occurredAt", "2026-07-02T14:00:00+01:00", HttpStatusCode.BadRequest)]
     [InlineData("OccurredAt", null, HttpStatusCode.BadRequest)]
     [InlineData("OCCURREDAT", "garbage", HttpStatusCode.BadRequest)]
+    [InlineData("date", "2026-07-02", HttpStatusCode.BadRequest)]
+    [InlineData("Date", null, HttpStatusCode.BadRequest)]
+    [InlineData("DATE", "garbage", HttpStatusCode.BadRequest)]
     [InlineData("futureMetadata", "ignored", HttpStatusCode.OK)]
     public async Task CreateExpense_ShouldRejectRemovedOccurrencePropertyOnly_WhenUnmappedInputReceived(string property, string? value, HttpStatusCode expected)
     {
         // Arrange
         using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient();
-        var payload = new Dictionary<string, object?> { ["date"] = "2026-07-02", ["amount"] = 1m, ["category"] = "Test", [property] = value };
+        var payload = new Dictionary<string, object?> { ["bookingDate"] = "2026-07-02", ["amount"] = 1m, ["category"] = "Test", [property] = value };
 
         // Act
         var response = await client.PostAsJsonAsync("/Expense", payload);
@@ -121,7 +144,7 @@ public class PostgresExpenseBoundaryTests
             ? PostgresValue.FromString("2147483647") : PostgresValue.FromLong(2147483647L)]], 1));
         using var client = factory.CreateClient();
 
-        var response = await client.PostAsJsonAsync("/Expense", new { date = "2026-10-10", amount = "-1.25", category = "Test" });
+        var response = await client.PostAsJsonAsync("/Expense", new { bookingDate = "2026-10-10", amount = "-1.25", category = "Test" });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(2147483647, (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32());
@@ -201,7 +224,7 @@ public class PostgresExpenseBoundaryTests
         using var client = factory.CreateClient();
 
         // Act
-        var response = await client.PostAsJsonAsync("/Expense", new { date = "2026-10-10", amount = 1m, description = "Test", category = "Test" });
+        var response = await client.PostAsJsonAsync("/Expense", new { bookingDate = "2026-10-10", amount = 1m, description = "Test", category = "Test" });
 
         // Assert
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
@@ -251,7 +274,7 @@ public class PostgresExpenseBoundaryTests
         client.DefaultRequestHeaders.Add("X-Api-Key", "test-agent-key");
 
         // Act
-        var response = await client.PostAsJsonAsync("/Expense", new { date = "2026-10-10", amount = 1m, description = "Test", category = "Test" });
+        var response = await client.PostAsJsonAsync("/Expense", new { bookingDate = "2026-10-10", amount = 1m, description = "Test", category = "Test" });
 
         // Assert
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
@@ -271,7 +294,7 @@ public class PostgresExpenseBoundaryTests
         using var client = factory.CreateClient();
 
         // Act
-        var created = await client.PostAsJsonAsync("/Expense", new { date = occurredAt, amount = 1m, category = "Test" });
+        var created = await client.PostAsJsonAsync("/Expense", new { bookingDate = occurredAt, amount = 1m, category = "Test" });
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, created.StatusCode);
@@ -281,10 +304,10 @@ public class PostgresExpenseBoundaryTests
         Assert.Equal(DateTimeOffset.Parse(expected).ToString("O"), expense.GetProperty("bookingDate").GetDateTimeOffset().ToString("O"));
         Assert.Equal(DateTimeOffset.Parse(expected).Date, expense.GetProperty("bookingDate").GetDateTimeOffset().Date);
 
-        // Latest-prefill compatibility: submit the unchanged output instant through the sole input date.
+        // Latest-prefill compatibility: submit the unchanged output instant through the sole input bookingDate.
         var resubmitted = await client.PostAsJsonAsync("/Expense", new
         {
-            date = expense.GetProperty("bookingDate").GetString(),
+            bookingDate = expense.GetProperty("bookingDate").GetString(),
             amount = expense.GetProperty("amount").GetString(), category = expense.GetProperty("category").GetString()
         });
         Assert.Equal(HttpStatusCode.OK, resubmitted.StatusCode);
@@ -319,7 +342,7 @@ public class PostgresExpenseBoundaryTests
         using var client = factory.CreateClient();
 
         // Act
-        var response = await client.PostAsJsonAsync("/Expense", new { date, amount = 1m, description = "Test", category = "Test" });
+        var response = await client.PostAsJsonAsync("/Expense", new { bookingDate = date, amount = 1m, description = "Test", category = "Test" });
 
         // Assert
         Assert.Equal(expected, response.StatusCode);
@@ -341,7 +364,7 @@ public class PostgresExpenseBoundaryTests
         using var client = factory.CreateClient();
 
         // Act
-        var created = await client.PostAsJsonAsync("/Expense", new { date, amount = 0.0000000000000000000000000001m, description = "Original description", category = "Original category" });
+        var created = await client.PostAsJsonAsync("/Expense", new { bookingDate = date, amount = 0.0000000000000000000000000001m, description = "Original description", category = "Original category" });
         var listed = (await client.GetFromJsonAsync<JsonElement>("/Expense/latest/10")).GetProperty("expenses");
 
         // Assert
@@ -367,7 +390,7 @@ public class PostgresExpenseBoundaryTests
         using var client = factory.CreateClient();
 
         // Act
-        var created = await client.PostAsJsonAsync("/Expense", new { date = "2026-07-02", amount, category = "Test" });
+        var created = await client.PostAsJsonAsync("/Expense", new { bookingDate = "2026-07-02", amount, category = "Test" });
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, created.StatusCode);
@@ -398,7 +421,7 @@ public class PostgresExpenseBoundaryTests
         // Arrange
         using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient();
-        using var content = new StringContent($"{{\"date\":\"2026-07-02\",\"category\":\"Test\",\"amount\":{amountToken}}}", System.Text.Encoding.UTF8, "application/json");
+        using var content = new StringContent($"{{\"bookingDate\":\"2026-07-02\",\"category\":\"Test\",\"amount\":{amountToken}}}", System.Text.Encoding.UTF8, "application/json");
 
         // Act
         var response = await client.PostAsync("/Expense", content);
@@ -434,7 +457,7 @@ public class PostgresExpenseBoundaryTests
         // Arrange
         using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient();
-        using var content = new StringContent($"{{\"date\":\"2026-07-02\",\"category\":\"Test\",\"amount\":{amountToken}}}", System.Text.Encoding.UTF8, "application/json");
+        using var content = new StringContent($"{{\"bookingDate\":\"2026-07-02\",\"category\":\"Test\",\"amount\":{amountToken}}}", System.Text.Encoding.UTF8, "application/json");
 
         // Act
         var response = await client.PostAsync("/Expense", content);
@@ -457,7 +480,7 @@ public class PostgresExpenseBoundaryTests
         using var client = factory.CreateClient();
         var amount = $"1.23{new string('0', 20000)}";
         var token = quoted ? JsonSerializer.Serialize(amount) : amount;
-        using var content = new StringContent($"{{\"date\":\"2026-07-02\",\"category\":\"Test\",\"amount\":{token}}}", System.Text.Encoding.UTF8, "application/json");
+        using var content = new StringContent($"{{\"bookingDate\":\"2026-07-02\",\"category\":\"Test\",\"amount\":{token}}}", System.Text.Encoding.UTF8, "application/json");
 
         // Act
         var response = await client.PostAsync("/Expense", content);
@@ -479,7 +502,7 @@ public class PostgresExpenseBoundaryTests
         using var client = factory.CreateClient();
 
         // Act
-        var response = await client.PostAsJsonAsync("/Expense", new { date = "2026-07-02", amount, category = "Test" });
+        var response = await client.PostAsJsonAsync("/Expense", new { bookingDate = "2026-07-02", amount, category = "Test" });
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -495,7 +518,7 @@ public class PostgresExpenseBoundaryTests
         var ids = new List<int>();
         foreach (var time in new[] { "18:00:00", "09:00:00", "18:00:00" })
         {
-            var created = await client.PostAsJsonAsync("/Expense", new { date = $"2026-10-10T{time}+01:00", amount = 1m, description = "Duplicate", category = "Test" });
+            var created = await client.PostAsJsonAsync("/Expense", new { bookingDate = $"2026-10-10T{time}+01:00", amount = 1m, description = "Duplicate", category = "Test" });
             ids.Add((await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32());
         }
 
@@ -522,7 +545,7 @@ public class PostgresExpenseBoundaryTests
         using var client = factory.CreateClient();
 
         // Act
-        var response = await client.PostAsJsonAsync("/Expense", new { date = "2026-10-10", amount, currency, description = "Test", category = "Test" });
+        var response = await client.PostAsJsonAsync("/Expense", new { bookingDate = "2026-10-10", amount, currency, description = "Test", category = "Test" });
 
         // Assert
         Assert.Equal(expected, response.StatusCode);
@@ -540,7 +563,7 @@ public class PostgresExpenseBoundaryTests
         using var cleanup = factory.CreateClient();
         smoke.DefaultRequestHeaders.Add("X-Sheet-Scope", "smoke");
         if (deleteHeader) cleanup.DefaultRequestHeaders.Add("X-Sheet-Scope", "smoke");
-        var payload = new { date = "2026-10-10", amount = 1.01m, description = "Smoke", category = "Test" };
+        var payload = new { bookingDate = "2026-10-10", amount = 1.01m, description = "Smoke", category = "Test" };
 
         // Act
         var created = await smoke.PostAsJsonAsync("/Expense", payload);
@@ -565,7 +588,7 @@ public class PostgresExpenseBoundaryTests
         // Arrange
         using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient();
-        var created = await client.PostAsJsonAsync("/Expense", new { date = "2026-10-10", amount = 1m, category = "Test" });
+        var created = await client.PostAsJsonAsync("/Expense", new { bookingDate = "2026-10-10", amount = 1m, category = "Test" });
         var id = (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
         factory.Postgres.ExecutedSql.Clear();
 
@@ -589,7 +612,7 @@ public class PostgresExpenseBoundaryTests
         // Act
         var created = await client.PostAsJsonAsync("/Expense", new
         {
-            date = "2026-10-10T14:23:00.123456+01:00",
+            bookingDate = "2026-10-10T14:23:00.123456+01:00",
             amount = 123456789.123456789m, description = "Coffee", category = "Restaurants"
         });
         var id = JsonDocument.Parse(await created.Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetInt32();
@@ -618,7 +641,7 @@ public class PostgresExpenseBoundaryTests
         using var client = factory.CreateClient();
 
         // Act
-        var response = await client.PostAsJsonAsync("/Expense", new { date = "2026-10-10", amount = 1m, category });
+        var response = await client.PostAsJsonAsync("/Expense", new { bookingDate = "2026-10-10", amount = 1m, category });
 
         // Assert
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
@@ -635,7 +658,7 @@ public class PostgresExpenseBoundaryTests
         using var client = factory.CreateClient();
 
         // Act
-        var response = await client.PostAsJsonAsync("/Expense", new { date = "2026-10-10", amount = "-123456789.1234567890123456789", category = "Test" });
+        var response = await client.PostAsJsonAsync("/Expense", new { bookingDate = "2026-10-10", amount = "-123456789.1234567890123456789", category = "Test" });
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -654,7 +677,7 @@ public class PostgresExpenseBoundaryTests
         using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient();
         for (var i = 0; i < 12; i++)
-            Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync("/Expense", new { date = "2026-10-10", amount = 1m, category = "Test" })).StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync("/Expense", new { bookingDate = "2026-10-10", amount = 1m, category = "Test" })).StatusCode);
 
         // Act
         var expenses = (await client.GetFromJsonAsync<JsonElement>("/Expense/latest/3")).GetProperty("expenses");
@@ -676,7 +699,7 @@ public class PostgresExpenseBoundaryTests
         // Act
         var response = await client.PostAsJsonAsync("/Expense", new
         {
-            date = "2026-10-10T14:23:00+01:00",
+            bookingDate = "2026-10-10T14:23:00+01:00",
             amount = 123456789.123456789m, description = "Coffee", category = "Restaurants"
         });
 

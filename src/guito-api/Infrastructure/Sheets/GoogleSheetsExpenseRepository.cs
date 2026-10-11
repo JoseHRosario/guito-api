@@ -2,6 +2,7 @@ using Google.Apis.Sheets.v4;
 using Google.Apis.Sheets.v4.Data;
 using GuitoApi.Configuration;
 using GuitoApi.Model;
+using GuitoApi.Services;
 using GuitoApi.Exceptions;
 using GuitoApi.Infrastructure.Sheets;
 using GuitoApi.Repositories;
@@ -155,7 +156,7 @@ namespace GuitoApi.Infrastructure.Sheets
                 output.Add(new ExpenseSummary
                 {
                     Id = firstRowIndex + i,
-                    BookingDate = ParseDate(values[i]?[0]) is { } date ? ExpenseTime.Midnight(date) : null,
+                    BookingDate = ParseDate(values[i]?[0]) is { } date ? TimeService.Midnight(date) : null,
                     Amount = ParseDecimal(values[i]?[3]),
                     Description = values[i]?[4]?.ToString(),
                     Category = values[i]?[5]?.ToString(),

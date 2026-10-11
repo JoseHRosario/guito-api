@@ -1,5 +1,6 @@
 using System.Globalization;
 using GuitoApi.Model;
+using GuitoApi.Services;
 using GuitoApi.Repositories;
 using GuitoApi.Exceptions;
 
@@ -65,7 +66,7 @@ public class DataApiPostgresExpenseRepository(IPostgresDataApiClient client) : I
     }
 
     private static DateTimeOffset? ReadInstant(PostgresValue value) => value.IsNull ? null
-        : ExpenseTime.InLisbon(DateTimeOffset.Parse(value.StringValue!, CultureInfo.InvariantCulture));
+        : TimeService.InLisbon(DateTimeOffset.Parse(value.StringValue!, CultureInfo.InvariantCulture));
 
     // Smoke cleanup is a Sheets-only capability, never a personal-record delete.
     public Task DeleteAsync(int id, CancellationToken cancellationToken = default) =>

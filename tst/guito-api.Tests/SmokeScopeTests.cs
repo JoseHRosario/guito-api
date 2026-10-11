@@ -44,7 +44,7 @@ public class SmokeScopeTests
         using var factory = new CustomWebApplicationFactory();
         using var client = factory.CreateClient();
         var expense = ValidExpense();
-        expense.Date = DateTimeOffset.Parse("2026-09-21T14:00:00+01:00");
+        expense.BookingDate = DateTimeOffset.Parse("2026-09-21T14:00:00+01:00");
 
         // Act
         var response = await client.PostAsJsonAsync("/Expense", expense);
@@ -75,7 +75,7 @@ public class SmokeScopeTests
 
     private static ExpenseCreate ValidExpense() => new()
     {
-        Date = DateTimeOffset.Parse("2026-09-21T00:00:00+01:00"),
+        BookingDate = DateTimeOffset.Parse("2026-09-21T00:00:00+01:00"),
         Amount = 5.00m,
         Description = "smoke espresso",
         Category = "Restaurants",

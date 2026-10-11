@@ -1,8 +1,8 @@
 using GuitoApi.Exceptions;
 
-namespace GuitoApi.Model;
+namespace GuitoApi.Services;
 
-public static class ExpenseTime
+public static class TimeService
 {
     private static readonly TimeZoneInfo Lisbon = TimeZoneInfo.FindSystemTimeZoneById("Europe/Lisbon");
 
@@ -12,7 +12,7 @@ public static class ExpenseTime
     {
         var local = DateTime.SpecifyKind(date.Date, DateTimeKind.Unspecified);
         if (Lisbon.IsInvalidTime(local) || Lisbon.IsAmbiguousTime(local))
-            throw new ProblemException(400, "Legacy date has no unambiguous Lisbon midnight; supply an explicit-offset timestamp in date.");
+            throw new ProblemException(400, "Legacy date has no unambiguous Lisbon midnight; supply an explicit-offset timestamp in bookingDate.");
         return new DateTimeOffset(local, Lisbon.GetUtcOffset(local));
     }
 }

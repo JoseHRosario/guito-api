@@ -51,7 +51,7 @@ Configuration comes from `appsettings.{Environment}.json` plus environment varia
 
 ## Expense contract and staged Postgres rollout
 
-`POST /Expense` binds one required `date` to a `DateTimeOffset`; its JSON value is
+`POST /Expense` binds one required `bookingDate` to a `DateTimeOffset`; its JSON value is
 a string: `yyyy-MM-dd` for legacy Lisbon midnight, or explicit-offset ISO8601 for a known occurrence instant. It also accepts
 exact-decimal `amount` (positive, zero or negative; a JSON number, including exponent notation, or an
 invariant decimal string), description and category. Amounts must be exactly
@@ -60,15 +60,17 @@ trailing zeros. Inputs requiring rounding, underflow or overflow return 400; equ
 trailing-zero representations are accepted. Latest and AI extraction responses expose
 one `amount` as invariant exact decimal text (null for an absent latest amount), avoiding
 JavaScript Number rounding; there is no duplicate amount field.
-Timestamp `date` accepts any explicit offset (including UTC `Z`); the server preserves
+Timestamp `bookingDate` accepts any explicit offset (including UTC `Z`); the server preserves
 the instant and derives its Europe/Lisbon calendar day. For example,
-`"date":"2026-07-01T23:30:00.123456Z"` becomes Lisbon July 2, 00:30, with all
+`"bookingDate":"2026-07-01T23:30:00.123456Z"` becomes Lisbon July 2, 00:30, with all
 microseconds retained. Naive datetime strings (including unresolved DST gaps or
 repetitions), invalid/missing dates, and more than six fractional digits return 400,
-not rounding. The removed request property `occurredAt` returns 400 even if null;
+not rounding. The removed request properties `date` and `occurredAt` return 400 even if null (case-insensitive);
 other unknown request properties remain tolerated. Latest has one `bookingDate`
-occurrence instant: time-enabled clients resubmit it as POST `date`, not as a second
-field. AI extraction retains its existing `date` output. Legacy/prod clients send only `yyyy-MM-dd`; intraday timestamps
+occurrence instant: time-enabled clients resubmit it as POST `bookingDate`, not as a second
+field. AI extraction exposes `bookingDate` with its existing DateTime day precision
+(an offset-free midnight), not a known instant. Clients submit that calendar day as
+`yyyy-MM-dd`. Legacy/prod clients send only `yyyy-MM-dd`; intraday timestamps
 against frozen date-only Sheets return 409 rather than silently losing time. Currency defaults
 to EUR; non-EUR values are rejected. Create returns `{ "id": 123 }` (an Int32 JSON number).
 

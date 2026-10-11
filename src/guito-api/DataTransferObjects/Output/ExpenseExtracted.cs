@@ -5,7 +5,7 @@ namespace GuitoApi.DataTransferObjects.Output
 {
     public class ExpenseExtracted
     {
-        public DateTime Date { get; set; }
+        public DateTime BookingDate { get; set; }
         [JsonConverter(typeof(ExactDecimalJsonConverter))]
         public decimal Amount { get; set; }
         public string Description { get; set; } = "";

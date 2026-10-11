@@ -30,7 +30,7 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
         var client = factory.CreateClient();
         var response = await client.PostAsJsonAsync("/expense", new ExpenseCreate
         {
-            Date = DateTimeOffset.Parse("2026-10-02T00:00:00+01:00"),
+            BookingDate = DateTimeOffset.Parse("2026-10-02T00:00:00+01:00"),
             Amount = -42.50m,
             Description = "negative test",
             Category = "Restaurants",
@@ -48,7 +48,7 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
         var client = factory.CreateClient();
         var response = await client.PostAsJsonAsync("/expense", new ExpenseCreate
         {
-            Date = DateTimeOffset.Parse("2026-10-02T00:00:00+01:00"),
+            BookingDate = DateTimeOffset.Parse("2026-10-02T00:00:00+01:00"),
             Amount = 0m,
             Description = "zero test",
             Category = "Restaurants",
@@ -66,7 +66,7 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
         var client = factory.CreateClient();
         var response = await client.PostAsJsonAsync("/expense", new ExpenseCreate
         {
-            Date = DateTimeOffset.Parse("2026-10-02T00:00:00+01:00"),
+            BookingDate = DateTimeOffset.Parse("2026-10-02T00:00:00+01:00"),
             Amount = 0.01m,
             Description = "minimum amount",
             Category = "Restaurants",
@@ -82,7 +82,7 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
         var client = _factory.CreateClient();
         var response = await client.PostAsJsonAsync("/expense", new ExpenseCreate
         {
-            Date = DateTimeOffset.Parse("2026-09-21T00:00:00+01:00"),
+            BookingDate = DateTimeOffset.Parse("2026-09-21T00:00:00+01:00"),
             Amount = 42.50m,
             Description = "coffee shop",
             Category = "Restaurants",
@@ -119,7 +119,7 @@ public class ApiBoundaryTests : IClassFixture<CustomWebApplicationFactory>
         object amount = amountAsString ? "42.50" : (object)42.50m;
 
         // Act
-        var created = await client.PostAsJsonAsync("/Expense", new { date = "2026-07-02", amount });
+        var created = await client.PostAsJsonAsync("/Expense", new { bookingDate = "2026-07-02", amount });
         var latest = (await client.GetFromJsonAsync<JsonElement>("/Expense/latest/1")).GetProperty("expenses");
 
         // Assert
