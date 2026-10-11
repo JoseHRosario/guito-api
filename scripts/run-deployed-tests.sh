@@ -174,4 +174,13 @@ for PROJECT in "${PROJECTS[@]}"; do
     FAILED=1
   fi
 done
+
+# This independent database comparison is staging-only and reads seeded normal
+# history. Sheets smoke cannot establish Postgres export completeness.
+if [ "${GUITO_VERIFY_EXPENSE_HISTORY:-0}" = "1" ]; then
+  [ "$ENV_TARGET" = "staging" ] || { echo "FATAL: history parity acceptance is staging-only." >&2; exit 1; }
+  if ! python3 "$REPO_ROOT/scripts/verify-expense-history.py"; then
+    FAILED=1
+  fi
+fi
 exit "$FAILED"

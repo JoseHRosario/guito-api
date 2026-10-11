@@ -100,6 +100,13 @@ namespace GuitoApi
                 };
             });
             services.AddScoped<ICategoryRepository, GoogleSheetsCategoryRepository>();
+            services.AddScoped<IExpenseHistoryRepository>(sp =>
+                sp.GetRequiredService<ISheetScopeResolver>().IsSmokeScope
+                || sp.GetRequiredService<IOptions<AppConfigurationOptions>>().Value.ExpenseStore != "Postgres"
+                || sp.GetRequiredService<IWebHostEnvironment>().IsProduction()
+                    ? new UnavailableExpenseHistoryRepository()
+                    : ActivatorUtilities.CreateInstance<DataApiPostgresExpenseHistoryRepository>(sp));
+            services.AddScoped<IExportExpenseHistoryService, ExportExpenseHistoryService>();
 
             services.AddScoped<ICreateExpenseService, CreateExpenseService>();
             services.AddScoped<IMatchExpensesService, MatchExpensesService>();
