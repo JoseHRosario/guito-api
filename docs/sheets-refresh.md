@@ -15,7 +15,11 @@ sharing without review. Viewer/commenter spreadsheet opens are unsupported.
 Guito requests mint `ScriptApp.getIdentityToken()` at execution time and send
 that short-lived ID token in **both** `Authorization: Bearer <ID token>` and
 `x-google-idtoken`. No API key, OAuth refresh token, service-account key or
-persisted ID/access token is used. Google Sheets REST requests separately use
+persisted ID/access token is used. Reporting validates the standard Bearer token;
+`x-google-idtoken` is an optional compatibility duplicate, and a present duplicate
+must match. Live staging showed that the API did not receive the custom header,
+so its absence must not reject an otherwise valid reporting identity. Existing
+human authorization/header behavior is unchanged. Google Sheets REST requests separately use
 `ScriptApp.getOAuthToken()`; that access token is never sent to Guito. Redirects
 are disabled on both transports. The installer must review the configured HTTPS
 Guito URL; a trusted project editor could otherwise redirect identity-token use.

@@ -28,8 +28,12 @@ Reporting authorizes **only GET `/Expense/history`**, with the API's case-insens
 route spelling. It does not authorize POST, OPTIONS, other routes, trailing slashes,
 prefix matches or subpaths. The gateway uses `requestContext.http.method/path`, not
 an ARN suffix (HTTP API `$default` ARN is not the requested path). IAM Allow applies
-only to the exact request `RouteArn`; authorizer cache TTL stays zero. Both headers
-must match in the API; if the edge receives the second header it also checks matching.
+only to the exact request `RouteArn`; authorizer cache TTL stays zero. Reporting
+uses the standard Bearer header as the authoritative transport. The duplicate
+`x-google-idtoken` header is optional; if present it must match at either gate.
+Staging acceptance showed that the API received the Bearer token but not that
+custom header. Requiring both rejected a valid signed identity; this correction
+changes transport handling only, not signature/claim validation or route scope.
 Unsigned audience inspection is only a dispatch hint; it never grants permission.
 Selected reporting requests do not fall back to human or agent authorization.
 

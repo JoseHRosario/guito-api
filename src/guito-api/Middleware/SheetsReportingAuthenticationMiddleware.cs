@@ -13,10 +13,10 @@ public class SheetsReportingAuthenticationMiddleware(RequestDelegate next, IOpti
 
     public async Task InvokeAsync(HttpContext context)
     {
-        var token = context.Request.Headers[GoogleIdTokenMiddleware.IdTokenHeaderKey].ToString();
+        var duplicateToken = context.Request.Headers[GoogleIdTokenMiddleware.IdTokenHeaderKey].ToString();
         var reporting = options.Value.SheetsReportingAuthentication;
-        var authorization = context.Request.Headers.Authorization.ToString();
-        var bearer = authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? authorization[7..] : string.Empty;
+        var bearer = ReadBearerToken(context);
+        var token = context.Request.Headers.ContainsKey(GoogleIdTokenMiddleware.IdTokenHeaderKey) ? duplicateToken : bearer;
         if (!HasAudience(token, reporting.Audience) && !HasAudience(bearer, reporting.Audience))
         {
             await next(context);
@@ -64,6 +64,12 @@ public class SheetsReportingAuthenticationMiddleware(RequestDelegate next, IOpti
             string.Equals(context.Request.Path.Value, "/Expense/history", StringComparison.OrdinalIgnoreCase),
             !string.IsNullOrWhiteSpace(reporting.Subject), reporting.Audience != options.Value.Authentication.OAuthAudience,
             token.Length > 0, bearer.Length > 0, token == bearer);
+
+    private static string ReadBearerToken(HttpContext context)
+    {
+        var authorization = context.Request.Headers.Authorization.ToString();
+        return authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? authorization[7..] : string.Empty;
+    }
 
     private bool IsAllowedRequest(HttpContext context, string token, string bearer, SheetsReportingAuthentication reporting) =>
         !string.IsNullOrWhiteSpace(reporting.Subject) && reporting.Audience != options.Value.Authentication.OAuthAudience
