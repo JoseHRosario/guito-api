@@ -21,6 +21,29 @@ on:
         type: choice
         options: [staging, production]
         default: staging
+      expense_store:
+        description: 'Expense authority (Postgres requires separate production approval)'
+        type: choice
+        options: [preserve, Postgres]
+        default: preserve
+      expense_writes_paused:
+        description: 'Personal Expense pause; preserve on routine deploys'
+        type: choice
+        options: [preserve, 'true', 'false']
+        default: preserve
+      allow_production_expense_postgres:
+        description: 'José explicitly approved production authority execution (not setup only)'
+        type: boolean
+        default: false
+      sheets_reporting_authentication:
+        description: 'Reporting identity; enabled requires verified environment claims and separate approval'
+        type: choice
+        options: [preserve, enabled, disabled]
+        default: preserve
+      allow_production_sheets_reporting:
+        description: 'José explicitly approved production reporting enablement'
+        type: boolean
+        default: false
 
 permissions:
   id-token: write   # OIDC federation with AWS (guito-api-deploy role)
@@ -74,6 +97,7 @@ jobs:
           aws-region: eu-west-1
       - name: Deploy API + authorizer (staging)
         env:
+          EXPENSE_WRITES_PAUSED: ${{ github.event_name == 'workflow_dispatch' && inputs.expense_writes_paused || 'preserve' }}
           SHEETS_REPORTING_AUTHENTICATION: ${{ vars.SHEETS_REPORTING_AUTHENTICATION || 'preserve' }}
           SHEETS_REPORTING_GOOGLE_AUDIENCE: ${{ vars.SHEETS_REPORTING_AUTHENTICATION == 'enabled' && vars.SHEETS_REPORTING_GOOGLE_AUDIENCE || '' }}
           SHEETS_REPORTING_GOOGLE_SUBJECT: ${{ vars.SHEETS_REPORTING_AUTHENTICATION == 'enabled' && vars.SHEETS_REPORTING_GOOGLE_SUBJECT || '' }}
@@ -101,6 +125,15 @@ jobs:
           role-to-assume: arn:aws:iam::497087877832:role/guito-api-deploy
           aws-region: eu-west-1
       - name: Deploy API + authorizer (production)
+        env:
+          EXPENSE_STORE: ${{ github.event_name == 'workflow_dispatch' && inputs.expense_store || 'preserve' }}
+          EXPENSE_WRITES_PAUSED: ${{ github.event_name == 'workflow_dispatch' && inputs.expense_writes_paused || 'preserve' }}
+          ALLOW_PRODUCTION_EXPENSE_POSTGRES: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_production_expense_postgres && 'true' || 'false' }}
+          SHEETS_REPORTING_AUTHENTICATION: ${{ github.event_name == 'workflow_dispatch' && inputs.sheets_reporting_authentication || 'preserve' }}
+          SHEETS_REPORTING_GOOGLE_AUDIENCE: ${{ github.event_name == 'workflow_dispatch' && inputs.sheets_reporting_authentication == 'enabled' && vars.SHEETS_REPORTING_GOOGLE_AUDIENCE || '' }}
+          SHEETS_REPORTING_GOOGLE_SUBJECT: ${{ github.event_name == 'workflow_dispatch' && inputs.sheets_reporting_authentication == 'enabled' && vars.SHEETS_REPORTING_GOOGLE_SUBJECT || '' }}
+          SHEETS_REPORTING_IDENTITY_VERIFIED: ${{ vars.SHEETS_REPORTING_IDENTITY_VERIFIED || 'false' }}
+          ALLOW_PRODUCTION_SHEETS_REPORTING: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_production_sheets_reporting && 'true' || 'false' }}
         run: ENV=production ./deploy/deploy.sh
       - name: Smoke — auth contract (Google token + agent key) and business round-trip
         run: ./scripts/run-deployed-tests.sh production

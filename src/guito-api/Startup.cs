@@ -97,7 +97,7 @@ namespace GuitoApi
                 return sp.GetRequiredService<IOptions<AppConfigurationOptions>>().Value.ExpenseStore switch
                 {
                     "Sheets" => ActivatorUtilities.CreateInstance<GoogleSheetsExpenseRepository>(sp),
-                    "Postgres" when !sp.GetRequiredService<IWebHostEnvironment>().IsProduction() => ActivatorUtilities.CreateInstance<DataApiPostgresExpenseRepository>(sp),
+                    "Postgres" when IsPostgresExpenseApproved(sp) => ActivatorUtilities.CreateInstance<DataApiPostgresExpenseRepository>(sp),
                     "Postgres" => throw new InvalidOperationException("Production Expense Postgres cutover is not yet approved."),
                     _ => throw new InvalidOperationException("Unknown ExpenseStore; expected Sheets or Postgres.")
                 };
@@ -110,7 +110,7 @@ namespace GuitoApi
                     return new UnavailableExpenseHistoryRepository(new ProblemException(409, "Expense history is unavailable for smoke scope."));
                 if (sp.GetRequiredService<IOptions<AppConfigurationOptions>>().Value.ExpenseStore != "Postgres")
                     return new UnavailableExpenseHistoryRepository(new ProblemException(409, "Expense history requires Postgres Expense authority."));
-                if (sp.GetRequiredService<IWebHostEnvironment>().IsProduction())
+                if (!IsPostgresExpenseApproved(sp))
                     return new UnavailableExpenseHistoryRepository(new InvalidOperationException("Production Expense Postgres cutover is not yet approved."));
                 return ActivatorUtilities.CreateInstance<DataApiPostgresExpenseHistoryRepository>(sp);
             });
@@ -190,6 +190,10 @@ namespace GuitoApi
             services.AddScoped<IListPendingBankTransactionsService, ListPendingBankTransactionsService>();
         }
 
+        private static bool IsPostgresExpenseApproved(IServiceProvider services) =>
+            !services.GetRequiredService<IWebHostEnvironment>().IsProduction()
+            || services.GetRequiredService<IOptions<AppConfigurationOptions>>().Value.ExpenseCutover.ProductionPostgresApproved;
+
         private ISecretsProvider CreateSecretsProvider(string? secretsLocation, IServiceProvider services) => secretsLocation switch
         {
             "Aws" => throw new InvalidOperationException("Secrets:Location Aws is retired; use AwsSsm or local files."),
@@ -233,6 +237,7 @@ namespace GuitoApi
             app.UseMiddleware<SheetsReportingAuthenticationMiddleware>();
             app.UseMiddleware<ApiKeyMiddleware>();
             app.UseMiddleware<GoogleIdTokenMiddleware>();
+            app.UseMiddleware<ExpenseWritePauseMiddleware>();
             app.UseRouting();
             app.UseResponseCaching();
             app.UseEndpoints(endpoints =>

@@ -1,6 +1,6 @@
 # ADR-0015: Opt-in Postgres Expenses and Lisbon occurrence timestamps
 
-Status: Accepted for staged implementation; production cutover is not authorized.
+Status: Accepted for staged implementation; production execution remains unapproved. Issue #132 adds a default-denied approval path without enabling production.
 Issue: #128 (first implementation slice of #126).
 Supersedes: the Expense-only storage assumptions of ADR-0005, ADR-0011 and ADR-0013.
 Categories remain governed by ADR-0014.
@@ -10,8 +10,28 @@ Categories remain governed by ADR-0014.
 One configured `AppConfiguration:ExpenseStore` (`Sheets` by default, or `Postgres`)
 selects personal Expense reads and writes. Smoke CRUD remains Sheets-specific.
 No dual writes, new database, ORM, driver or auth change. Postgres uses the existing
-Data API client and ambient unit-of-work infrastructure. Production rejects Postgres
-selection until the separately approved cutover removes the guard.
+Data API client and ambient unit-of-work infrastructure. The original #128 guard
+rejected all Production Postgres selections. Issue #132 retains the guard but allows
+only explicitly approved configuration; it does not authorize execution.
+
+### Controlled enablement amendment (#132)
+
+`AppConfiguration:ExpenseCutover:ProductionPostgresApproved` defaults false and is
+shared by personal repository and history guards. `WritesPaused` defaults false;
+authenticated personal creates return 503 before repository writes while paused.
+Reads, Categories and Sheets-only smoke CRUD remain unchanged. Direct source edits
+require José's separate freeze. A routine deploy preserves installed authority,
+approval, pause and reporting configuration. Explicit production Postgres selection
+requires `ALLOW_PRODUCTION_EXPENSE_POSTGRES=true`; reporting enablement independently
+retains ADR-0017's verified identity and production approval gate. The Actions
+production dispatch exposes both deliberate controls; master pushes preserve state.
+Deployment refuses Postgres → stale Sheets, including an explicit selector.
+
+Source import/parity is already owner-verified under #129; no reimport or recreation
+of retired provenance. Production setup approval is not execution approval. The
+[cutover runbook](../expense-cutover.md) distinguishes pre-switch abort from
+post-switch repair preserving new Postgres writes. Staging readiness remains BLOCKED
+until a real rehearsal and owner reopening evidence; no production switch is claimed.
 
 `005_expenses.sql` creates a resumable table and occurrence/identity index. Every
 statement can be rerun after partial application by the existing semicolon parser.
@@ -92,9 +112,9 @@ cannot retain intraday instants: such creates explicitly return 409 rather than
 silently discarding the supplied time. Do not deploy the time-enabled UI against a
 Sheets-authoritative environment. Sheets audit times remain null; none are invented.
 
-Staging deployment can set `EXPENSE_STORE=Postgres`; an omitted setting preserves an
-existing Lambda override, so routine redeploys do not silently roll back authority.
-Production deployment pins Sheets. Coordinated API/UI staging rollout and separate
+Staging deployment can set `EXPENSE_STORE=Postgres`; omitted/`preserve` settings
+preserve existing Lambda authority in either environment. Production defaults to
+Sheets until explicit approved selection through the #132 path above. Coordinated API/UI staging rollout and separate
 real Postgres create/list/persistence acceptance are required, separately from Sheets smoke.
 Staging recreation of the unmerged 005 table and migration ledger is an explicit CI-only
 test reset; it is not a new migration and is never a production reset. After Postgres accepts
