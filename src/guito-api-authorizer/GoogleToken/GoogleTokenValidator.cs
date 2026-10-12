@@ -21,10 +21,12 @@ namespace GuitoApiAuthorizer.GoogleToken
         private readonly IJwksClient _jwksClient;
         private readonly string _audience;
         private readonly IReadOnlySet<string> _allowedEmails;
+        private readonly string? _expectedSubject;
+        private readonly bool _requireVerifiedEmail;
         private readonly DateTimeOffset? _nowOverride; // test seam
 
         public GoogleTokenValidator(IJwksClient jwksClient, string audience, IEnumerable<string> allowedEmails,
-            DateTimeOffset? nowOverride = null)
+            DateTimeOffset? nowOverride = null, string? expectedSubject = null, bool requireVerifiedEmail = false)
         {
             _jwksClient = jwksClient;
             _audience = audience;
@@ -32,6 +34,8 @@ namespace GuitoApiAuthorizer.GoogleToken
                 allowedEmails.Select(e => e.Trim().ToLowerInvariant()).Where(e => e.Length > 0),
                 StringComparer.Ordinal);
             _nowOverride = nowOverride;
+            _expectedSubject = expectedSubject;
+            _requireVerifiedEmail = requireVerifiedEmail;
         }
 
         public async Task<GoogleTokenResult> ValidateAsync(string? idToken, CancellationToken cancellationToken = default)
@@ -93,7 +97,6 @@ namespace GuitoApiAuthorizer.GoogleToken
 
         private GoogleTokenResult ValidateClaims(JsonElement payload, long exp)
         {
-            // Expiry before JWKS fetch happens in ValidateSignedTokenAsync; claims stay here.
             var issuer = payload.TryGetProperty("iss", out var iss) ? iss.GetString() : null;
             if (issuer is null || !AllowedIssuers.Contains(issuer))
                 return Fail("untrusted issuer");
@@ -105,11 +108,25 @@ namespace GuitoApiAuthorizer.GoogleToken
                 return Fail("audience mismatch");
 
             var email = payload.TryGetProperty("email", out var emailElement) ? emailElement.GetString() : null;
-            if (email is null || !_allowedEmails.Contains(email.Trim().ToLowerInvariant()))
+            if (_expectedSubject is null && (email is null || !_allowedEmails.Contains(email.Trim().ToLowerInvariant())))
                 return Fail("email not allowed");
-
+            if (ValidateReportingIdentity(payload, email) is { } reportingFailure) return Fail(reportingFailure);
             return new GoogleTokenResult(true, null,
-                new GoogleTokenClaims(email, audience, issuer, exp));
+                new GoogleTokenClaims(email!, audience, issuer, exp));
+        }
+
+        private string? ValidateReportingIdentity(JsonElement payload, string? email)
+        {
+            if (_expectedSubject is not null)
+            {
+                if (string.IsNullOrWhiteSpace(_expectedSubject) || !payload.TryGetProperty("sub", out var subject)
+                    || subject.ValueKind != JsonValueKind.String || subject.GetString() != _expectedSubject)
+                    return "subject mismatch";
+                if (string.IsNullOrWhiteSpace(email)) return "missing email";
+            }
+            if (_requireVerifiedEmail && (!payload.TryGetProperty("email_verified", out var verified) || verified.ValueKind != JsonValueKind.True))
+                return "email not verified";
+            return null;
         }
 
         // `alg` is required and must be RS256 — absence fails closed.

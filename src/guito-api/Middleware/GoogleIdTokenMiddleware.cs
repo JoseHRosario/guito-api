@@ -26,7 +26,7 @@ namespace GuitoApi.Middleware
 
         public async Task InvokeAsync(HttpContext httpContext)
         {
-            if (!_options.Authentication.ValidateIdToken)
+            if (httpContext.Items.ContainsKey(SheetsReportingAuthenticationMiddleware.AuthedKey) || !_options.Authentication.ValidateIdToken)
             {
                 await _next(httpContext);
                 return;

@@ -5,6 +5,7 @@
         public const string AppConfiguration = "AppConfiguration";
         public Googlesheets Googlesheets { get; set; } = new();
         public Authentication Authentication { get; set; } = new();
+        public SheetsReportingAuthentication SheetsReportingAuthentication { get; set; } = new();
         public Cors Cors { get; set; } = new();
         public string ExpenseStore { get; set; } = "Sheets";
         public string BankProvider { get; set; } = "Dummy";

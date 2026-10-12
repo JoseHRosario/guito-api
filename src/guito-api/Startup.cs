@@ -61,6 +61,9 @@ namespace GuitoApi
                            .WithExposedHeaders(VersionHeaderMiddleware.HeaderName);
                 });
             });
+            services.AddHttpClient("SheetsReportingJwks");
+            services.AddSingleton<GuitoApi.Infrastructure.Reporting.IJwksClient>(sp =>
+                new GuitoApi.Infrastructure.Reporting.HttpJwksClient(sp.GetRequiredService<IHttpClientFactory>().CreateClient("SheetsReportingJwks")));
             services.AddHealthChecks();
             services.AddHttpContextAccessor();
             services.AddExceptionHandler<ExceptionToProblemDetailsHandler>();
@@ -226,7 +229,8 @@ namespace GuitoApi
             // Build-version stamp on every response (issue #75) — before the auth
             // middlewares so rejected requests carry it too.
             app.UseMiddleware<VersionHeaderMiddleware>();
-            // Agent key path (ADR-0003) first: X-Api-Key gate; independent of the Google token path.
+            // Confine reporting first (ADR-0017), then preserve independent agent/human gates (ADR-0003).
+            app.UseMiddleware<SheetsReportingAuthenticationMiddleware>();
             app.UseMiddleware<ApiKeyMiddleware>();
             app.UseMiddleware<GoogleIdTokenMiddleware>();
             app.UseRouting();

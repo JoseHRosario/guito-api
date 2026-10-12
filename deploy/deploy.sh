@@ -56,6 +56,12 @@ fi
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEPLOY_WORK_DIR=$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:-$HOME/.cache}}/guito-deploy.XXXXXX")
 trap 'rm -rf "$DEPLOY_WORK_DIR"' EXIT
+# Reporting uses public OIDC claims only; never put a Guito key/Google refresh token in Apps Script.
+# Default preserves ONLY consistent installed gates (new stacks disabled). An explicit
+# enable requires live-verified audience/subject and a separate production approval.
+python3 "$REPO_ROOT/deploy/sheets-reporting-config.py" --region "$REGION" \
+  --api "$API_NAME" --authorizer "$AUTH_NAME" --environment "$ENV" --output-dir "$DEPLOY_WORK_DIR"
+export DEPLOY_WORK_DIR
 # Fail closed on missing parameters or denied access; never generate replacement
 # credentials during a deploy or overwrite an existing runtime payload.
 BANK_PARAMETER="/guito-api/eb-$([ "$ENV" = production ] && printf prod || printf staging)-pk"
@@ -197,6 +203,7 @@ import json, os
 v = {'SECRETS_LOCATION': 'AwsSsm', 'SECRETS_SECRET_NAME': os.environ['SECRET_NAME']}
 for k in ('GOOGLE_CLIENT_ID', 'GOOGLE_ALLOWED_EMAILS'):
     if os.environ.get(k): v[k] = os.environ[k]
+v.update(json.load(open(os.path.join(os.environ['DEPLOY_WORK_DIR'], 'guito-reporting-auth-env.json'))))
 print(json.dumps(v))" > "$DEPLOY_WORK_DIR/guito-auth-env.json"
 # API: environment value always; human-path policy (OAuth audience + JSON-array
 # allowlist) when provided.
@@ -220,6 +227,7 @@ if os.environ.get('GOOGLE_CLIENT_ID'):
 if os.environ.get('GOOGLE_ALLOWED_EMAILS'):
     v['AppConfiguration__Authentication__AllowedLogins'] = json.dumps(
         [e.strip() for e in os.environ['GOOGLE_ALLOWED_EMAILS'].split(',')])
+v.update(json.load(open(os.path.join(os.environ['DEPLOY_WORK_DIR'], 'guito-reporting-api-env.json'))))
 print(json.dumps(v))" > "$DEPLOY_WORK_DIR/guito-api-env.json"
 apply_env "$AUTH_NAME" "$DEPLOY_WORK_DIR/guito-auth-env.json"
 apply_env "$API_NAME" "$DEPLOY_WORK_DIR/guito-api-env.json"
@@ -247,11 +255,12 @@ AUTH_ID=$(aws --region "$REGION" apigatewayv2 get-authorizers --api-id "$API_ID"
   --authorizer-type REQUEST --authorizer-uri "arn:aws:apigateway:$REGION:lambda:path/2015-03-31/functions/$AUTH_ARN/invocations" \
   --identity-source '$request.header.Authorization' --authorizer-payload-format-version 2.0 \
   --authorizer-result-ttl-in-seconds 0 --query AuthorizerId --output text)
-# Issue #13: the single route authorizer dispatches on header inside the function,
-# so BOTH headers must trigger an authorizer invocation.
+# The single Authorization identity source dispatches human/reporting/agent paths.
+# Reconcile IAM responses and TTL zero on existing authorizers too.
 if [ -n "$AUTH_ID" ]; then
   aws --region "$REGION" apigatewayv2 update-authorizer --api-id "$API_ID" --authorizer-id "$AUTH_ID" \
-    --identity-source '$request.header.Authorization' >/dev/null
+    --identity-source '$request.header.Authorization' --authorizer-result-ttl-in-seconds 0 \
+    --no-enable-simple-responses >/dev/null
 fi
 
 INT_ID=$(aws --region "$REGION" apigatewayv2 get-integrations --api-id "$API_ID" --query 'Items[0].IntegrationId' --output text)

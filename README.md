@@ -49,6 +49,16 @@ scripts/run-deployed-tests.sh                 # deployed-staging integration tes
 
 Configuration comes from `appsettings.{Environment}.json` plus environment variables (Google service account credentials, Sheets ids, bank-provider credentials). Application secrets are stored as SSM Parameter Store SecureStrings in deployed environments; database credentials remain in Secrets Manager because RDS Data API requires it (ADR 0008) — never commit either. Base/`appsettings.json` targets the DEV spreadsheet; `appsettings.Production.json` targets prod.
 
+## Sheets reporting refresh
+
+The [private standalone Apps Script loader](docs/sheets-refresh.md) reads complete
+live Expense history into dedicated reporting tabs. It mints a short-lived Google
+OIDC identity for the reporting-only route; no Guito API key or refresh token is
+stored in the spreadsheet or script. Installation, consent and staging reopen
+acceptance require the owner's separate approval. Existing archive/formula tabs
+are never replaced. Hermetic checks: `node --check scripts/sheets-refresh/Code.js`
+and `node --test scripts/sheets-refresh/refresh.test.js` (Node 22; no packages).
+
 ## Expense category/month query for agents
 
 `GET /Expense?category=Startup&month=2026-10` returns every exact-category Expense

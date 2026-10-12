@@ -51,7 +51,7 @@ namespace GuitoApi.Middleware
 
         public async Task InvokeAsync(HttpContext httpContext)
         {
-            if (_options.Authentication.ValidateApiKey)
+            if (_options.Authentication.ValidateApiKey && !httpContext.Items.ContainsKey(SheetsReportingAuthenticationMiddleware.AuthedKey))
             {
                 if (httpContext.Request.Path.StartsWithSegments(PublicPath) ||
                     httpContext.Request.Path.StartsWithSegments(PublicTokenExchangePathKey) ||
