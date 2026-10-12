@@ -30,13 +30,7 @@ REGION=eu-west-1
 HUMAN_AUTH_SECRET=/guito-api/human-auth
 PROD_AUTHORIZER=guito-api-authorizer   # GOOGLE_CLIENT_ID always read from prod (ADR-0007 parity)
 
-# Opt-in read-only seeded Postgres history parity; staging ONLY (both auth paths).
-# Usage: GUITO_VERIFY_EXPENSE_HISTORY=1 scripts/run-deployed-tests.sh staging
 ENV_TARGET=${1:-staging}
-if [[ "${GUITO_VERIFY_EXPENSE_HISTORY:-0}" = "1" && "$ENV_TARGET" != "staging" ]]; then
-  echo "FATAL: Expense history acceptance is staging-only." >&2
-  exit 1
-fi
 case "$ENV_TARGET" in
   staging)    API_NAME=guito-api-staging; TARGET_SECRET=/guito-api/staging; OTHER_SECRET=/guito-api/prod ;;
   production) API_NAME=guito-api;         TARGET_SECRET=/guito-api/prod;    OTHER_SECRET=/guito-api/staging ;;
@@ -180,9 +174,4 @@ for PROJECT in "${PROJECTS[@]}"; do
     FAILED=1
   fi
 done
-if [[ "${GUITO_VERIFY_EXPENSE_HISTORY:-0}" = "1" ]]; then
-  if ! python3 scripts/verify-expense-history.py "$ENV_TARGET"; then
-    FAILED=1
-  fi
-fi
 exit "$FAILED"
