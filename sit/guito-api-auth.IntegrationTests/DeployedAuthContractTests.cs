@@ -52,14 +52,16 @@ public class DeployedAuthContractTests
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
-    [Fact]
-    public async Task ExpenseEndpoint_ShouldReturnUnauthorizedFromGateway_WhenNoCredentialsArePresent()
+    [Theory]
+    [InlineData("/Expense/latest/5")]
+    [InlineData("/Expense/history?pageSize=7&pageIndex=0")]
+    public async Task ExpenseEndpoint_ShouldReturnUnauthorizedFromGateway_WhenNoCredentialsArePresent(string route)
     {
         // Arrange
         using var client = StagingEndpointClientWithoutAuthorizationHeader();
 
         // Act
-        var response = await client.GetAsync("/Expense/latest/5");
+        var response = await client.GetAsync(route);
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -67,8 +69,10 @@ public class DeployedAuthContractTests
         // Gateway-generated body (no validator ran); the in-app middlewares produce different bodies.
     }
 
-    [Fact]
-    public async Task ExpenseEndpoint_ShouldReturnUnauthorizedFromAppMiddleware_WhenXApiKeyIsMissing()
+    [Theory]
+    [InlineData("/Expense/latest/5")]
+    [InlineData("/Expense/history?pageSize=7&pageIndex=0")]
+    public async Task ExpenseEndpoint_ShouldReturnUnauthorizedFromAppMiddleware_WhenXApiKeyIsMissing(string route)
     {
         // Arrange — the valid staging key in Authorization alone: the edge accepts,
         // the request reaches the app, and ApiKeyMiddleware rejects the missing
@@ -76,7 +80,7 @@ public class DeployedAuthContractTests
         using var client = StagingEndpointClientWithoutXApiKey();
 
         // Act
-        var response = await client.GetAsync("/Expense/latest/5");
+        var response = await client.GetAsync(route);
 
         // Assert — 401 {"message":"Unauthorized"} here would mean the gateway never
         // forwarded the request (identity-source contract broken), not a middleware
@@ -85,8 +89,10 @@ public class DeployedAuthContractTests
         Assert.Contains("Missing API key", await response.Content.ReadAsStringAsync());
     }
 
-    [Fact]
-    public async Task ExpenseEndpoint_ShouldReturnForbiddenFromEdgeAuthorizer_WhenOtherEnvironmentKeyIsSent()
+    [Theory]
+    [InlineData("/Expense/latest/5")]
+    [InlineData("/Expense/history?pageSize=7&pageIndex=0")]
+    public async Task ExpenseEndpoint_ShouldReturnForbiddenFromEdgeAuthorizer_WhenOtherEnvironmentKeyIsSent(string route)
     {
         // Arrange — the OTHER environment's agent key against the target stack
         // must be denied by the edge authorizer (it only knows the target's
@@ -94,13 +100,9 @@ public class DeployedAuthContractTests
         using var client = DeployedEndpointFixture.CreateAgentClient(DeployedEndpointFixture.OtherKey);
 
         // Act
-        var response = await client.GetAsync("/Expense/latest/5");
+        var response = await client.GetAsync(route);
 
-        // Assert — a custom-authorizer Deny reaches the client as the gateway's
-        // 403 {"message":"Forbidden"} (verified against the authorizer's live log
-        // "Agent key rejected: unknown X-Api-Key"). 403 with the in-app middleware's
-        // "Invalid API key" body would instead mean the edge let a foreign key
-        // through and the app denied it — a different failure.
+        // Assert — distinguish an edge denial from an in-app key rejection.
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("Forbidden", body);
@@ -149,15 +151,17 @@ public class DeployedAuthContractTests
     /// dispatcher would have routed a Bearer request into the agent path — a broken
     /// identity-source contract, not a token-validation failure.
     /// </summary>
-    [Fact]
-    public async Task ExpenseEndpoint_ShouldReturnForbiddenFromEdgeAuthorizer_WhenBearerValueIsNotAValidGoogleToken()
+    [Theory]
+    [InlineData("/Expense/latest/5")]
+    [InlineData("/Expense/history?pageSize=7&pageIndex=0")]
+    public async Task ExpenseEndpoint_ShouldReturnForbiddenFromEdgeAuthorizer_WhenBearerValueIsNotAValidGoogleToken(string route)
     {
         // Arrange
         using var client = DeployedEndpointFixture.CreateAnonymousClient();
         client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", "Bearer not-a-real-google-id-token");
 
         // Act
-        var response = await client.GetAsync("/Expense/latest/5");
+        var response = await client.GetAsync(route);
 
         // Assert
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);

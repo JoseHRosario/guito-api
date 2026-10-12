@@ -100,6 +100,18 @@ namespace GuitoApi
                 };
             });
             services.AddScoped<ICategoryRepository, GoogleSheetsCategoryRepository>();
+            services.AddScoped<IExpenseHistoryRepository>(sp =>
+            {
+                // Guards fail when history is invoked, not while constructing ExpenseController.
+                if (sp.GetRequiredService<ISheetScopeResolver>().IsSmokeScope)
+                    return new UnavailableExpenseHistoryRepository(new ProblemException(409, "Expense history is unavailable for smoke scope."));
+                if (sp.GetRequiredService<IOptions<AppConfigurationOptions>>().Value.ExpenseStore != "Postgres")
+                    return new UnavailableExpenseHistoryRepository(new ProblemException(409, "Expense history requires Postgres Expense authority."));
+                if (sp.GetRequiredService<IWebHostEnvironment>().IsProduction())
+                    return new UnavailableExpenseHistoryRepository(new InvalidOperationException("Production Expense Postgres cutover is not yet approved."));
+                return ActivatorUtilities.CreateInstance<DataApiPostgresExpenseHistoryRepository>(sp);
+            });
+            services.AddScoped<IReadExpenseHistoryService, ReadExpenseHistoryService>();
 
             services.AddScoped<ICreateExpenseService, CreateExpenseService>();
             services.AddScoped<IMatchExpensesService, MatchExpensesService>();

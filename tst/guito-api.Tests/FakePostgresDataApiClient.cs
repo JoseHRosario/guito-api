@@ -19,6 +19,8 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
             PostgresValue.FromString(category), PostgresValue.FromString(creatorEmail),
             PostgresValue.FromString("2027-02-01T10:00:00Z"), PostgresValue.Null()]);
 
+    public void SeedExpense(IReadOnlyList<PostgresValue> row) => _expenses.Add(row);
+
     public Dictionary<string, long> ExpenseCategoryIds { get; } = new(StringComparer.Ordinal)
     {
         ["Test"] = 2147483648L, ["Restaurants"] = 2, ["Groceries"] = 3, ["Original category"] = 4
@@ -32,15 +34,9 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
                 ? new PostgresResult([], [[PostgresValue.FromLong(categoryId)]], 0)
                 : new PostgresResult([], [], 0);
         if (sql.StartsWith("INSERT INTO expenses", StringComparison.Ordinal))
-        {
-            var id = _expenses.Count + 1;
-            var category = ExpenseCategoryIds.Single(c => c.Value == values["category_id"].LongValue).Key;
-            var now = PostgresValue.FromString(DateTimeOffset.UtcNow.ToString("O"));
-            _expenses.Add([PostgresValue.FromString(id.ToString(System.Globalization.CultureInfo.InvariantCulture)),
-                values["booking_date"], values["amount"], values["description"],
-                PostgresValue.FromString(category), values["creator_email"], now, PostgresValue.Null()]);
-            return new PostgresResult([], [[PostgresValue.FromLong(id)]], 1);
-        }
+            return InsertExpense(values);
+        if (sql.Contains("LEFT JOIN LATERAL", StringComparison.Ordinal))
+            return ReadExpenseHistory(sql, values);
         if (sql.StartsWith("SELECT", StringComparison.Ordinal))
         {
             return ReadExpenses(sql, values);
@@ -61,6 +57,37 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
                 .ThenByDescending(r => int.Parse(r[0].StringValue!, System.Globalization.CultureInfo.InvariantCulture));
         if (sql.Contains("LIMIT :limit", StringComparison.Ordinal)) rows = rows.Take((int)values["limit"].LongValue!);
         return new PostgresResult([], rows.ToList(), 0);
+    }
+
+    private PostgresResult InsertExpense(Dictionary<string, PostgresValue> values)
+    {
+        var id = _expenses.Count + 1;
+        var category = ExpenseCategoryIds.Single(c => c.Value == values["category_id"].LongValue).Key;
+        var now = PostgresValue.FromString(DateTimeOffset.UtcNow.ToString("O"));
+        _expenses.Add([PostgresValue.FromString(id.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            values["booking_date"], values["amount"], values["description"],
+            PostgresValue.FromString(category), values["creator_email"], now, PostgresValue.Null()]);
+        return new PostgresResult([], [[PostgresValue.FromLong(id)]], 1);
+    }
+
+    private PostgresResult ReadExpenseHistory(string sql, Dictionary<string, PostgresValue> values)
+    {
+        if (!sql.Contains("JOIN categories c ON c.id = e.category_id", StringComparison.Ordinal))
+            throw new InvalidOperationException("History category lookup requires the mirror identity join.");
+        IEnumerable<IReadOnlyList<PostgresValue>> rows = _expenses.Where(row => ExpenseCategoryIds.ContainsKey(row[4].StringValue!));
+        if (sql.Contains("ORDER BY e.booking_date DESC", StringComparison.Ordinal))
+            rows = rows.OrderByDescending(row => DateTimeOffset.Parse(row[1].StringValue!))
+                .ThenByDescending(row => sql.Contains("e.id DESC", StringComparison.Ordinal)
+                    ? int.Parse(row[0].StringValue!) : 0);
+        if (sql.Contains("OFFSET :offset", StringComparison.Ordinal))
+            rows = rows.Skip((int)Math.Min(values["offset"].LongValue!.Value, int.MaxValue));
+        if (sql.Contains("LIMIT :limit", StringComparison.Ordinal))
+            rows = rows.Take((int)values["limit"].LongValue!.Value);
+        var total = sql.Contains("SELECT COUNT(*) AS total_count FROM expenses", StringComparison.Ordinal) ? _expenses.Count : 0;
+        var count = PostgresValue.FromString(total.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        var result = rows.Select(row => (IReadOnlyList<PostgresValue>)new[] { count }.Concat(row).ToArray()).ToList();
+        if (result.Count == 0) result.Add(new[] { count }.Concat(Enumerable.Repeat(PostgresValue.Null(), 8)).ToArray());
+        return new PostgresResult([], result, 0);
     }
 
     public Exception? ExecuteException { get; set; }
