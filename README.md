@@ -49,6 +49,16 @@ scripts/run-deployed-tests.sh                 # deployed-staging integration tes
 
 Configuration comes from `appsettings.{Environment}.json` plus environment variables (Google service account credentials, Sheets ids, bank-provider credentials). Application secrets are stored as SSM Parameter Store SecureStrings in deployed environments; database credentials remain in Secrets Manager because RDS Data API requires it (ADR 0008) — never commit either. Base/`appsettings.json` targets the DEV spreadsheet; `appsettings.Production.json` targets prod.
 
+## Expense category/month query for agents
+
+`GET /Expense?category=Startup&month=2026-10` returns every exact-category Expense
+in the requested Europe/Lisbon booking month, ordered by booking date then ID descending.
+Requires Postgres Expense authority; Sheets returns 409 and production cutover stays blocked.
+There is no pagination or record cap: Data API failures return an explicit error,
+never a partial success. Responses use ordinary MVC JSON serialization. See the [Paperclip consumer contract](docs/expense-category-month.md)
+for required query parameters, exact amount strings, deployed `Authorization` + `X-Api-Key`
+headers, response shape, errors and provider transport constraints.
+
 ## Expense contract and staged Postgres rollout
 
 `POST /Expense` binds one required `bookingDate` to a `DateTimeOffset`; its JSON value is

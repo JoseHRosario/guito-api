@@ -116,6 +116,7 @@ namespace GuitoApi
             services.AddScoped<ICreateExpenseService, CreateExpenseService>();
             services.AddScoped<IMatchExpensesService, MatchExpensesService>();
             services.AddScoped<IListLatestExpensesService, ListLatestExpensesService>();
+            services.AddScoped<IListExpensesService, ListExpensesService>();
             services.AddScoped<IDeleteExpenseRowService, DeleteExpenseService>();
             services.AddScoped<ISheetScopeResolver, SheetScopeResolver>();
             services.AddScoped<IListCategoryService, ListCategoryGoogleApisSheetsService>();
