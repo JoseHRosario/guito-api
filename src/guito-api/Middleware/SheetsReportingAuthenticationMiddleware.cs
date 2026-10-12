@@ -6,7 +6,8 @@ using Microsoft.Extensions.Options;
 
 namespace GuitoApi.Middleware;
 
-public class SheetsReportingAuthenticationMiddleware(RequestDelegate next, IOptions<AppConfigurationOptions> options, IJwksClient jwksClient)
+public class SheetsReportingAuthenticationMiddleware(RequestDelegate next, IOptions<AppConfigurationOptions> options,
+    IJwksClient jwksClient, ILogger<SheetsReportingAuthenticationMiddleware> logger)
 {
     public const string AuthedKey = "SheetsReportingAuthed";
 
@@ -33,14 +34,36 @@ public class SheetsReportingAuthenticationMiddleware(RequestDelegate next, IOpti
     private async Task<bool> IsValidReportingRequestAsync(HttpContext context, string token, string bearer,
         SheetsReportingAuthentication reporting)
     {
-        if (!IsAllowedRequest(context, token, bearer, reporting)) return false;
+        if (!IsAllowedRequest(context, token, bearer, reporting))
+        {
+            LogPolicyRejection(context, token, bearer, reporting);
+            return false;
+        }
+        return await ValidateReportingTokenAsync(context, token, reporting);
+    }
+
+    private async Task<bool> ValidateReportingTokenAsync(HttpContext context, string token, SheetsReportingAuthentication reporting)
+    {
         try
         {
-            return (await new GoogleTokenValidator(jwksClient, reporting.Audience, reporting.Subject)
-                .ValidateAsync(token, context.RequestAborted)).Valid;
+            var result = await new GoogleTokenValidator(jwksClient, reporting.Audience, reporting.Subject)
+                .ValidateAsync(token, context.RequestAborted);
+            if (!result.Valid) logger.LogWarning("Reporting token rejected: {Reason}", result.FailureReason);
+            return result.Valid;
         }
-        catch (Exception) { return false; }
+        catch (Exception exception)
+        {
+            logger.LogWarning("Reporting validation dependency failed: {ExceptionType}", exception.GetType().Name);
+            return false;
+        }
     }
+
+    private void LogPolicyRejection(HttpContext context, string token, string bearer, SheetsReportingAuthentication reporting) =>
+        logger.LogWarning("Reporting policy rejected: method={Method}, historyPath={HistoryPath}, subjectConfigured={SubjectConfigured}, distinctAudience={DistinctAudience}, tokenPresent={TokenPresent}, bearerPresent={BearerPresent}, headersEqual={HeadersEqual}",
+            context.Request.Method,
+            string.Equals(context.Request.Path.Value, "/Expense/history", StringComparison.OrdinalIgnoreCase),
+            !string.IsNullOrWhiteSpace(reporting.Subject), reporting.Audience != options.Value.Authentication.OAuthAudience,
+            token.Length > 0, bearer.Length > 0, token == bearer);
 
     private bool IsAllowedRequest(HttpContext context, string token, string bearer, SheetsReportingAuthentication reporting) =>
         !string.IsNullOrWhiteSpace(reporting.Subject) && reporting.Audience != options.Value.Authentication.OAuthAudience
