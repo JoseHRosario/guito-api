@@ -12,21 +12,39 @@ function createRuntime() {
     triggers: { ensure: function () { ensureOpenTrigger(properties.SPREADSHEET_ID); } },
     api: { page: function (index) {
       var token = ScriptApp.getIdentityToken();
-      if (!token) throw new Error('authentication');
+      if (!token) throw new Error('identity');
       return readJson(properties.GUITO_BASE_URL + '/Expense/history?pageSize=100&pageIndex=' + index,
         { method: 'get', headers: { Authorization: 'Bearer ' + token, 'x-google-idtoken': token } });
     } }
   };
 }
 
-function readJson(url, options) {
+function readJson(url, options, service) {
   options.muteHttpExceptions = true;
   options.followRedirects = false;
   var response;
-  try { response = UrlFetchApp.fetch(url, options); } catch (ignored) { throw new Error('fetch'); }
+  try { response = UrlFetchApp.fetch(url, options); } catch (ignored) { throw new Error(service === 'sheets' ? 'sheets-fetch' : 'fetch'); }
   var code = response.getResponseCode();
-  if (code !== 200) throw new Error(code === 401 || code === 403 ? 'authentication' : 'fetch');
-  try { return JSON.parse(response.getContentText()); } catch (ignored) { throw new Error('validation'); }
+  if (code !== 200) throw new Error(service === 'sheets' ? sheetsFailure(response, 'sheets-fetch') :
+    code === 401 || code === 403 ? 'authentication' : 'fetch');
+  try { return JSON.parse(response.getContentText()); } catch (ignored) { throw new Error(service === 'sheets' ? 'sheets-validation' : 'validation'); }
+}
+
+// Only recognized ErrorInfo reasons select fixed messages; provider text is never surfaced.
+function sheetsFailure(response, fallback) {
+  var code = response.getResponseCode();
+  if (code !== 401 && code !== 403) return fallback;
+  try {
+    var body = JSON.parse(response.getContentText());
+    var details = body && body.error && body.error.details;
+    if (Array.isArray(details) && details.some(function (detail) {
+      return detail && detail['@type'] === 'type.googleapis.com/google.rpc.ErrorInfo' && detail.reason === 'SERVICE_DISABLED';
+    })) return 'sheets-disabled';
+    if (Array.isArray(details) && details.some(function (detail) {
+      return detail && detail['@type'] === 'type.googleapis.com/google.rpc.ErrorInfo' && detail.reason === 'ACCESS_TOKEN_SCOPE_INSUFFICIENT';
+    })) return 'sheets-scope';
+  } catch (ignored) { /* Unknown/malformed provider details remain a generic permission failure. */ }
+  return 'sheets-permission';
 }
 
 function runtimeSheet(properties) {
@@ -41,7 +59,7 @@ function runtimeSheet(properties) {
   function prepare() {
     Object.assign(properties, PropertiesService.getScriptProperties().getProperties());
     ownershipVerified = false;
-    var result = readJson(base + '?fields=sheets(properties,developerMetadata)', options('get'));
+    var result = readJson(base + '?fields=sheets(properties,developerMetadata)', options('get'), 'sheets');
     owned = {};
     ['DATA', 'BACKUP', 'STATUS'].forEach(function (role) {
       var id = properties[role + '_SHEET_ID'];
@@ -63,7 +81,7 @@ function runtimeSheet(properties) {
   }
   function readMarker() {
     var range = "'" + owned.STATUS.title.replace(/'/g, "''") + "'!A1:D1";
-    var value = readJson(base + '/values/' + encodeURIComponent(range), options('get'));
+    var value = readJson(base + '/values/' + encodeURIComponent(range), options('get'), 'sheets');
     return value.values && value.values[0] && value.values[0][3];
   }
   function batch(requests) {
@@ -72,7 +90,7 @@ function runtimeSheet(properties) {
     catch (ignored) { throw new Error('ambiguous'); }
     var code = response.getResponseCode();
     if (code >= 200 && code < 300) return;
-    throw new Error(code >= 500 || code === 408 ? 'ambiguous' : 'write');
+    throw new Error(code >= 500 || code === 408 ? 'ambiguous' : sheetsFailure(response, 'write'));
   }
   function resize(sheet, rows, columns) {
     return { updateSheetProperties: { properties: { sheetId: sheet.sheetId, gridProperties: {
@@ -117,7 +135,7 @@ function runtimeSheet(properties) {
       cells(owned.STATUS.sheetId, [['RESTORED BACKUP', '', '', marker]], 1, 4)], marker);
   }
   function initialize() {
-    var result = readJson(base + '?fields=sheets(properties,developerMetadata)', options('get'));
+    var result = readJson(base + '?fields=sheets(properties,developerMetadata)', options('get'), 'sheets');
     var roles = ['DATA', 'BACKUP', 'STATUS'];
     var titles = ['Guito Expenses', 'Guito Previous', 'Guito Refresh Status'];
     var existing = roles.map(function (role) {
@@ -189,17 +207,42 @@ function refreshExpenses(adapters, installing) {
     return { ok: true, count: expenses.length };
   } catch (error) {
     var unknown = error.message === 'ambiguous';
-    var message = unknown ? 'Sheets commit outcome unknown; inspect marker before retrying.' :
-      error.message === 'write' ? 'Sheets write rejected; previous data retained.' :
-      error.message === 'authentication' ? 'Reporting authentication failed; previous data retained.' :
-      'History validation or fetch failed; previous data retained.';
+    var message = safeRefreshError(error);
     if (!unknown && !installing) { try { deps.sheet.failure(message); } catch (ignored) { /* Keep original sanitized outcome. */ } }
     return { ok: false, error: message };
   } finally { deps.lock.release(); }
 }
 
+function safeRefreshError(error) {
+  var messages = {
+    ambiguous: 'Sheets commit outcome unknown; inspect marker before retrying.',
+    write: 'Sheets write rejected; previous data retained.',
+    identity: 'Reporting identity unavailable; grant openid and email consent. Previous data retained.',
+    authentication: 'Reporting authentication failed; check the pinned reporting identity. Previous data retained.',
+    fetch: 'Reporting fetch failed; previous data retained.',
+    validation: 'History validation failed; previous data retained.',
+    'sheets-disabled': 'Sheets API disabled; enable Google Sheets API in the associated Cloud project. Previous data retained.',
+    'sheets-scope': 'Sheets scope insufficient; grant spreadsheets consent. Previous data retained.',
+    'sheets-permission': 'Sheets permission denied; check workbook access and spreadsheets scope consent. Previous data retained.',
+    'sheets-fetch': 'Sheets metadata or marker fetch failed; previous data retained.',
+    'sheets-validation': 'Sheets metadata or marker response invalid; previous data retained.',
+    ownership: 'Sheets ownership metadata invalid; inspect loader tab IDs and developer metadata. Previous data retained.'
+  };
+  return error && Object.prototype.hasOwnProperty.call(messages, error.message) ? messages[error.message] :
+    'Loader operation failed; previous data retained.';
+}
+
 /** Explicit, owner-run installation only; never called from a spreadsheet event. */
-function installExpenses() { return refreshExpenses(null, true); }
+function installExpenses() {
+  var result = refreshExpenses(null, true);
+  // refreshExpenses owns sanitized errors; never serialize dependencies or exceptions.
+  var outcome = { ok: result.ok === true };
+  if (Number.isSafeInteger(result.count) && result.count >= 0) outcome.count = result.count;
+  if (result.publicationSucceeded === true) outcome.publicationSucceeded = true;
+  if (!outcome.ok) outcome.error = result.error;
+  console.log(JSON.stringify(outcome));
+  return result;
+}
 
 /** Owner-only recovery; disable the open trigger and inspect the backup first. */
 function restorePreviousExpenses() {
@@ -210,6 +253,38 @@ function restorePreviousExpenses() {
   catch (error) { return { ok: false, error: error.message === 'ambiguous' ?
     'Sheets commit outcome unknown; inspect marker before retrying.' : 'Backup restore failed; no successful restore confirmed.' }; }
   finally { deps.lock.release(); }
+}
+
+/** Owner-run, read-only route check. Status 0 means sanitized transport failure. */
+function checkReportingSecurity() {
+  var base, token;
+  try { base = PropertiesService.getScriptProperties().getProperties().GUITO_BASE_URL; }
+  catch (ignored) { throw new Error('Review GUITO_BASE_URL before running the security check.'); }
+  if (!/^https:\/\/[A-Za-z0-9.-]+(?::443)?(?:\/[A-Za-z0-9_-]+)*$/.test(base || '')) {
+    throw new Error('Review GUITO_BASE_URL before running the security check.');
+  }
+  try { token = ScriptApp.getIdentityToken(); }
+  catch (ignored) { throw new Error('Reporting identity unavailable; grant the required consent.'); }
+  if (!token) throw new Error('Reporting identity unavailable; grant the required consent.');
+  var probes = [
+    { path: '/Expense/history?pageSize=100&pageIndex=0', expected: 200 },
+    { path: '/Expense/latest/5', expected: 403 },
+    { path: '/Category', expected: 403 }
+  ];
+  var checks = probes.map(function (probe) {
+    var status = 0;
+    try {
+      var response = UrlFetchApp.fetch(base + probe.path, {
+        method: 'get', headers: { Authorization: 'Bearer ' + token },
+        muteHttpExceptions: true, followRedirects: false
+      });
+      status = response.getResponseCode();
+    } catch (ignored) { /* Report transport failure without exposing provider details. */ }
+    return { path: probe.path, status: status, expected: probe.expected };
+  });
+  var result = { ok: checks.every(function (check) { return check.status === check.expected; }), checks: checks };
+  console.log(JSON.stringify(result));
+  return result;
 }
 
 /** Discovery only, not token verification. Never log the JWT or other claims. */

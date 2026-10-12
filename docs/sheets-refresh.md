@@ -48,11 +48,10 @@ separately gated; this loader does not bypass that guard.
 
 ## Approval gate and manual setup
 
-**Not installed or live-accepted by this change.** Auth design approval is not
-permission to create a Google project, tabs or triggers. There is no signed-in
-Apps Script browser session available to the agent. Actual minted audience/subject
-and staging reopen acceptance are still pending the owner's login/consent and
-explicit approval. Never fabricate those values or treat Node tests as live proof.
+**Repository changes do not install or live-accept the loader.** Auth design
+approval is not permission to create a Google project, tabs or triggers. Keep
+owner-run identity, route-security, dataset parity and reopen evidence separate
+from hermetic tests. Never fabricate claim values or treat Node tests as live proof.
 
 After approval, the owner does the following, initially against **staging only**:
 
@@ -61,9 +60,18 @@ After approval, the owner does the following, initially against **staging only**
    Keep it private. Copy `Code.js` as `Code.gs`; do not copy `refresh.test.js`.
    Enable manifest visibility in Project Settings and copy `appsscript.json`.
    Use V8 and the explicit scopes `openid`, `userinfo.email`, `external_request`,
-   `spreadsheets`, and `script.scriptapp` exactly as supplied. Enable Google Sheets
-   API for the associated Cloud project if needed; no advanced Apps Script service
-   or additional npm dependencies are required.
+   `spreadsheets`, and `script.scriptapp` exactly as supplied.
+   **Enable Google Sheets API v4 before installation:** in the Apps Script editor,
+   open **Services → + → Google Sheets API → v4 → Add**. For the default associated
+   Cloud project, adding the service automatically enables the API. For a standard
+   Cloud project, also enable **Google Sheets API** under that project's Cloud
+   Console **APIs & Services → Library**. Do not switch Cloud projects to fix this:
+   that can change the minted reporting audience and invalidate the pinned identity.
+   The Advanced Service is an optional setup/bootstrap convenience, not a runtime
+   dependency: the loader still uses Sheets REST through `UrlFetchApp`. The original
+   copied manifest needs no `dependencies` entry and its scopes stay unchanged;
+   enabling the API directly in the associated Cloud project is sufficient.
+   No additional npm dependencies are required.
 2. As the intended installer, manually run `discoverReportingIdentity` in the
    editor and complete Google's consent for every requested scope. Its execution
    log contains only `{aud, sub, email_verified}`. **Do not enable reporting yet.**
@@ -97,15 +105,34 @@ After approval, the owner does the following, initially against **staging only**
      query string, fragment, embedded credentials or bearer material. A stage path
      is supported. Page size is fixed at 100; there is no page-size property.
    Remove any legacy key/token properties. Do not paste credentials into this UI.
-4. Explicitly run `installExpenses`. It locks the operation, performs a fully
+4. As the intended owner, manually run `checkReportingSecurity` before installing
+   the trigger or declaring full reporting acceptance. It mints a fresh identity
+   token only in memory and uses the reviewed HTTPS base URL to check GET history
+   returns **200**, while GET `/Expense/latest/5` and GET `/Category` return **403**.
+   It logs and returns only `{ok, checks: [{path, status, expected}]}`. Require
+   `ok: true`; an unexpected **200** on either forbidden route is a security failure,
+   not successful reporting. Status **0** means a sanitized transport failure.
+   It follows no redirects, never reads any response body (even an unexpected 200),
+   and does not access Sheets, acquire a lock, create a trigger or write properties.
+   Missing identity/invalid base URL stop before requests with a fixed safe error.
+   This probe checks three GET routes through the deployed gates; it does not replace
+   signed-identity verification or the broader denied-route/method and auth checks.
+5. Explicitly run `installExpenses`. It locks the operation, performs a fully
    authenticated all-page read and validates it **before creating tabs**. It then
    creates or recovers its own metadata-tagged tabs, verifies ownership, publishes
    the complete dataset, and only after successful publication enables an
    installable `refreshExpenses` spreadsheet-open trigger. Auth/fetch/validation
-   failure does not initialize tabs or enable a trigger. Inspect both the status
+   failure does not initialize tabs or enable a trigger. The editor execution log
+   directly prints the safe outcome object: `{ok: true, count}` confirms publication
+   and trigger installation; `{ok: false, error}` reports failure, not success just
+   because the editor says execution completed. `{ok: false, publicationSucceeded:
+   true, count, error}` means data was published but trigger installation failed.
+   The function still returns that object. A temporary `checkInstallation` wrapper
+   that logs the return value is redundant and may be removed after copying this
+   version. Inspect both the status
    tab and the project's Triggers panel; `OK` alone does not prove trigger creation
    succeeded. A trigger-creation failure can follow successful publication.
-5. Verify exactly one own `refreshExpenses` open trigger for this workbook in the
+6. Verify exactly one own `refreshExpenses` open trigger for this workbook in the
    Triggers panel. Rerunning installation deduplicates only this user's matching
    project triggers, not unrelated triggers. Google does not expose another
    account's triggers; use a single installer, and have former installers remove
@@ -153,6 +180,26 @@ owner-run one-time prerequisite, not part of hermetic CI. It does not replace th
 subsequent real checks through API Gateway and Guito, including rejected routes.
 
 ## Dataset, status and atomic publication
+
+### Safe failure diagnostics
+
+Returned installation/refresh errors distinguish missing reporting identity,
+Guito authentication denial (401/403), reporting fetch failure, history validation,
+Sheets API disabled, Sheets permission/scope denial, invalid ownership metadata,
+rejected write and unknown commit outcome. `Sheets API disabled` means enable
+Google Sheets API in the **existing associated** Cloud project, not change Guito's
+reporting identity. A Guito 200 followed by Sheets `SERVICE_DISABLED` is not a
+reporting-authentication failure. For Sheets permission denial, check the owner's
+workbook access and spreadsheets consent; a recognized insufficient-scope reason
+specifically asks for spreadsheets consent. Ownership failure requires inspecting
+the loader's tab IDs/developer metadata, not adopting existing tabs by title.
+
+Only the whitelisted Google `ErrorInfo` reasons `SERVICE_DISABLED` and
+`ACCESS_TOKEN_SCOPE_INSUFFICIENT` select specific fixed messages. Unknown reasons,
+raw provider messages, response bodies, URL queries, credentials, email and expense
+data are never returned or logged. Do not add raw diagnostic logging. A failed
+refresh preserves the last good data/backup and success time; an unknown commit
+must instead follow the marker-reconciliation procedure below.
 
 The dedicated stable data tab has row-one headers:
 
@@ -241,7 +288,9 @@ only when current-source publication is again wanted.
 Record deployed commit and public discovered claims, without tokens or financial
 payloads in the PR. No items below have been claimed as executed here:
 
-- Verified signed staging reporting identity is accepted on GET history; unrelated
+- Run the live owner `checkReportingSecurity` probe and require history 200,
+  latest/category 403 and `ok: true` before trigger/full reporting acceptance.
+  Verified signed staging reporting identity is accepted on GET history; unrelated
   audience/subject and missing/unverified identity are rejected. The reporting
   credential cannot call create/latest/category/AI/smoke or other routes. Existing
   human and agent auth still work independently.
@@ -278,7 +327,10 @@ successful commit. They cover exact text/formula defense, all-page validation,
 drift/duplicates/microsecond ordering/calendar checks, empty data, separate token
 transports, ownership, install ordering/deduplication, concurrency, rejection,
 failure-status failure, marker readback/unknown blocking, restore and redacted
-claim discovery. Synthetic `.invalid` identities are test-only, not discovered
+claim discovery, safe installation logs, provider-specific sanitized diagnostics
+and the body-blind read-only owner security probe (including forbidden-route 200,
+redirects, transport failures and preflight rejection). Synthetic `.invalid`
+identities are test-only, not discovered
 installer claims.
 
 Mocks do not prove real Google scopes/consent, minted audience/subject, trigger

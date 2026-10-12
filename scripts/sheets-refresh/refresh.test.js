@@ -349,6 +349,150 @@ test('all live pages are validated before a single replacement; truncated last p
   assert.equal(broken.state().lastSuccess, 'previous success');
   assert.match(broken.state().error, /validation/i);
 });
+test('refresh reports safe distinct reporting, Sheets, ownership and configuration failures', () => {
+  const cases = [
+    ['missing', /Reporting identity unavailable/i, f => { f.context.ScriptApp.getIdentityToken = () => null; }],
+    ['auth', /Reporting authentication failed/i, f => { f.state.authError = true; }],
+    ['fetch', /Reporting fetch failed/i, f => { f.state.fetchError = true; }],
+    ['validation', /History validation failed/i, f => { f.state.pageChange = page => { page.pageSize = 1; }; }],
+    ['disabled', /Sheets API disabled.*enable.*Google Sheets API/i, f => {
+      const fetch = f.context.UrlFetchApp.fetch;
+      f.context.UrlFetchApp.fetch = (url, options) => url.includes('sheets.googleapis.com') ?
+        { getResponseCode: () => 403, getContentText: () => JSON.stringify({ error: { message: 'provider secret', details: [
+          { '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'SERVICE_DISABLED', metadata: { secret: 'never expose' } }
+        ] } }) } : fetch(url, options);
+    }],
+    ['permission', /Sheets permission denied.*access.*scope/i, f => {
+      const fetch = f.context.UrlFetchApp.fetch;
+      f.context.UrlFetchApp.fetch = (url, options) => url.includes('sheets.googleapis.com') ?
+        { getResponseCode: () => 403, getContentText: () => JSON.stringify({ error: { message: 'provider secret', details: [] } }) } : fetch(url, options);
+    }],
+    ['ownership', /Sheets ownership metadata invalid/i, f => { f.state.sheets[0].developerMetadata = []; }],
+    ['configuration', /Loader configuration unavailable/i, f => { f.state.properties.GUITO_BASE_URL = 'https://invalid/?secret=token'; }]
+  ];
+  for (const [name, expected, arrange] of cases) {
+    const f = runtimeFixture(); arrange(f);
+    const result = f.context.refreshExpenses();
+    assert.equal(result.ok, false, name); assert.match(result.error, expected, name);
+    assert.deepEqual(f.state.grids[10], [['last good']], name);
+    assert.deepEqual(f.state.grids[11], [['older']], name);
+    assert.equal(f.state.grids[12][0][1], 'previous success', name);
+    assert.ok(!result.error.includes('secret'), name);
+  }
+  const f = fixture(); f.deps.api.page = () => { throw new Error('provider secret token email amounts'); };
+  assert.match(loader().refreshExpenses(f.deps).error, /failed.*previous data retained/i);
+  assert.ok(!f.state().error.includes('secret'));
+});
+
+test('Sheets 403 ErrorInfo classification is whitelisted and install separates it from Guito 403', () => {
+  for (const [reason, expected, type = 'type.googleapis.com/google.rpc.ErrorInfo'] of [
+    ['SERVICE_DISABLED', /Sheets API disabled/i],
+    ['ACCESS_TOKEN_SCOPE_INSUFFICIENT', /Sheets scope insufficient/i],
+    ['secret-token-financial-data', /Sheets permission denied/i],
+    ['SERVICE_DISABLED', /Sheets permission denied/i, 'unrecognized-type']]) {
+    const f = runtimeFixture(); const fetch = f.context.UrlFetchApp.fetch; const logs = [];
+    f.context.console = { log: text => logs.push(text) };
+    let reportingRead = false;
+    f.context.UrlFetchApp.fetch = (url, options) => {
+      if (!url.includes('sheets.googleapis.com')) { reportingRead = true; return fetch(url, options); }
+      return { getResponseCode: () => 403, getContentText: () => JSON.stringify({ error: { message: 'secret-provider-url?token=secret',
+        details: [{ '@type': type, reason }] } }) };
+    };
+    const result = f.context.installExpenses();
+    assert.equal(reportingRead, true); assert.match(result.error, expected);
+    assert.deepEqual(f.state.grids[10], [['last good']]);
+    assert.deepEqual(f.state.grids[11], [['older']]);
+    assert.equal(f.state.grids[12][0][1], 'previous success');
+    assert.equal(f.state.triggers.length, 0);
+    assert.ok(!result.error.includes('secret'));
+    assert.deepEqual(logs.map(JSON.parse), [JSON.parse(JSON.stringify(result))]);
+    assert.ok(!logs.join('').includes('secret'));
+  }
+  const f = runtimeFixture(); const fetch = f.context.UrlFetchApp.fetch;
+  f.context.UrlFetchApp.fetch = (url, options) => url.includes('/Expense/history') ?
+    { getResponseCode: () => 403, getContentText: () => { throw new Error('must not read Guito error body'); } } : fetch(url, options);
+  assert.match(f.context.installExpenses().error, /Reporting authentication failed/i);
+  assert.ok(!f.state.calls.some(call => call.url.includes(':batchUpdate')));
+});
+
+test('install entry point logs only its safe outcome for success, failure and post-publication trigger failure', () => {
+  for (const mode of ['success', 'auth', 'configuration', 'unexpected', 'trigger']) {
+    const f = runtimeFixture(); const logs = [];
+    f.context.console = { log: text => logs.push(text) };
+    if (mode === 'auth') f.state.authError = true;
+    if (mode === 'configuration') f.state.properties.GUITO_BASE_URL = 'https://invalid/?secret=token';
+    if (mode === 'unexpected') f.context.ScriptApp.getIdentityToken = () => { throw new Error('secret-token-private-email-financial-data'); };
+    if (mode === 'trigger') f.context.ScriptApp.newTrigger = () => { throw new Error('secret-token-private-email-financial-data'); };
+    const result = f.context.installExpenses();
+    assert.equal(logs.length, 1, mode);
+    assert.deepEqual(JSON.parse(logs[0]), JSON.parse(JSON.stringify(result)), mode);
+    assert.ok(Object.keys(JSON.parse(logs[0])).every(key => ['ok', 'count', 'publicationSucceeded', 'error'].includes(key)));
+    for (const forbidden of ['ephemeral-id-token', 'google-only-access-token', 'secret', 'owner@example', 'IMPORTXML', '123456789012345']) {
+      assert.ok(!logs[0].includes(forbidden), mode + ': ' + forbidden);
+    }
+    assert.equal(result.ok, mode === 'success');
+    if (mode === 'trigger') { assert.equal(result.publicationSucceeded, true); assert.equal(result.count, 2); }
+    else if (mode !== 'success') assert.deepEqual(f.state.grids[10], [['last good']]);
+  }
+});
+
+test('owner reporting security probe is read-only, body-blind and fails closed on allowed forbidden routes', () => {
+  for (const statuses of [[200, 403, 403], [200, 200, 403], [200, 403, 200], [403, 403, 403], [200, 302, 403], [200, 0, 403]]) {
+    const f = runtimeFixture(); const logs = []; const calls = [];
+    const before = JSON.stringify({ properties: f.state.properties, grids: f.state.grids, triggers: f.state.triggers });
+    f.context.console = { log: text => logs.push(text) };
+    f.context.LockService.getScriptLock = () => { throw new Error('probe must not acquire lock'); };
+    f.context.ScriptApp.getOAuthToken = () => { throw new Error('probe must not mint Sheets access token'); };
+    let minted = 0; f.context.ScriptApp.getIdentityToken = () => { minted++; return 'fresh-probe-id-token'; };
+    f.context.UrlFetchApp.fetch = (url, options) => {
+      const status = statuses[calls.length]; calls.push({ url, options });
+      if (status === 0) throw new Error('raw secret token private data provider URL');
+      return { getResponseCode: () => status, getContentText: () => { throw new Error('probe must never read response bodies'); } };
+    };
+    const result = f.context.checkReportingSecurity();
+    const expected = { ok: statuses[0] === 200 && statuses[1] === 403 && statuses[2] === 403, checks: [
+      { path: '/Expense/history?pageSize=100&pageIndex=0', status: statuses[0], expected: 200 },
+      { path: '/Expense/latest/5', status: statuses[1], expected: 403 },
+      { path: '/Category', status: statuses[2], expected: 403 }
+    ] };
+    assert.deepEqual(JSON.parse(JSON.stringify(result)), expected);
+    assert.deepEqual(logs.map(JSON.parse), [expected]); assert.equal(minted, 1);
+    for (const [index, call] of calls.entries()) {
+      assert.equal(call.url, f.state.properties.GUITO_BASE_URL + expected.checks[index].path);
+      assert.equal(call.options.method, 'get'); assert.equal(call.options.followRedirects, false);
+      assert.equal(call.options.muteHttpExceptions, true);
+      assert.equal(call.options.headers.Authorization, 'Bearer fresh-probe-id-token');
+      assert.equal(call.options.payload, undefined);
+    }
+    assert.equal(JSON.stringify({ properties: f.state.properties, grids: f.state.grids, triggers: f.state.triggers }), before);
+    assert.ok(!logs.join('').includes('token')); assert.ok(!logs.join('').includes('private'));
+  }
+});
+
+test('security probe preflight failures are safe and never issue requests or writes', () => {
+  for (const mode of ['missing', 'identity-provider', 'properties-provider', 'http', 'query', 'fragment', 'userinfo', 'trailing-slash']) {
+    const f = runtimeFixture(); const logs = [];
+    f.context.console = { log: text => logs.push(text) };
+    const invalid = { http: 'http://example.invalid', query: 'https://example.invalid/?token=secret',
+      fragment: 'https://example.invalid/#secret', userinfo: 'https://token@example.invalid', 'trailing-slash': 'https://example.invalid/' };
+    if (invalid[mode]) f.state.properties.GUITO_BASE_URL = invalid[mode];
+    if (mode === 'missing') f.context.ScriptApp.getIdentityToken = () => null;
+    if (mode === 'identity-provider') f.context.ScriptApp.getIdentityToken = () => { throw new Error('secret credential identity provider'); };
+    if (mode === 'properties-provider') f.context.PropertiesService.getScriptProperties = () => { throw new Error('secret configuration provider'); };
+    const before = JSON.stringify({ properties: f.state.properties, grids: f.state.grids });
+    assert.throws(() => f.context.checkReportingSecurity(), error => {
+      assert.ok(!error.message.includes('secret')); assert.match(error.message, /identity unavailable|Review GUITO_BASE_URL/); return true;
+    }, mode);
+    assert.equal(f.state.calls.length, 0); assert.equal(f.state.triggers.length, 0);
+    assert.equal(JSON.stringify({ properties: f.state.properties, grids: f.state.grids }), before);
+    assert.deepEqual(logs, []);
+  }
+  const f = runtimeFixture(); delete f.state.properties.SPREADSHEET_ID;
+  f.context.LockService.getScriptLock = () => { throw new Error('no Sheets prerequisites for probe'); };
+  f.context.UrlFetchApp.fetch = url => ({ getResponseCode: () => url.includes('/Expense/history') ? 200 : 403 });
+  assert.equal(f.context.checkReportingSecurity().ok, true);
+});
+
 test('refresh entry point publishes complete history as exact text and last success', () => {
   const f = fixture();
   const result = loader().refreshExpenses(f.deps);
