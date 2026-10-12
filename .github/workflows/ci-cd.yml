@@ -42,8 +42,15 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-      - name: Run hermetic IAM reconciliation tests
-        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_reconcile_iam.py' -v
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check and test Apps Script expense loader (hermetic)
+        run: |
+          node --check scripts/sheets-refresh/Code.js
+          node --test scripts/sheets-refresh/refresh.test.js
+      - name: Run hermetic deployment and IAM tests
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v
       - name: Run unit tests (no Integration category — those run post-deploy)
         run: dotnet test --filter "Category!=Integration"
 
@@ -66,6 +73,11 @@ jobs:
           role-to-assume: arn:aws:iam::497087877832:role/guito-api-deploy
           aws-region: eu-west-1
       - name: Deploy API + authorizer (staging)
+        env:
+          SHEETS_REPORTING_AUTHENTICATION: ${{ vars.SHEETS_REPORTING_AUTHENTICATION || 'preserve' }}
+          SHEETS_REPORTING_GOOGLE_AUDIENCE: ${{ vars.SHEETS_REPORTING_AUTHENTICATION == 'enabled' && vars.SHEETS_REPORTING_GOOGLE_AUDIENCE || '' }}
+          SHEETS_REPORTING_GOOGLE_SUBJECT: ${{ vars.SHEETS_REPORTING_AUTHENTICATION == 'enabled' && vars.SHEETS_REPORTING_GOOGLE_SUBJECT || '' }}
+          SHEETS_REPORTING_IDENTITY_VERIFIED: ${{ vars.SHEETS_REPORTING_IDENTITY_VERIFIED || 'false' }}
         run: ENV=staging EXPENSE_STORE=Postgres ./deploy/deploy.sh
       - name: Smoke — auth contract (Google token + agent key) and business round-trip
         run: ./scripts/run-deployed-tests.sh staging

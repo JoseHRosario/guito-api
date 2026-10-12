@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Amazon.Lambda.Core;
 using Amazon.Lambda.APIGatewayEvents;
 using Amazon.SimpleSystemsManagement;
@@ -12,11 +13,11 @@ namespace GuitoApiAuthorizer
     /// API Gateway HTTP API REQUEST authorizer (ADR-0003, issues #3/#4/#13). API Gateway
     /// allows one CUSTOM authorizer per route, and `Authorization` is the gateway's SOLE
     /// identity source — so this dispatches on that header alone and never falls back:
-    ///   - `Authorization: Bearer <jwt>` → Google ID-token validation (GoogleToken/).
+    ///   - `Authorization: Bearer *** → independent human or reporting Google ID-token policy.
     ///   - any other raw value           → agent-key validation (AgentKey/).
     ///   - no Authorization header       → Deny. Any validation problem → Deny (fail closed).
-    /// Other headers (X-Api-Key, x-google-idtoken) are NOT gateway identity sources and are
-    /// never forwarded to REQUEST authorizers — dispatching on them here is dead code. The
+    /// Other headers (X-Api-Key, x-google-idtoken) are NOT gateway identity sources.
+    /// Reporting dispatch uses Authorization only; if a second token is forwarded, it must match. The
     /// in-app middlewares (ApiKeyMiddleware, GoogleIdTokenMiddleware) repeat the checks as
     /// defense-in-depth.
     /// </summary>
@@ -27,6 +28,12 @@ namespace GuitoApiAuthorizer
         public const string GoogleClientIdEnvVar = "GOOGLE_CLIENT_ID";
         public const string GoogleAllowedEmailsEnvVar = "GOOGLE_ALLOWED_EMAILS";
 
+        public const string SheetsReportingAudienceEnvVar = "SHEETS_REPORTING_GOOGLE_AUDIENCE";
+        public const string SheetsReportingSubjectEnvVar = "SHEETS_REPORTING_GOOGLE_SUBJECT";
+        private readonly string _reportingAudience;
+        private readonly string _reportingSubject;
+        private readonly string _humanAudience;
+        private readonly IGoogleTokenValidator _reportingValidator;
         private readonly IAgentKeyValidator _agentKeyValidator;
         private readonly IGoogleTokenValidator _googleTokenValidator;
 
@@ -34,11 +41,17 @@ namespace GuitoApiAuthorizer
         {
         }
 
-        /// <summary>Test seam: inject fake validators for either path.</summary>
-        public Function(IAgentKeyValidator agentKeyValidator, IGoogleTokenValidator? googleTokenValidator = null)
+        /// <summary>Test seam: inject validators or reporting JWKS transport and explicit public identity selectors.</summary>
+        public Function(IAgentKeyValidator agentKeyValidator, IGoogleTokenValidator? googleTokenValidator = null,
+            IJwksClient? reportingJwksClient = null, string? reportingAudience = null, string? reportingSubject = null, string? humanAudience = null)
         {
             _agentKeyValidator = agentKeyValidator;
             _googleTokenValidator = googleTokenValidator ?? DefaultGoogleTokenValidator();
+            _reportingAudience = reportingAudience ?? Environment.GetEnvironmentVariable(SheetsReportingAudienceEnvVar) ?? string.Empty;
+            _reportingSubject = reportingSubject ?? Environment.GetEnvironmentVariable(SheetsReportingSubjectEnvVar) ?? string.Empty;
+            _humanAudience = humanAudience ?? Environment.GetEnvironmentVariable(GoogleClientIdEnvVar) ?? string.Empty;
+            _reportingValidator = new GoogleTokenValidator(reportingJwksClient ?? new HttpJwksClient(), _reportingAudience, [],
+                expectedSubject: _reportingSubject, requireVerifiedEmail: true);
         }
 
         public async Task<APIGatewayCustomAuthorizerV2IamResponse> FunctionHandlerAsync(
@@ -53,9 +66,49 @@ namespace GuitoApiAuthorizer
             if (authorization is null)
                 return Deny(methodArn, "anonymous", "no Authorization header");
 
-            return authorization.StartsWith(BearerPrefix, StringComparison.OrdinalIgnoreCase)
-                ? await AuthorizeGoogleAsync(authorization[BearerPrefix.Length..], methodArn, context)
-                : await AuthorizeAgentAsync(authorization, methodArn, context);
+            if (authorization.StartsWith(BearerPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                var token = authorization[BearerPrefix.Length..];
+                if (HasReportingAudience(token))
+                    return await AuthorizeReportingAsync(token, request, methodArn);
+                return await AuthorizeGoogleAsync(token, methodArn, context);
+            }
+            return await AuthorizeAgentAsync(authorization, methodArn, context);
+        }
+
+        private bool HasReportingAudience(string token)
+        {
+            if (string.IsNullOrWhiteSpace(_reportingAudience)) return false;
+            try
+            {
+                var part = token.Split('.')[1];
+                using var payload = JsonDocument.Parse(GoogleTokenValidator.Base64UrlDecodeString(part));
+                return payload.RootElement.TryGetProperty("aud", out var aud) && aud.ValueKind == JsonValueKind.String && aud.GetString() == _reportingAudience;
+            }
+            catch (Exception) { return false; }
+        }
+
+        private async Task<APIGatewayCustomAuthorizerV2IamResponse> AuthorizeReportingAsync(
+            string token, APIGatewayCustomAuthorizerV2Request request, string methodArn)
+        {
+            // HTTP context is authoritative. $default RouteArn is not a URL suffix.
+            var http = request.RequestContext?.Http;
+            if (string.IsNullOrWhiteSpace(_reportingSubject) || _reportingAudience == _humanAudience
+                || http?.Method != "GET" || !string.Equals(http.Path, "/Expense/history", StringComparison.OrdinalIgnoreCase)
+                || string.IsNullOrWhiteSpace(request.RouteArn))
+                return Deny(methodArn, "sheets-reporting", "reporting scope or configuration rejected");
+            var otherToken = GetHeaderValue(request, "x-google-idtoken");
+            if (otherToken is not null && otherToken != token)
+                return Deny(methodArn, "sheets-reporting", "reporting headers disagree");
+            try
+            {
+                var result = await _reportingValidator.ValidateAsync(token);
+                return result.Valid ? Allow(methodArn, "sheets-reporting") : Deny(methodArn, "sheets-reporting", result.FailureReason);
+            }
+            catch (Exception)
+            {
+                return Deny(methodArn, "sheets-reporting", "reporting validation failed");
+            }
         }
 
         private async Task<APIGatewayCustomAuthorizerV2IamResponse> AuthorizeGoogleAsync(

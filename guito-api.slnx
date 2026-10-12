@@ -22,6 +22,7 @@
     <File Path="docs/adr/0014-categories-mirror-postgres.md" />
     <File Path="docs/adr/0015-postgres-expenses-and-lisbon-occurrence.md" />
     <File Path="docs/adr/0016-frozen-history-import-provenance.md" />
+    <File Path="docs/adr/0017-secretless-sheets-reporting-identity.md" />
     <File Path="docs/historical-expense-import.md" />
     <File Path="docs/adr/0010-amounts-stored-positive.md" />
   </Folder>
