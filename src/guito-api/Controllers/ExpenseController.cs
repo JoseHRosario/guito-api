@@ -13,16 +13,19 @@ namespace GuitoApi.Controllers
         private readonly IListLatestExpensesService _listLatestExpensesService;
         private readonly IMatchExpensesService _matchExpensesService;
         private readonly IDeleteExpenseRowService _deleteExpenseRowService;
+        private readonly IReadExpenseHistoryService _readExpenseHistoryService;
 
         public ExpenseController(ICreateExpenseService createExpenseService, 
             IListLatestExpensesService listLatestExpensesService, 
             IMatchExpensesService matchExpensesService,
-            IDeleteExpenseRowService deleteExpenseRowService)
+            IDeleteExpenseRowService deleteExpenseRowService,
+            IReadExpenseHistoryService readExpenseHistoryService)
         {
             _createExpenseService = createExpenseService;
             _listLatestExpensesService = listLatestExpensesService;
             _matchExpensesService = matchExpensesService;
             _deleteExpenseRowService = deleteExpenseRowService;
+            _readExpenseHistoryService = readExpenseHistoryService;
         }
 
         [HttpPost]
@@ -39,9 +42,11 @@ namespace GuitoApi.Controllers
 
         [HttpGet("history")]
         [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
-        public Task<ExpenseHistory> HistoryAsync([FromServices] IReadExpenseHistoryService service,
-            CancellationToken cancellationToken, [FromQuery] int pageSize = 100, [FromQuery] int pageIndex = 0) =>
-            service.ReadAsync(pageSize, pageIndex, cancellationToken);
+        public async Task<ExpenseHistory> HistoryAsync(CancellationToken cancellationToken,
+            [FromQuery] int pageSize = 100, [FromQuery] int pageIndex = 0)
+        {
+            return await _readExpenseHistoryService.ReadAsync(pageSize, pageIndex, cancellationToken);
+        }
 
         [HttpGet("match")]
         [ResponseCache(Duration = 120, Location = ResponseCacheLocation.Any)]

@@ -31,3 +31,19 @@ Hermetic HTTP tests exercise real service/repository composition through
 provider response-size limits. Data API failures fail the request rather than
 returning partial successful history. A bounded row count is not a byte-size
 guarantee for unusually large descriptions/amounts.
+
+## Verification scripts: purpose and execution
+
+- `scripts/tests/test_expense_history.py` tests the acceptance verifier with fake
+  HTTP/AWS transport. It runs in the hermetic CI job on every branch push. It
+  requires no credentials or network and makes no real database changes.
+- `scripts/verify-expense-history.py` is a deployed staging acceptance check, not
+  part of the endpoint or normal Sheets refresh. After staging deployment, CI runs
+  `GUITO_VERIFY_EXPENSE_HISTORY=1 scripts/run-deployed-tests.sh staging`. The runner
+  resolves credentials and invokes the verifier, which fetches every page through
+  both authentication paths and compares exact values with independently read
+  stored Expenses. Source reads before/after detect drift. It writes no Expenses
+  or schema, logs only counts/status, and refuses production.
+
+These checks verify #130's hermetic and deployed parity criteria; they do not add
+runtime export storage or run when Google Sheets requests the endpoint.
