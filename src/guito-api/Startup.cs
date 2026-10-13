@@ -184,7 +184,9 @@ namespace GuitoApi
             services.AddScoped<ICategoriesRepository, DataApiPostgresCategoriesRepository>();
             // Bank sync (issue #90): fetch from EB + idempotent store, per-request.
             services.AddScoped<ISyncBankTransactionsService, SyncBankTransactionsService>();
-            services.AddScoped<IListPendingBankTransactionsService, ListPendingBankTransactionsService>();
+            services.AddScoped<IListBankTransactionsService, ListBankTransactionsService>();
+            services.AddScoped<IIgnoreBankTransactionService, IgnoreBankTransactionService>();
+            services.AddScoped<IReturnBankTransactionToReviewService, ReturnBankTransactionToReviewService>();
         }
 
         private ISecretsProvider CreateSecretsProvider(string? secretsLocation, IServiceProvider services) => secretsLocation switch

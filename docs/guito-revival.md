@@ -67,6 +67,15 @@ subject to separate approval. The existing selector now works in production;
 routine deployments preserve installed authority/reporting instead of pinning Sheets.
 Production retains its Sheets default until the approved explicit override.
 
+## Current owner disposition after cutover
+
+José accepted #132 production Postgres cutover and working Expense saves/reporting,
+then approved #133 Bank review development. The preparation-stage BLOCKED and
+Sheets-default statements above remain historical, not the current installed
+production authority. Distinct abort/recovery rehearsal was not performed. See
+[expense-cutover.md](expense-cutover.md) and ADR-0018 for evidence boundaries and
+the separate Bank-review contract. Initial Bank shows All with every row collapsed.
+
 ## Relevant GitHub issues
 
 - MVP API/auth foundation: #2, #3, #13; API CI/CD: #6.

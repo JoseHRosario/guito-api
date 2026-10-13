@@ -45,6 +45,7 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
     /// transport); the default keeps the Dummy provider, mirroring the default config.
     /// </summary>
     public bool UseEnableBankingProvider { get; set; }
+    public bool UseRealBankTransactionRepository { get; set; }
     public string ExpenseStore { get; set; } = "Sheets";
     public string Environment { get; set; } = "Development";
 
@@ -86,7 +87,8 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
             {
                 Replace<IEnableBankingTransport>(services, _ => EnableBankingTransport);
                 Replace<IBankAccountRepository>(services, _ => BankAccounts);
-                Replace<IBankTransactionRepository>(services, _ => BankTransactions);
+                if (!UseRealBankTransactionRepository)
+                    Replace<IBankTransactionRepository>(services, _ => BankTransactions);
                 Replace<ICategoriesRepository>(services, _ => Categories);
             }
         });

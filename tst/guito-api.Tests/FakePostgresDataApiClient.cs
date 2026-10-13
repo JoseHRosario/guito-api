@@ -10,6 +10,7 @@ namespace GuitoApi.Tests;
 public class FakePostgresDataApiClient : IPostgresDataApiClient
 {
     public Queue<PostgresResult> NextResults { get; } = new();
+    public Func<string, IReadOnlyList<PostgresParameter>?, PostgresResult>? ExecuteBank { get; set; }
     public bool PersistExpenses { get; set; }
     private readonly List<IReadOnlyList<PostgresValue>> _expenses = [];
 
@@ -111,6 +112,8 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
         ExecutedCancellationTokens.Add(cancellationToken);
         if (ExecuteException is not null && ExecutedSql.Count >= ExecuteExceptionAtCall)
             throw ExecuteException;
+        if (ExecuteBank is not null && sql.Contains("bank_transactions", StringComparison.Ordinal))
+            return Task.FromResult(ExecuteBank(sql, parameters));
         if (PersistExpenses && NextResults.Count == 0 && (sql.Contains("expenses", StringComparison.Ordinal)
             || sql == "SELECT id FROM categories WHERE name = :name"))
             return Task.FromResult(ExecuteExpense(sql, parameters));
