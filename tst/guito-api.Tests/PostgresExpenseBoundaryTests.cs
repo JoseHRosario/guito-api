@@ -266,10 +266,10 @@ public class PostgresExpenseBoundaryTests
     }
 
     [Fact]
-    public async Task CreateExpense_ShouldRefusePostgres_WhenProductionRequestsUnapprovedCutover()
+    public async Task CreateExpense_ShouldUsePostgres_WhenProductionSelectsPostgres()
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Environment = "Production" };
+        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Environment = "Production", Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
         client.DefaultRequestHeaders.Add("X-Api-Key", "test-agent-key");
 
@@ -277,8 +277,8 @@ public class PostgresExpenseBoundaryTests
         var response = await client.PostAsJsonAsync("/Expense", new { bookingDate = "2026-10-10", amount = 1m, description = "Test", category = "Test" });
 
         // Assert
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        Assert.Empty(factory.Postgres.ExecutedSql);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotEmpty(factory.Postgres.ExecutedSql);
         Assert.Empty(factory.SheetsHandler.AppendBodies);
     }
 

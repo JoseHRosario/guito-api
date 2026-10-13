@@ -60,11 +60,12 @@ historical import and verified identical reruns in staging and production. José
 removed the temporary provenance tables after verification; import tooling and its
 DDL are retired. Production storage cutover remains separate under #132. See
 [the historical import record](historical-expense-import.md) and ADR-0016.
-Issue #132 adds a default-denied, CI-wired production approval path and personal
-write pause, not a production switch. [The cutover runbook](expense-cutover.md)
-keeps staging readiness BLOCKED until real rehearsal and owner reopen evidence;
-production execution requires separate explicit approval. Routine deployments
-preserve authority and reporting identity rather than reverting to stale Sheets.
+Issue #132 prepares a one-time owner-coordinated production switch, not reusable
+pipeline approval/pause controls. [The runbook](expense-cutover.md) keeps staging
+readiness BLOCKED pending real rehearsal/reopen evidence and production execution
+subject to separate approval. The existing selector now works in production;
+routine deployments preserve installed authority/reporting instead of pinning Sheets.
+Production retains its Sheets default until the approved explicit override.
 
 ## Relevant GitHub issues
 

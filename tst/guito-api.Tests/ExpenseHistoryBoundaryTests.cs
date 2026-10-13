@@ -192,10 +192,10 @@ public class ExpenseHistoryBoundaryTests
     }
 
     [Fact]
-    public async Task History_ShouldPreserveProductionGuard_WhenPostgresCutoverIsNotApproved()
+    public async Task History_ShouldUsePostgres_WhenProductionSelectsPostgres()
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Environment = "Production" };
+        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Environment = "Production", Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient(new() { BaseAddress = new Uri("https://localhost") });
         var secrets = await factory.Services.GetRequiredService<ISecretsProvider>().GetAsync();
         client.DefaultRequestHeaders.Add("X-Api-Key", secrets.ApiKeys[0]);
@@ -204,8 +204,8 @@ public class ExpenseHistoryBoundaryTests
         var response = await client.GetAsync("/Expense/history");
 
         // Assert
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        Assert.Empty(factory.Postgres.ExecutedSql);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotEmpty(factory.Postgres.ExecutedSql);
     }
 
     [Theory]
