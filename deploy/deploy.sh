@@ -15,15 +15,12 @@ case "$ENV" in
   staging)    SUFFIX="-staging";      ASPNETCORE_ENV=Staging;    SECRET_NAME=/guito-api/staging ;;
   *) echo "ENV must be 'production' or 'staging' (got '$ENV')" >&2; exit 1 ;;
 esac
-# No implicit rollback on staging redeploy: an omitted store preserves the Lambda
-# override. Explicit Sheets after Postgres writes requires a recovery decision.
+# Omitted selector preserves installed authority via apply_env. Production stays
+# Sheets until the explicitly approved one-time configuration change.
 case "${EXPENSE_STORE:-}" in
   ""|Sheets|Postgres) ;;
   *) echo "EXPENSE_STORE must be Sheets or Postgres" >&2; exit 1 ;;
 esac
-if [ "$ENV" = production ] && [ "${EXPENSE_STORE:-Sheets}" != Sheets ]; then
-  echo "Production Expense Postgres cutover is not yet approved" >&2; exit 1
-fi
 ACCOUNT_ID=$(aws --region "$REGION" sts get-caller-identity --query Account --output text)
 export EXPENSE_STORE
 API_NAME=guito-api$SUFFIX
@@ -217,9 +214,7 @@ v = {
     'AppConfiguration__EnableBanking__SecretsSource': 'AwsSsm',
     'AppConfiguration__EnableBanking__SsmParameterName': '/guito-api/eb-' + ('prod' if os.environ['ASPNETCORE_ENV'] == 'Production' else 'staging') + '-pk',
 }
-if os.environ['ASPNETCORE_ENV'] == 'Production':
-    v['AppConfiguration__ExpenseStore'] = 'Sheets'
-elif os.environ.get('EXPENSE_STORE'):
+if os.environ.get('EXPENSE_STORE'):
     v['AppConfiguration__ExpenseStore'] = os.environ['EXPENSE_STORE']
 if os.environ.get('GOOGLE_CLIENT_ID'):
     v['AppConfiguration__Authentication__OAuthAudience'] = os.environ['GOOGLE_CLIENT_ID']

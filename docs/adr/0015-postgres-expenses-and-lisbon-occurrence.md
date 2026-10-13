@@ -1,6 +1,6 @@
 # ADR-0015: Opt-in Postgres Expenses and Lisbon occurrence timestamps
 
-Status: Accepted for staged implementation; production cutover is not authorized.
+Status: Accepted for staged implementation; production execution remains unapproved. Issue #132 prepares one-time enablement without executing production.
 Issue: #128 (first implementation slice of #126).
 Supersedes: the Expense-only storage assumptions of ADR-0005, ADR-0011 and ADR-0013.
 Categories remain governed by ADR-0014.
@@ -10,8 +10,26 @@ Categories remain governed by ADR-0014.
 One configured `AppConfiguration:ExpenseStore` (`Sheets` by default, or `Postgres`)
 selects personal Expense reads and writes. Smoke CRUD remains Sheets-specific.
 No dual writes, new database, ORM, driver or auth change. Postgres uses the existing
-Data API client and ambient unit-of-work infrastructure. Production rejects Postgres
-selection until the separately approved cutover removes the guard.
+Data API client and ambient unit-of-work infrastructure. Issue #132 removes the
+original Production-only runtime guard: an explicit existing selector now works in
+all environments; this code preparation does not authorize production execution.
+
+### One-time enablement amendment (#132)
+
+José rejected reusable pipeline cutover controls in PR #144. There is no second
+Expense approval flag, write-pause middleware or new workflow-dispatch choice.
+The owner coordinates a one-time source/API writer hold and drains in-flight
+requests. Production keeps its Sheets default until an approved explicit Lambda
+`AppConfiguration__ExpenseStore=Postgres` change. Routine deployments omit the
+selector and preserve installed authority via the existing environment merge;
+they no longer pin production Sheets. Reporting uses ADR-0017's existing verified
+identity mechanism and separate production enablement approval.
+
+Import/parity is owner-complete under #129; do not repeat it or recreate retired
+provenance. The [runbook](../expense-cutover.md) separates merge/deploy approval,
+one-time configuration, pre-switch abort and post-switch repair preserving new
+Postgres writes. Staging readiness remains BLOCKED until real rehearsal/reopen
+evidence; no production switch or source freeze is claimed.
 
 `005_expenses.sql` creates a resumable table and occurrence/identity index. Every
 statement can be rerun after partial application by the existing semicolon parser.
@@ -92,9 +110,9 @@ cannot retain intraday instants: such creates explicitly return 409 rather than
 silently discarding the supplied time. Do not deploy the time-enabled UI against a
 Sheets-authoritative environment. Sheets audit times remain null; none are invented.
 
-Staging deployment can set `EXPENSE_STORE=Postgres`; an omitted setting preserves an
-existing Lambda override, so routine redeploys do not silently roll back authority.
-Production deployment pins Sheets. Coordinated API/UI staging rollout and separate
+Staging deployment can set `EXPENSE_STORE=Postgres`; omitted settings
+preserve existing Lambda authority in either environment. Production defaults to
+Sheets until the explicitly approved one-time selector change above. Coordinated API/UI staging rollout and separate
 real Postgres create/list/persistence acceptance are required, separately from Sheets smoke.
 Staging recreation of the unmerged 005 table and migration ledger is an explicit CI-only
 test reset; it is not a new migration and is never a production reset. After Postgres accepts
@@ -106,6 +124,6 @@ Import, exception/parity reporting, export and production cutover are subsequent
 HTTP tests use the actual service/repository composition and fake Data API transport:
 integer ID wire contracts and bounds, exact-text decimals, attribution, legacy midnight, offset round trips, DST,
 numeric ordering and ties, category FK binding/missing-category 422, nullable update times,
-bounded reads, production guard and Sheets-only smoke cleanup. Existing
+bounded reads, explicit production Postgres composition and Sheets-only smoke cleanup. Existing
 Sheets/auth tests remain hermetic. Fake SQL execution does not establish PostgreSQL
 DDL, privileges, persistence or constraints; real staging acceptance is separate.

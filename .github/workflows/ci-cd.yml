@@ -101,6 +101,12 @@ jobs:
           role-to-assume: arn:aws:iam::497087877832:role/guito-api-deploy
           aws-region: eu-west-1
       - name: Deploy API + authorizer (production)
+        env:
+          SHEETS_REPORTING_AUTHENTICATION: ${{ vars.SHEETS_REPORTING_AUTHENTICATION || 'preserve' }}
+          SHEETS_REPORTING_GOOGLE_AUDIENCE: ${{ vars.SHEETS_REPORTING_AUTHENTICATION == 'enabled' && vars.SHEETS_REPORTING_GOOGLE_AUDIENCE || '' }}
+          SHEETS_REPORTING_GOOGLE_SUBJECT: ${{ vars.SHEETS_REPORTING_AUTHENTICATION == 'enabled' && vars.SHEETS_REPORTING_GOOGLE_SUBJECT || '' }}
+          SHEETS_REPORTING_IDENTITY_VERIFIED: ${{ vars.SHEETS_REPORTING_IDENTITY_VERIFIED || 'false' }}
+          ALLOW_PRODUCTION_SHEETS_REPORTING: ${{ vars.ALLOW_PRODUCTION_SHEETS_REPORTING || 'false' }}
         run: ENV=production ./deploy/deploy.sh
       - name: Smoke — auth contract (Google token + agent key) and business round-trip
         run: ./scripts/run-deployed-tests.sh production

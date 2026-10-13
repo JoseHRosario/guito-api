@@ -107,10 +107,10 @@ public class ExpenseCategoryMonthTests
     }
 
     [Fact]
-    public async Task List_ShouldPreserveCutoverBlock_WhenProductionSelectsPostgres()
+    public async Task List_ShouldUsePostgres_WhenProductionSelectsPostgres()
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Environment = "Production" };
+        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Environment = "Production", Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
         client.DefaultRequestHeaders.Add("X-Api-Key", "test-agent-key");
 
@@ -118,8 +118,8 @@ public class ExpenseCategoryMonthTests
         var response = await client.GetAsync("/Expense?category=Test&month=2026-10");
 
         // Assert
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        Assert.Empty(factory.Postgres.ExecutedSql);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotEmpty(factory.Postgres.ExecutedSql);
         Assert.Empty(factory.SheetsHandler.ReadRanges);
     }
 
