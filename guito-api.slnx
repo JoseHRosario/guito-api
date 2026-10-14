@@ -8,6 +8,7 @@
     <File Path="db/migrations/006_remove_integration_tests_category.sql" />
     <File Path="db/migrations/008_historical_expense_categories.sql" />
     <File Path="db/migrations/009_bank_review.sql" />
+    <File Path="db/migrations/010_expense_revision.sql" />
   </Folder>
   <Folder Name="/docs/" Id="4a5e54fd-a648-58af-ffbf-706d32b5cdde">
     <File Path="docs/adr/0001-aws-serverless-deployment-target.md" />
@@ -27,6 +28,8 @@
     <File Path="docs/adr/0018-bank-transaction-review.md" />
     <File Path="docs/historical-expense-import.md" />
     <File Path="docs/expense-cutover.md" />
+    <File Path="docs/expense-edit-delete-contract.md" />
+    <File Path="docs/sheets-persistence-retirement.md" />
     <File Path="docs/adr/0010-amounts-stored-positive.md" />
   </Folder>
   <Folder Name="/sit/">

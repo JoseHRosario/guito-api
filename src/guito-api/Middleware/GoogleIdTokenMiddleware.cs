@@ -24,7 +24,7 @@ namespace GuitoApi.Middleware
             _options = options.Value;
         }
 
-        public async Task InvokeAsync(HttpContext httpContext)
+        public async Task InvokeAsync(HttpContext httpContext, GoogleJsonWebSignature.ValidationSettings validationSettings)
         {
             if (httpContext.Items.ContainsKey(SheetsReportingAuthenticationMiddleware.AuthedKey) || !_options.Authentication.ValidateIdToken)
             {
@@ -47,7 +47,7 @@ namespace GuitoApi.Middleware
 
             try
             {
-                var payload = await ValidateTokenAsync(httpContext);
+                var payload = await ValidateTokenAsync(httpContext, validationSettings);
                 if (payload is null)
                     return; // response already written
 
@@ -71,7 +71,7 @@ namespace GuitoApi.Middleware
             await _next(httpContext);
         }
 
-        private async Task<GoogleJsonWebSignature.Payload?> ValidateTokenAsync(HttpContext httpContext)
+        private async Task<GoogleJsonWebSignature.Payload?> ValidateTokenAsync(HttpContext httpContext, GoogleJsonWebSignature.ValidationSettings validationSettings)
         {
             var identityToken = httpContext.Request.Headers[IdTokenHeaderKey];
 
@@ -82,7 +82,7 @@ namespace GuitoApi.Middleware
                 return null;
             }
 
-            var payload = await GoogleJsonWebSignature.ValidateAsync(identityToken);
+            var payload = await GoogleJsonWebSignature.ValidateAsync(identityToken, validationSettings);
             if (!IsValidToken(payload))
             {
                 _logger.LogWarning("IdentityToken failed validation rules for email: {email}", payload.Email);

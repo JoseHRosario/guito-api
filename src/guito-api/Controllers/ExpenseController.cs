@@ -13,22 +13,27 @@ namespace GuitoApi.Controllers
         private readonly ICreateExpenseService _createExpenseService;
         private readonly IListLatestExpensesService _listLatestExpensesService;
         private readonly IMatchExpensesService _matchExpensesService;
-        private readonly IDeleteExpenseRowService _deleteExpenseRowService;
         private readonly IReadExpenseHistoryService _readExpenseHistoryService;
+        private readonly IReadExpenseDetailService _readExpenseDetailService;
+        private readonly IUpdateExpenseService _updateExpenseService;
+        private readonly IDeleteExpenseService _deleteExpenseService;
 
         public ExpenseController(ICreateExpenseService createExpenseService, 
             IListLatestExpensesService listLatestExpensesService, 
             IMatchExpensesService matchExpensesService,
-            IDeleteExpenseRowService deleteExpenseRowService,
             IListExpensesService listExpensesService,
-            IReadExpenseHistoryService readExpenseHistoryService)
+            IReadExpenseHistoryService readExpenseHistoryService,
+            IReadExpenseDetailService readExpenseDetailService, IUpdateExpenseService updateExpenseService,
+            IDeleteExpenseService deleteExpenseService)
         {
             _listExpensesService = listExpensesService;
             _createExpenseService = createExpenseService;
             _listLatestExpensesService = listLatestExpensesService;
             _matchExpensesService = matchExpensesService;
-            _deleteExpenseRowService = deleteExpenseRowService;
             _readExpenseHistoryService = readExpenseHistoryService;
+            _readExpenseDetailService = readExpenseDetailService;
+            _updateExpenseService = updateExpenseService;
+            _deleteExpenseService = deleteExpenseService;
         }
 
         [HttpGet]
@@ -55,19 +60,36 @@ namespace GuitoApi.Controllers
             return await _readExpenseHistoryService.ReadAsync(pageSize, pageIndex, cancellationToken);
         }
 
+        [HttpGet("{id}")]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public async Task<ExpenseDetailResponse> DetailAsync(int id, CancellationToken cancellationToken)
+        {
+            var detail = await _readExpenseDetailService.ReadAsync(id, cancellationToken);
+            Response.Headers.ETag = $"\"{detail.Revision}\"";
+            return detail;
+        }
+
+        [HttpPut("{id}")]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public async Task<ExpenseDetailResponse> UpdateAsync(int id, [FromBody] ExpenseUpdate value, CancellationToken cancellationToken)
+        {
+            var detail = await _updateExpenseService.UpdateAsync(id, value, cancellationToken);
+            Response.Headers.ETag = $"\"{detail.Revision}\"";
+            return detail;
+        }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteAsync(int id, CancellationToken cancellationToken)
+        {
+            await _deleteExpenseService.DeleteAsync(id, cancellationToken);
+            return NoContent();
+        }
+
         [HttpGet("match")]
         [ResponseCache(Duration = 120, Location = ResponseCacheLocation.Any)]
         public async Task<ExpenseMatchList> MatchExpensesAsync(CancellationToken cancellationToken)
         {
             return await _matchExpensesService.MatchExpensesAsync(cancellationToken);
-        }
-
-        // Not a general expense-delete endpoint: cleanup always targets the Sheets smoke tab,
-        // independently of headers (ADR-0015).
-        [HttpDelete("/Smoke/{id}")]
-        public async Task DeleteSmokeAsync(int id, CancellationToken cancellationToken)
-        {
-            await _deleteExpenseRowService.DeleteAsync(id, cancellationToken);
         }
     }
 }

@@ -3,7 +3,10 @@
 José executed the one-off SQL import and identical-script reruns in staging and
 production. Read-only per-record comparisons against frozen sources, then against
 saved IDs/audit timestamps, returned zero exceptions in both environments.
-No production storage-authority switch occurred; that remains issue #132.
+At the time of this import evidence, no production storage-authority switch occurred;
+that was separate under #132. This record does not describe current live authority.
+Issue #150 establishes sole-Postgres Expense/Category architecture; acceptance and
+credential retirement remain separately gated in [the runbook](sheets-persistence-retirement.md).
 
 ## Verified evidence
 

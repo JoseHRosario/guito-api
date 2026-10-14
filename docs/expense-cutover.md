@@ -1,4 +1,6 @@
-# One-time Expense cutover (#132)
+# Historical one-time Expense cutover (#132)
+
+> **Superseded operational procedure — #150:** the selector switch and Sheets/category/smoke assumptions below are retired. Do not execute this archived checklist or infer current production state from its recorded status. Postgres is the sole supported Expense/Category authority, with no Sheets rollback. Current approval-gated acceptance and credential retirement are in [the retirement runbook](sheets-persistence-retirement.md). Original hold/abort/recovery rationale and unperformed gates are preserved as historical evidence; completed imports remain retired.
 
 ## Current owner disposition
 

@@ -79,7 +79,22 @@ provider failures produce 502, never empty or truncated success. Invalid exact
 amounts/coherent-state data also fail explicitly. Ordinary MVC serialization is
 retained; no endpoint-specific payload budget or serializer is introduced.
 Existing booked-debit ingestion, sync deduplication and seven-day window stay
-unchanged. Category authority and isolated Sheets smoke are unchanged.
+unchanged. Following merged #150, Category and Expense authority is Postgres-only;
+the retired Sheets scope header is ignored and `/Smoke` is removed. Bank review
+does not restore a store selector, Sheets adapters or a write-smoke framework.
+
+## Reconciliation with #146 and #150
+
+The combined feature declares API 0.23.0 after master's 0.22.0. Migration 009 and
+the review routes coexist with migration 010 and revision-aware Expense operations.
+Expense deletion locks the Expense before bank rows, clears only its links and
+returns those Transactions to `needsReview` in the same transaction. Updates retain
+links. Future Match writers must follow that same lock order and establish a valid
+Expense link; `ChangeReviewStatusAsync` still rejects `Matched` as a target.
+See [the Expense mutation contract](../expense-edit-delete-contract.md) and
+[the retirement boundary](../sheets-persistence-retirement.md). Historical #132
+rehearsal gaps and #133's separate live persistence/constraint/concurrency gate are
+not satisfied by this merge or hermetic tests.
 
 ## Verification boundary
 

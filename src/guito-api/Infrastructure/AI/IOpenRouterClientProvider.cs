@@ -4,7 +4,7 @@ namespace GuitoApi.Infrastructure.AI
 {
     /// <summary>
     /// HttpClient seam over the OpenRouter API (chat completions + Decisions API),
-    /// mirroring the Sheets provider shape so tests fake it at the HTTP-transport level.
+    /// faked at the HTTP-transport level in hermetic tests.
     /// </summary>
     public interface IOpenRouterClientProvider
     {

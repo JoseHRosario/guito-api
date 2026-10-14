@@ -3,7 +3,6 @@ using Amazon.SimpleSystemsManagement;
 using GuitoApi.Configuration;
 using GuitoApi.Infrastructure.Postgres;
 using GuitoApi.Infrastructure.Secrets;
-using GuitoApi.Infrastructure.Sheets;
 using GuitoApi.Infrastructure.AI;
 using GuitoApi.Infrastructure.Validation;
 using GuitoApi.Infrastructure.EnableBanking;
@@ -36,7 +35,7 @@ namespace GuitoApi
                 .ReadFrom.Configuration(Configuration)
                 .CreateLogger();
 
-            services.AddControllers(options => options.Filters.Add<ExpenseCreateValidationFilter>());
+            services.AddControllers(options => options.Filters.Add<ExpenseWriteValidationFilter>());
             services.AddProblemDetails();
             services.AddEndpointsApiExplorer();
             services.AddSwaggerGen();
@@ -48,7 +47,7 @@ namespace GuitoApi
                     builder.AllowAnyOrigin()
                            .AllowAnyMethod()
                            .AllowAnyHeader()
-                           .WithExposedHeaders(VersionHeaderMiddleware.HeaderName);
+                           .WithExposedHeaders(VersionHeaderMiddleware.HeaderName, "ETag");
                 });
                 o.AddPolicy("AllowOnlyWebApp", builder =>
                 {
@@ -58,9 +57,11 @@ namespace GuitoApi
                     builder.WithOrigins(allowedOrigins)
                            .AllowAnyMethod()
                            .AllowAnyHeader()
-                           .WithExposedHeaders(VersionHeaderMiddleware.HeaderName);
+                           .WithExposedHeaders(VersionHeaderMiddleware.HeaderName, "ETag");
                 });
             });
+            // Defaults retain the Google SDK's production validation and certificate transport.
+            services.AddSingleton(new Google.Apis.Auth.GoogleJsonWebSignature.ValidationSettings());
             services.AddHttpClient("SheetsReportingJwks");
             services.AddSingleton<GuitoApi.Infrastructure.Reporting.IJwksClient>(sp =>
                 new GuitoApi.Infrastructure.Reporting.HttpJwksClient(sp.GetRequiredService<IHttpClientFactory>().CreateClient("SheetsReportingJwks")));
@@ -86,40 +87,19 @@ namespace GuitoApi
             services.AddScoped<IRevokeGoogleTokenService, RevokeGoogleTokenService>();
             services.AddHttpClient(RevokeGoogleTokenService.HttpClientName);
 
-            services.AddScoped<IExpenseRepository>(sp =>
-            {
-                // ADR-0009 smoke CRUD remains quarantined in Sheets, even when
-                // personal expenses use Postgres. Cleanup is Sheets-only without a header too.
-                var request = sp.GetRequiredService<IHttpContextAccessor>().HttpContext?.Request;
-                if (sp.GetRequiredService<ISheetScopeResolver>().IsSmokeScope
-                    || request?.Path.StartsWithSegments("/Smoke", StringComparison.OrdinalIgnoreCase) == true)
-                    return ActivatorUtilities.CreateInstance<GoogleSheetsExpenseRepository>(sp);
-                return sp.GetRequiredService<IOptions<AppConfigurationOptions>>().Value.ExpenseStore switch
-                {
-                    "Sheets" => ActivatorUtilities.CreateInstance<GoogleSheetsExpenseRepository>(sp),
-                    "Postgres" => ActivatorUtilities.CreateInstance<DataApiPostgresExpenseRepository>(sp),
-                    _ => throw new InvalidOperationException("Unknown ExpenseStore; expected Sheets or Postgres.")
-                };
-            });
-            services.AddScoped<ICategoryRepository, GoogleSheetsCategoryRepository>();
-            services.AddScoped<IExpenseHistoryRepository>(sp =>
-            {
-                // Guards fail when history is invoked, not while constructing ExpenseController.
-                if (sp.GetRequiredService<ISheetScopeResolver>().IsSmokeScope)
-                    return new UnavailableExpenseHistoryRepository(new ProblemException(409, "Expense history is unavailable for smoke scope."));
-                if (sp.GetRequiredService<IOptions<AppConfigurationOptions>>().Value.ExpenseStore != "Postgres")
-                    return new UnavailableExpenseHistoryRepository(new ProblemException(409, "Expense history requires Postgres Expense authority."));
-                return ActivatorUtilities.CreateInstance<DataApiPostgresExpenseHistoryRepository>(sp);
-            });
+            services.AddScoped<IExpenseRepository, DataApiPostgresExpenseRepository>();
+            services.AddScoped<IExpenseHistoryRepository, DataApiPostgresExpenseHistoryRepository>();
             services.AddScoped<IReadExpenseHistoryService, ReadExpenseHistoryService>();
+            services.AddScoped<IReadExpenseDetailService, ReadExpenseDetailService>();
+            services.AddScoped<IUpdateExpenseService, UpdateExpenseService>();
+            services.AddScoped<IDeleteExpenseService, DeleteExpenseService>();
+            services.AddScoped<IExpenseRevisionResolver, HttpExpenseRevisionResolver>();
 
             services.AddScoped<ICreateExpenseService, CreateExpenseService>();
             services.AddScoped<IMatchExpensesService, MatchExpensesService>();
             services.AddScoped<IListLatestExpensesService, ListLatestExpensesService>();
             services.AddScoped<IListExpensesService, ListExpensesService>();
-            services.AddScoped<IDeleteExpenseRowService, DeleteExpenseService>();
-            services.AddScoped<ISheetScopeResolver, SheetScopeResolver>();
-            services.AddScoped<IListCategoryService, ListCategoryGoogleApisSheetsService>();
+            services.AddScoped<IListCategoryService, ListCategoryService>();
             // Bank transaction provider selected by configuration (ADR-0004): EnableBanking is
             // the PSD2 provider (issue #89); Dummy serves canned data for local dev and CI.
             services.AddScoped<IListTransactionsService>(sp =>
@@ -161,7 +141,6 @@ namespace GuitoApi
             services.AddScoped<IGetBankAuthUrlService, GetBankAuthUrlService>();
             services.AddScoped<IFinishBankAuthService, FinishBankAuthService>();
             services.AddScoped<GuitoApi.Services.BankConnections.IListBankConnectionsService, GuitoApi.Services.BankConnections.ListBankConnectionsService>();
-            services.AddScoped<IGooglesheetsClientProvider, GooglesheetsClientProvider>();
             services.AddScoped<IExtractMethodService, ExtractMethodService>();
             services.AddScoped<IExpenseExtractionRepository, OpenRouterExpenseExtractionRepository>();
             services.AddScoped<IOpenRouterClientProvider, OpenRouterClientProvider>();
@@ -179,8 +158,7 @@ namespace GuitoApi
             // Bank Transactions aggregate (issue #88): ADR-0011 shape — interface in
             // Repositories/, Data API implementation here in Infrastructure/Postgres/.
             services.AddScoped<IBankTransactionRepository, DataApiPostgresBankTransactionRepository>();
-            // Categories mirror (issue #112, ADR-0014): seeded from Sheets, Sheets still
-            // the source of truth for category writes.
+            // One authoritative category reader shared by API, AI extraction and bank suggestions.
             services.AddScoped<ICategoriesRepository, DataApiPostgresCategoriesRepository>();
             // Bank sync (issue #90): fetch from EB + idempotent store, per-request.
             services.AddScoped<ISyncBankTransactionsService, SyncBankTransactionsService>();

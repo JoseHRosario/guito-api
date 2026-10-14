@@ -2,13 +2,13 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <Version>0.20.0</Version>
+    <Version>0.23.0</Version>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>GuitoApi</RootNamespace>
   </PropertyGroup>
 
-  <!-- Service-account key files are gitignored local-dev secrets; never ship them in the Lambda bundle (issue #3). -->
+  <!-- Exclude abandoned local persistence keys too: retirement must never publish old credentials. -->
   <ItemGroup>
     <Content Remove="google-spreadsheets*.json" />
     <None Remove="google-spreadsheets*.json" />
@@ -24,7 +24,6 @@
     <PackageReference Include="AWSSDK.SecurityToken" Version="4.0.101.1" />
     <PackageReference Include="AWSSDK.Signin" Version="4.0.101.12" />
     <PackageReference Include="Google.Apis.Auth" Version="1.68.0" />
-    <PackageReference Include="Google.Apis.Sheets.v4" Version="1.67.0.3365" />
     <PackageReference Include="Serilog.AspNetCore" Version="9.0.0" />
     <PackageReference Include="Serilog.Settings.Configuration" Version="9.0.0" />
     <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />

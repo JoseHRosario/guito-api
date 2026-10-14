@@ -53,22 +53,25 @@ elif 'wait' not in a:
             self.assertEqual(result.returncode, 0, result.stderr)
             return json.loads((root / "state.json").read_text())
 
-    def test_routine_production_deploy_preserves_postgres_and_other_variables(self):
-        state = self.apply_environment({"AppConfiguration__ExpenseStore": "Postgres"})
-        self.assertEqual(state["guito-api"]["AppConfiguration__ExpenseStore"], "Postgres")
-        self.assertEqual(state["guito-api"]["UNRELATED"], "keep")
-        self.assertEqual(state["guito-api-authorizer"]["UNRELATED"], "keep")
-        self.assertEqual(state["guito-api"]["ASPNETCORE_ENVIRONMENT"], "Production")
+    def test_routine_deploy_removes_retired_persistence_config_preserving_other_variables(self):
+        for store in ("Sheets", "Postgres"):
+            with self.subTest(store=store):
+                state = self.apply_environment({
+                    "AppConfiguration__ExpenseStore": store,
+                    "AppConfiguration__Googlesheets__FilePath": "retired.json",
+                    "AppConfiguration__Googlesheets__CategoriesRange": "retired",
+                    "Database__DatabaseName": "preserve-database"})
+                api = state["guito-api"]
+                self.assertNotIn("AppConfiguration__ExpenseStore", api)
+                self.assertFalse(any(k.lower().startswith("appconfiguration__googlesheets__") for k in api))
+                self.assertEqual(api["Database__DatabaseName"], "preserve-database")
+                self.assertEqual(api["UNRELATED"], "keep")
+                self.assertEqual(state["guito-api-authorizer"]["UNRELATED"], "keep")
+                self.assertEqual(api["ASPNETCORE_ENVIRONMENT"], "Production")
 
-    def test_omitted_selector_does_not_switch_existing_sheets_or_install_override(self):
-        for installed in ({}, {"AppConfiguration__ExpenseStore": "Sheets"}):
-            with self.subTest(installed=installed):
-                api = self.apply_environment(installed)["guito-api"]
-                self.assertEqual(api.get("AppConfiguration__ExpenseStore"), installed.get("AppConfiguration__ExpenseStore"))
-
-    def test_existing_explicit_selector_can_set_production_postgres(self):
-        api = self.apply_environment({"AppConfiguration__ExpenseStore": "Sheets"}, "Postgres")["guito-api"]
-        self.assertEqual(api["AppConfiguration__ExpenseStore"], "Postgres")
+    def test_retired_shell_selector_cannot_reinstall_override(self):
+        api = self.apply_environment({}, "Sheets")["guito-api"]
+        self.assertNotIn("AppConfiguration__ExpenseStore", api)
 
     def test_reporting_selector_outputs_reach_both_gates_without_changing_human_auth(self):
         state = self.apply_environment({"AppConfiguration__ExpenseStore": "Postgres"})

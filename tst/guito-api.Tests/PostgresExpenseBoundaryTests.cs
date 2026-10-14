@@ -37,7 +37,7 @@ public class PostgresExpenseBoundaryTests
     public async Task CreateExpense_ShouldRefuseOutOfRangeIdentity_WhenDataApiReturnsBeyondInt32(bool textId)
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres" };
+        using var factory = new CustomWebApplicationFactory();
         factory.Postgres.NextResults.Enqueue(new PostgresResult([], [[PostgresValue.FromLong(2)]], 0));
         factory.Postgres.NextResults.Enqueue(new PostgresResult([], [[textId
             ? PostgresValue.FromString("2147483648") : PostgresValue.FromLong(2147483648L)]], 1));
@@ -49,33 +49,6 @@ public class PostgresExpenseBoundaryTests
         // Assert
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
         Assert.DoesNotContain("\"id\"", await response.Content.ReadAsStringAsync());
-        Assert.Empty(factory.SheetsHandler.AppendBodies);
-    }
-
-    [Fact]
-    public async Task Latest_ShouldRetainNullsAndSingleFields_WhenLegacySheetsCellsAreMalformed()
-    {
-        // Arrange
-        using var factory = new CustomWebApplicationFactory();
-        factory.SheetsHandler.LatestValuesJson = """
-            [["bad date", "", "", "bad amount", "Legacy", "Test", "user@example.test"]]
-            """;
-        using var client = factory.CreateClient();
-
-        // Act
-        var response = await client.GetAsync("/Expense/latest/1");
-
-        // Assert
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
-        var expense = Assert.Single(body.GetProperty("expenses").EnumerateArray());
-        Assert.Equal(JsonValueKind.Number, expense.GetProperty("id").ValueKind);
-        foreach (var field in new[] { "bookingDate", "amount", "creationDate", "updateDate" })
-            Assert.Equal(JsonValueKind.Null, expense.GetProperty(field).ValueKind);
-        foreach (var removed in new[] { "date", "occurredAt", "amountExact", "storedOrder" })
-            Assert.False(expense.TryGetProperty(removed, out _));
-        Assert.Empty(factory.Postgres.ExecutedSql);
-        Assert.Empty(factory.SheetsHandler.AppendBodies);
     }
 
     [Theory]
@@ -85,7 +58,7 @@ public class PostgresExpenseBoundaryTests
     public async Task CreateExpense_ShouldRequireBookingDate_WhenMissingOrOnlyRemovedFieldsProvided(string payload)
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres" };
+        using var factory = new CustomWebApplicationFactory();
         using var client = factory.CreateClient();
         using var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
 
@@ -95,7 +68,6 @@ public class PostgresExpenseBoundaryTests
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Empty(factory.Postgres.ExecutedSql);
-        Assert.Empty(factory.SheetsHandler.AppendBodies);
     }
 
     private sealed class CapturingCreateService : GuitoApi.Services.Expense.ICreateExpenseService
@@ -119,7 +91,7 @@ public class PostgresExpenseBoundaryTests
     public async Task CreateExpense_ShouldRejectRemovedOccurrencePropertyOnly_WhenUnmappedInputReceived(string property, string? value, HttpStatusCode expected)
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient();
         var payload = new Dictionary<string, object?> { ["bookingDate"] = "2026-07-02", ["amount"] = 1m, ["category"] = "Test", [property] = value };
 
@@ -129,7 +101,6 @@ public class PostgresExpenseBoundaryTests
         // Assert
         Assert.Equal(expected, response.StatusCode);
         if (expected == HttpStatusCode.BadRequest) Assert.Empty(factory.Postgres.ExecutedSql);
-        Assert.Empty(factory.SheetsHandler.AppendBodies);
     }
 
     [Theory]
@@ -137,7 +108,7 @@ public class PostgresExpenseBoundaryTests
     [InlineData(false)]
     public async Task CreateExpense_ShouldReturnIntegerIdentity_WhenDataApiEncodesIdsAsTextOrLong(bool textIds)
     {
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres" };
+        using var factory = new CustomWebApplicationFactory();
         factory.Postgres.NextResults.Enqueue(new PostgresResult([], [[textIds
             ? PostgresValue.FromString("2147483648") : PostgresValue.FromLong(2147483648L)]], 0));
         factory.Postgres.NextResults.Enqueue(new PostgresResult([], [[textIds
@@ -158,7 +129,7 @@ public class PostgresExpenseBoundaryTests
     public async Task Latest_ShouldMapPostgresTextValues_WhenDataApiReturnsUtcInstantsAndNumericStrings(bool textId)
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         factory.Postgres.NextResults.Enqueue(new PostgresResult([], [[
             textId ? PostgresValue.FromString("2147483647") : PostgresValue.FromLong(2147483647),
             PostgresValue.FromString("2026-07-09 23:00:00+00"),
@@ -197,7 +168,7 @@ public class PostgresExpenseBoundaryTests
     public async Task ExpenseEndpoints_ShouldRejectUnauthenticatedRequests_WhenPostgresSelected(string method, string path, bool smoke)
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         using var secured = factory.WithWebHostBuilder(builder => builder.ConfigureAppConfiguration((_, config) =>
             config.AddInMemoryCollection(new Dictionary<string, string?> { ["AppConfiguration:Authentication:ValidateApiKey"] = "true" })));
         using var client = secured.CreateClient();
@@ -210,16 +181,13 @@ public class PostgresExpenseBoundaryTests
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Empty(factory.Postgres.ExecutedSql);
-        Assert.Empty(factory.SheetsHandler.AppendBodies);
-        Assert.Empty(factory.SheetsHandler.ReadRanges);
-        Assert.Empty(factory.SheetsHandler.DeleteDimensions);
     }
 
     [Fact]
     public async Task CreateExpense_ShouldSurfaceFailureWithoutSuccessIdentity_WhenDataApiFails()
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         factory.Postgres.ExecuteException = new InvalidOperationException("hermetic datastore failure");
         using var client = factory.CreateClient();
 
@@ -229,14 +197,13 @@ public class PostgresExpenseBoundaryTests
         // Assert
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
         Assert.DoesNotContain("\"id\"", await response.Content.ReadAsStringAsync());
-        Assert.Empty(factory.SheetsHandler.AppendBodies);
     }
 
     [Fact]
     public async Task CreateExpense_ShouldRejectMissingDate_WhenNoLegacyDateReceived()
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient();
 
         // Act
@@ -254,7 +221,7 @@ public class PostgresExpenseBoundaryTests
     public async Task Latest_ShouldRejectUnboundedCount_WhenOutsideSupportedRange(int count)
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient();
 
         // Act
@@ -269,7 +236,7 @@ public class PostgresExpenseBoundaryTests
     public async Task CreateExpense_ShouldUsePostgres_WhenProductionSelectsPostgres()
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Environment = "Production", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Environment = "Production", Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
         client.DefaultRequestHeaders.Add("X-Api-Key", "test-agent-key");
 
@@ -279,7 +246,6 @@ public class PostgresExpenseBoundaryTests
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.NotEmpty(factory.Postgres.ExecutedSql);
-        Assert.Empty(factory.SheetsHandler.AppendBodies);
     }
 
     [Theory]
@@ -290,7 +256,7 @@ public class PostgresExpenseBoundaryTests
     public async Task CreateAndList_ShouldNormalizeKnownInstant_WhenInputOffsetIsNotLisbon(string occurredAt, string expected)
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient();
 
         // Act
@@ -338,7 +304,7 @@ public class PostgresExpenseBoundaryTests
     public async Task CreateExpense_ShouldValidateOffsetAndPrecision_WhenDateContainsExplicitInstant(string? date, HttpStatusCode expected)
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient();
 
         // Act
@@ -360,7 +326,7 @@ public class PostgresExpenseBoundaryTests
     public async Task CreateAndList_ShouldUseLisbonMidnight_WhenLegacyDateHasNoTime(string date, string expected)
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient();
 
         // Act
@@ -386,7 +352,7 @@ public class PostgresExpenseBoundaryTests
     public async Task CreateAndList_ShouldPreserveExactAmountText_WhenDecimalStringExceedsJavascriptPrecision(string amount)
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient();
 
         // Act
@@ -419,7 +385,7 @@ public class PostgresExpenseBoundaryTests
     public async Task CreateExpense_ShouldRejectRounding_WhenAmountTokenIsNotExactlyRepresentable(string amountToken)
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient();
         using var content = new StringContent($"{{\"bookingDate\":\"2026-07-02\",\"category\":\"Test\",\"amount\":{amountToken}}}", System.Text.Encoding.UTF8, "application/json");
 
@@ -455,7 +421,7 @@ public class PostgresExpenseBoundaryTests
     public async Task CreateAndList_ShouldPreserveExactValue_WhenAmountTokenHasEquivalentRepresentation(string amountToken, string expected)
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient();
         using var content = new StringContent($"{{\"bookingDate\":\"2026-07-02\",\"category\":\"Test\",\"amount\":{amountToken}}}", System.Text.Encoding.UTF8, "application/json");
 
@@ -476,7 +442,7 @@ public class PostgresExpenseBoundaryTests
     public async Task CreateAndList_ShouldPreserveExactValue_WhenAmountTokenSpansRequestBuffers(bool quoted)
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient();
         var amount = $"1.23{new string('0', 20000)}";
         var token = quoted ? JsonSerializer.Serialize(amount) : amount;
@@ -498,7 +464,7 @@ public class PostgresExpenseBoundaryTests
     public async Task CreateExpense_ShouldRejectInvalidAmountString_WhenNotSupportedDecimal(string amount)
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient();
 
         // Act
@@ -513,7 +479,7 @@ public class PostgresExpenseBoundaryTests
     public async Task Latest_ShouldOrderOccurrenceThenIdentity_WhenInsertionOrderDiffersAndPurchasesRepeat()
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient();
         var ids = new List<int>();
         foreach (var time in new[] { "18:00:00", "09:00:00", "18:00:00" })
@@ -541,7 +507,7 @@ public class PostgresExpenseBoundaryTests
     public async Task CreateExpense_ShouldValidateCurrencyAndExactAmount_WhenPayloadReceived(string currency, decimal amount, HttpStatusCode expected)
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient();
 
         // Act
@@ -552,61 +518,11 @@ public class PostgresExpenseBoundaryTests
         if (expected == HttpStatusCode.BadRequest) Assert.Empty(factory.Postgres.ExecutedSql);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task SmokeCleanup_ShouldUseOnlySheets_WhenPostgresAuthoritySelected(bool deleteHeader)
-    {
-        // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres" };
-        using var smoke = factory.CreateClient();
-        using var cleanup = factory.CreateClient();
-        smoke.DefaultRequestHeaders.Add("X-Sheet-Scope", "smoke");
-        if (deleteHeader) cleanup.DefaultRequestHeaders.Add("X-Sheet-Scope", "smoke");
-        var payload = new { bookingDate = "2026-10-10", amount = 1.01m, description = "Smoke", category = "Test" };
-
-        // Act
-        var created = await smoke.PostAsJsonAsync("/Expense", payload);
-        var id = (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
-        var listed = await smoke.GetAsync("/Expense/latest/10");
-        var deleted = await cleanup.DeleteAsync($"/Smoke/{id}");
-
-        // Assert
-        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
-        Assert.Equal(FakeSheetsHttpHandler.NextRowIndex, id);
-        Assert.Equal(HttpStatusCode.OK, listed.StatusCode);
-        Assert.Equal(HttpStatusCode.OK, deleted.StatusCode);
-        Assert.Empty(factory.Postgres.ExecutedSql);
-        Assert.Equal(factory.Services.GetRequiredService<IOptions<AppConfigurationOptions>>().Value.Googlesheets.ExpensesSmokeRange, Assert.Single(factory.SheetsHandler.AppendRanges));
-        Assert.All(factory.SheetsHandler.ReadRanges, range => Assert.StartsWith(factory.Services.GetRequiredService<IOptions<AppConfigurationOptions>>().Value.Googlesheets.ExpensesSmokeRange.Split('!')[0] + "!", range));
-        Assert.Equal(FakeSheetsHttpHandler.SmokeSheetId, Assert.Single(factory.SheetsHandler.DeleteDimensions).SheetId);
-    }
-
-    [Fact]
-    public async Task SmokeCleanup_ShouldLeavePersonalExpenseUnchanged_WhenPostgresIdIsSubmittedWithoutHeader()
-    {
-        // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
-        using var client = factory.CreateClient();
-        var created = await client.PostAsJsonAsync("/Expense", new { bookingDate = "2026-10-10", amount = 1m, category = "Test" });
-        var id = (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
-        factory.Postgres.ExecutedSql.Clear();
-
-        // Act
-        var deleted = await client.DeleteAsync($"/Smoke/{id}");
-
-        // Assert
-        Assert.Equal(HttpStatusCode.NotFound, deleted.StatusCode);
-        Assert.Empty(factory.Postgres.ExecutedSql);
-        var expenses = (await client.GetFromJsonAsync<JsonElement>("/Expense/latest/10")).GetProperty("expenses");
-        Assert.Equal(id, Assert.Single(expenses.EnumerateArray()).GetProperty("id").GetInt32());
-    }
-
     [Fact]
     public async Task CreateAndList_ShouldPreserveInstantDecimalAndIdentity_WhenTimestampSupplied()
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient();
 
         // Act
@@ -637,7 +553,7 @@ public class PostgresExpenseBoundaryTests
     public async Task CreateExpense_ShouldReturnUnprocessableEntity_WhenCategoryHasNoExactMirrorMatch(string category)
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient();
 
         // Act
@@ -647,14 +563,13 @@ public class PostgresExpenseBoundaryTests
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
         Assert.DoesNotContain("\"id\"", await response.Content.ReadAsStringAsync());
         Assert.Equal("SELECT id FROM categories WHERE name = :name", Assert.Single(factory.Postgres.ExecutedSql));
-        Assert.Empty(factory.SheetsHandler.AppendBodies);
     }
 
     [Fact]
     public async Task CreateExpense_ShouldBindCategoryAsInt64AndAmountAsText_WhenMirrorIdentityExceedsInt32()
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient();
 
         // Act
@@ -674,7 +589,7 @@ public class PostgresExpenseBoundaryTests
     public async Task Latest_ShouldOrderNumericIdentities_WhenMoreThanNineExpensesShareBookingDate()
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient();
         for (var i = 0; i < 12; i++)
             Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync("/Expense", new { bookingDate = "2026-10-10", amount = 1m, category = "Test" })).StatusCode);
@@ -691,7 +606,7 @@ public class PostgresExpenseBoundaryTests
     public async Task CreateExpense_ShouldReturnIntegerId_WhenPostgresSelected()
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres" };
+        using var factory = new CustomWebApplicationFactory();
         factory.Postgres.NextResults.Enqueue(new PostgresResult([], [[PostgresValue.FromLong(2)]], 0));
         factory.Postgres.NextResults.Enqueue(new PostgresResult([], [[PostgresValue.FromLong(2147483647)]], 1));
         using var client = factory.CreateClient();
@@ -708,6 +623,5 @@ public class PostgresExpenseBoundaryTests
         var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
         Assert.Equal(JsonValueKind.Number, body.GetProperty("id").ValueKind);
         Assert.Equal(2147483647, body.GetProperty("id").GetInt32());
-        Assert.Empty(factory.SheetsHandler.AppendBodies);
     }
 }

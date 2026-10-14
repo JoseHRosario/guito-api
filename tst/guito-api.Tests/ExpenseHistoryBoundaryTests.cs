@@ -75,26 +75,6 @@ public class ExpenseHistoryBoundaryTests
         Assert.Empty(factory.Postgres.ExecutedSql);
     }
 
-    [Theory]
-    [InlineData("Sheets", false)]
-    [InlineData("Postgres", true)]
-    [InlineData("Sheets", true)]
-    public async Task History_ShouldRefuseUnsupportedAuthorityOrScope_WhenRequested(string store, bool smoke)
-    {
-        // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = store };
-        using var client = factory.CreateClient();
-        if (smoke) client.DefaultRequestHeaders.Add("X-Sheet-Scope", "smoke");
-
-        // Act
-        var response = await client.GetAsync("/Expense/history");
-
-        // Assert
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Empty(factory.Postgres.ExecutedSql);
-        Assert.Empty(factory.SheetsHandler.ReadRanges);
-    }
-
     [Fact]
     public async Task History_ShouldPreserveStoredRepresentation_WhenAmountsExceedDecimalPrecision()
     {
@@ -195,7 +175,7 @@ public class ExpenseHistoryBoundaryTests
     public async Task History_ShouldUsePostgres_WhenProductionSelectsPostgres()
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Environment = "Production", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Environment = "Production", Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient(new() { BaseAddress = new Uri("https://localhost") });
         var secrets = await factory.Services.GetRequiredService<ISecretsProvider>().GetAsync();
         client.DefaultRequestHeaders.Add("X-Api-Key", secrets.ApiKeys[0]);
@@ -256,7 +236,7 @@ public class ExpenseHistoryBoundaryTests
             })));
 
     private static CustomWebApplicationFactory CreateHistoryFactory() =>
-        new() { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        new() { Postgres = { PersistExpenses = true } };
 
     private static IEnumerable<int> Ids(JsonElement page) =>
         page.GetProperty("expenses").EnumerateArray().Select(expense => expense.GetProperty("id").GetInt32());
@@ -295,7 +275,7 @@ public class ExpenseHistoryBoundaryTests
     public async Task History_ShouldReturnDefaultEmptyPage_WhenNoExpensesExist()
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient();
 
         // Act

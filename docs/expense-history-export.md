@@ -10,7 +10,7 @@ Each expense contains integer `id`, exact stored numeric-text `amount`, `EUR`
 `creationDate` and nullable `updateDate`. Amount never passes through .NET decimal
 or JavaScript Number; keep its text unchanged when consuming an export.
 
-The only source is `expenses`, joined to the existing categories mirror for
+The only source is `expenses`, joined to the authoritative categories table for
 labels. One SQL statement reads count and rows in the same PostgreSQL MVCC view,
 ordered by `booking_date DESC, id DESC`. Offset arithmetic uses Int64.
 Empty history and pages beyond the end return 200 with an empty array, the current
@@ -22,9 +22,9 @@ reads current values; clients requiring a stable archive must coordinate writes
 outside this endpoint. Single-page consistency does not guarantee multi-page
 consistency.
 
-Sheets authority and `X-Sheet-Scope: smoke` return 409 without Postgres access;
-there is no Sheets-history fallback. The existing unapproved Production Postgres
-cutover guard remains in force. Latest/create/smoke contracts are unchanged.
+The legacy `X-Sheet-Scope` header is ignored; there is no
+Sheets-history fallback or selectable authority. `/Smoke` is removed. Human/agent
+auth and ADR-0017 reporting-only confinement remain unchanged.
 
 Hermetic HTTP tests exercise real service/repository composition through
 `FakePostgresDataApiClient`. They do not prove deployed database privileges or
@@ -35,7 +35,7 @@ guarantee for unusually large descriptions/amounts.
 ## Verification
 
 The endpoint's hermetic C# HTTP tests remain in CI, along with the existing
-staging auth/business smoke suites. Full-history database parity is a one-time
+deployed auth-contract and read-only business suites. See [live acceptance](sheets-persistence-retirement.md); production verification is read-only. Full-history database parity is a one-time
 acceptance check performed through the agent session, not a recurring pipeline
 job. Record the exact deployed commit, all-page retrieval through both auth paths,
 per-record stored parity and source-drift checks in the PR. No dedicated Python

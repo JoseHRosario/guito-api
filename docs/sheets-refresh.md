@@ -1,5 +1,12 @@
 # Private Sheets Expense reporting loader (#131)
 
+Under #150, Sheets is presentation-only: this loader consumes sole-Postgres API
+history and writes refreshed reporting tabs. Its installer OAuth, short-lived
+reporting identity, required Sheets API access and spreadsheet-write permissions
+remain supported; they are distinct from retired API-side Sheets service-account
+keys. There is no reverse synchronization. See [retirement/live acceptance](sheets-persistence-retirement.md)
+for approval gates; source cleanup does not prove installed reporting still works.
+
 ## Security and scope
 
 `Code.js` and `appsscript.json` in `scripts/sheets-refresh/` are a **standalone,

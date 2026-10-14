@@ -4,12 +4,18 @@ using Microsoft.AspNetCore.Mvc.Filters;
 
 namespace GuitoApi.Infrastructure.Validation;
 
-public sealed class ExpenseCreateValidationFilter : IActionFilter
+/// <summary>
+/// Rejects removed occurrence fields for both create and update at the MVC boundary.
+/// JSON extension data otherwise tolerates unknown fields; keeping this rule here
+/// prevents silently accepting an old date contract without adding behavior to DTOs.
+/// </summary>
+public sealed class ExpenseWriteValidationFilter : IActionFilter
 {
     public void OnActionExecuting(ActionExecutingContext context)
     {
-        var input = context.ActionArguments.Values.OfType<ExpenseCreate>().SingleOrDefault();
-        if (input?.AdditionalProperties is not { } properties) return;
+        var properties = context.ActionArguments.Values.OfType<ExpenseCreate>().SingleOrDefault()?.AdditionalProperties
+            ?? context.ActionArguments.Values.OfType<ExpenseUpdate>().SingleOrDefault()?.AdditionalProperties;
+        if (properties is null) return;
 
         // Ignore unrelated extensions, but never silently discard a removed occurrence field.
         foreach (var key in properties.Keys.Where(IsRemovedField))

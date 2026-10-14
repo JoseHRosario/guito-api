@@ -1,5 +1,7 @@
 # ADR-0016: Operator-run historical Expense SQL and frozen provenance
 
+> **Status amendment — #150:** Completed import/provenance retirement evidence remains valid for its recorded operation. Issue #150 supersedes the Sheets-owned category statement below; categories are authoritative Postgres. No repeat imports, provenance recreation or inference of current live authority from past evidence. See [the approval-gated retirement/live-acceptance runbook](../sheets-persistence-retirement.md).
+
 Status: Completed and retired at José's direction after verified one-off staging and production imports. The decision below records the historical execution approach, not a supported reusable importer.
 Issue: #129 / parent #126. Extends ADR-0015; category authority and smoke stay unchanged.
 
