@@ -29,7 +29,7 @@ public class FakeBankTransactionRepository : IBankTransactionRepository
     /// <summary>Suggestion updates recorded as (sync_key, category id), in call order (issue #112).</summary>
     public List<(string SyncKey, long? CategoryId)> SuggestionUpdates { get; } = [];
 
-    public Task<BankTransactionDetail> ChangeReviewStatusAsync(long id, string reviewStatus, CancellationToken cancellationToken = default) =>
+    public Task<BankTransactionDetail> ChangeReviewStatusAsync(long id, MatchStatus matchStatus, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException("Use the real repository and fake Data API for review tests.");
 
     public Task UpdateSuggestedCategoryAsync(string syncKey, long? categoryId, CancellationToken cancellationToken = default)

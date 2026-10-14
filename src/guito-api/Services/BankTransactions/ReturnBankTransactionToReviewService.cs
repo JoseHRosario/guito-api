@@ -1,5 +1,6 @@
 using GuitoApi.DataTransferObjects.Output;
 using GuitoApi.Exceptions;
+using GuitoApi.Model;
 using GuitoApi.Repositories;
 
 namespace GuitoApi.Services.BankTransactions;
@@ -9,7 +10,7 @@ public class ReturnBankTransactionToReviewService(IBankTransactionRepository tra
     public async Task<BankTransaction> ReturnBankTransactionToReviewAsync(long id, CancellationToken cancellationToken = default)
     {
         if (id <= 0) throw new ProblemException(400, "Transaction id must be a positive Int64.");
-        var transaction = await transactions.ChangeReviewStatusAsync(id, "needsReview", cancellationToken);
+        var transaction = await transactions.ChangeReviewStatusAsync(id, MatchStatus.NeedsReview, cancellationToken);
         return BankTransactionOutputMapper.ToDto(transaction);
     }
 }

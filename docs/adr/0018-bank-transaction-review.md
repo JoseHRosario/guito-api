@@ -59,6 +59,13 @@ new API code. No ORM, new dependency, AWS provisioning or reset is required.
   repeating the target state is successful and idempotent.
 
 Each action is a guarded SQL UPDATE of an unlinked Needs review/Ignored row.
+Ignore and Return-to-review remain separate operation-specific services. They pass
+the internal `Model.MatchStatus` enum (`NeedsReview`, `Matched`, `Ignored`) to the
+repository rather than string literals. The SQL adapter explicitly maps supported
+targets to the existing stored text, rejecting `Matched` and undefined enum values
+before issuing SQL: establishing/removing a Match requires an Expense-link operation.
+This narrow refactor changes neither routes, JSON values, filters nor database schema;
+`All` remains a filter, not an enum member. A Match service belongs to #134, not #133.
 PostgreSQL rechecks the predicate after waiting for a concurrent updater; a
 concurrent Match cannot be overwritten. The response reads UPDATE RETURNING
 rather than the pre-update table snapshot. If no row updates, a fresh exact-ID

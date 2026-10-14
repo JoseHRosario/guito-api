@@ -75,13 +75,12 @@ public class DataApiPostgresBankTransactionRepository(IPostgresDataApiClient cli
         return result.Rows.Select(ToDetail).ToList();
     }
 
-    public async Task<BankTransactionDetail> ChangeReviewStatusAsync(long id, string reviewStatus, CancellationToken cancellationToken = default)
+    public async Task<BankTransactionDetail> ChangeReviewStatusAsync(long id, MatchStatus matchStatus, CancellationToken cancellationToken = default)
     {
-        if (reviewStatus is not ("needsReview" or "ignored"))
-            throw new ArgumentOutOfRangeException(nameof(reviewStatus));
         var parameters = new PostgresParameter[]
         {
-            new("id", PostgresValue.FromLong(id)), new("review_status", PostgresValue.FromString(reviewStatus))
+            new("id", PostgresValue.FromLong(id)),
+            new("review_status", PostgresValue.FromString(ToReviewTarget(matchStatus)))
         };
         var result = await ExecuteReviewAsync(ChangeReviewSql, parameters, cancellationToken);
         if (result.Rows.Count != 0) return ToDetail(result.Rows.Single());
@@ -91,6 +90,14 @@ public class DataApiPostgresBankTransactionRepository(IPostgresDataApiClient cli
             ? new ProblemException(404, "Bank Transaction was not found.")
             : new ProblemException(409, "Bank Transaction is matched or no longer eligible for this review action.");
     }
+
+    private static string ToReviewTarget(MatchStatus matchStatus) => matchStatus switch
+    {
+        MatchStatus.NeedsReview => "needsReview",
+        MatchStatus.Ignored => "ignored",
+        _ => throw new ArgumentOutOfRangeException(nameof(matchStatus), matchStatus,
+            "Only NeedsReview and Ignored can be assigned without changing an Expense link.")
+    };
 
     public Task UpdateSuggestedCategoryAsync(string syncKey, long? categoryId, CancellationToken cancellationToken = default) =>
         client.ExecuteAsync(

@@ -25,7 +25,7 @@ public interface IBankTransactionRepository
     Task<IReadOnlyList<BankTransactionDetail>> ListAsync(string reviewStatus = "all", CancellationToken cancellationToken = default);
 
     /// <summary>Atomically changes an unlinked row to Needs review or Ignored; rejects missing/matched rows.</summary>
-    Task<BankTransactionDetail> ChangeReviewStatusAsync(long id, string reviewStatus, CancellationToken cancellationToken = default);
+    Task<BankTransactionDetail> ChangeReviewStatusAsync(long id, MatchStatus matchStatus, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Stores the Jev-suggested category (issue #112) on the transaction with the
