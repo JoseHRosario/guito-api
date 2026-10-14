@@ -144,10 +144,12 @@ service makes an idle or abandoned request scope fail synchronous disposal becau
 `DataApiUnitOfWork` implemented only `IAsyncDisposable` (two failing cases).
 The concrete unit now also supports `IDisposable`, waits for rollback completion,
 and propagates rollback failure without clearing the open transaction context.
-Coverage includes abandoned-write restoration through HTTP, no commit, subsequent
-scope usability, pending rollback, both disposal modes on provider failure, and a
-real HTTP startup filter replaying synchronous Lambda request-scope disposal for
-detail/latest/history/warm. This is a local regression fix, not deployed acceptance.
+Coverage now drives the actual HTTP create/detail/latest/history/warm composition
+through a test-only host lifecycle filter, without resolving infrastructure or
+inspecting transaction context in the test methods. An abandoned HTTP creation is
+rolled back and read back through HTTP; both disposal modes, pending rollback and
+provider failure/recovery are exercised by the host filter. No test SQL or new
+AGENTS seam exception is needed. This is a local regression fix, not deployed acceptance.
 
 ## Local test evidence
 
@@ -164,3 +166,41 @@ against synchronous scope/HTTP tests reproduced the exact Lambda exception in
 five of six cases; `/warm` remained successful because it does not resolve that
 unit. Restoring the fix passed all nine scope regressions. These are local
 HTTP-host/real-repository checks, not live PostgreSQL or deployed acceptance.
+
+## Aggregate repository consolidation
+
+The per-operation services now consume `IExpenseRepository` for `ReadAsync(id)`,
+`UpdateAsync(id, revision, ExpenseEdit)` and `DeleteAsync(id, revision)`, alongside
+existing create/latest/category-month operations. The port exchanges only Model
+values, never wire DTOs. `DataApiPostgresExpenseRepository` contains all personal
+Expense SQL, retaining the exact row locks, revision CAS, transaction boundaries,
+amount-scale preservation, database audit clock and schema-aware bank unlinking.
+Shared category, parameter and timestamp mapping remain inside Infrastructure.
+The redundant detail port, adapter and unavailable adapter are removed.
+
+`DeleteSmokeAsync(id)` is explicitly distinct on the aggregate port and both
+adapters. `DeleteExpenseRowService` and `/Smoke/{id}` still clean only Sheets;
+Postgres rejects this cleanup with 409. The compatibility Sheets adapter is
+retained and rejects personal read/update/revision-aware delete with 409 without
+external transport. `PersonalExpenseOperationFilter` guards only the three
+personal routes on invocation (not controller/DI construction), before revision
+resolution, so missing If-Match cannot accidentally admit an unavailable operation.
+Existing create/latest/history guards and smoke routes remain usable.
+`HttpExpenseRevisionResolver`, model/DTO boundaries, version 0.21.0 and migration
+010 are unchanged.
+
+Consolidation verification: four new HTTP store/smoke guard cases first failed
+with 428 instead of 409, then passed. Removing synchronous unit disposal after
+relocating all nine lifecycle cases behind HTTP produced six failures (including
+the original Lambda IAsyncDisposable-only exception); restoring it passed. The
+regular solution build passed with five pre-existing bank-test nullable warnings.
+The targeted expense/smoke/host suite passed 277 cases; the full hermetic
+`Category!=Integration` suites passed 543 API and 79 authorizer cases. Linux runs
+used `DOTNET_USE_POLLING_FILE_WATCHER=1`. Removed-symbol searches include tracked
+hidden configuration. No push, deployment, external comment or AWS write was made
+for this consolidation.
+
+Parent-reported independent deployed staging acceptance passed 48 checks for
+**24fc9f730eddcd54fbc55ea0865e5a9e89b79403**, with cleanup counts zero. That
+evidence predates this consolidation and does not validate its resulting commit;
+publication and fresh deployed acceptance remain the parent/owner follow-up.

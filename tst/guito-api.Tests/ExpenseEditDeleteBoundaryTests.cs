@@ -219,6 +219,30 @@ public class ExpenseEditDeleteBoundaryTests
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/Expense/latest/1")).StatusCode);
     }
 
+    [Theory]
+    [InlineData("PUT", "Sheets", false)]
+    [InlineData("DELETE", "Sheets", false)]
+    [InlineData("PUT", "Postgres", true)]
+    [InlineData("DELETE", "Postgres", true)]
+    public async Task Mutation_ShouldRejectUnavailablePersonalOperationsBeforeRevisionResolution_WhenIfMatchIsMissingAsync(string method, string store, bool smoke)
+    {
+        // Arrange
+        using var factory = CreateFactory();
+        factory.ExpenseStore = store;
+        using var client = factory.CreateClient();
+        if (smoke) client.DefaultRequestHeaders.Add("X-Sheet-Scope", "smoke");
+        using var request = method == "PUT" ? UpdateRequest("7", null) : DeleteRequest("7", null);
+
+        // Act
+        using var response = await client.SendAsync(request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Empty(factory.Postgres.ExecutedSql);
+        Assert.Empty(factory.SheetsHandler.ReadRanges);
+        Assert.Empty(factory.SheetsHandler.DeleteDimensions);
+    }
+
     [Fact]
     public async Task Detail_ShouldExposeEtagToBrowser_WhenCrossOriginRequestUsesAllowedOriginAsync()
     {

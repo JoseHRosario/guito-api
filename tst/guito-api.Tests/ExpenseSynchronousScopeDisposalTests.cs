@@ -1,6 +1,8 @@
 using System.Net;
-using GuitoApi.Infrastructure.Postgres;
-using GuitoApi.Services.Expense;
+using System.Net.Http.Json;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GuitoApi.Tests;
@@ -16,13 +18,17 @@ public class ExpenseSynchronousScopeDisposalTests
     {
         // Arrange
         using var factory = CreateFactory();
-        using var host = factory.WithWebHostBuilder(builder => Microsoft.AspNetCore.TestHost.WebHostBuilderExtensions.ConfigureTestServices(
-            builder, services => services.AddSingleton<Microsoft.AspNetCore.Hosting.IStartupFilter, SynchronousRequestScopeStartupFilter>()));
+        var lifecycle = new SynchronousRequestScopeStartupFilter();
+        using var host = WithLifecycle(factory, lifecycle);
         using var client = host.CreateClient();
+
         // Act
         using var response = await client.GetAsync(route);
+        var failure = await lifecycle.DisposalCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Null(failure);
         Assert.Equal(0, factory.Postgres.Commits);
         Assert.Equal(0, factory.Postgres.Rollbacks);
     }
@@ -30,100 +36,102 @@ public class ExpenseSynchronousScopeDisposalTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task Scope_ShouldDisposeSynchronouslyWithoutLeaks_WhenExpenseCompositionIsResolvedAsync(bool abandonTransaction)
+    public async Task Http_ShouldRollbackAbandonedCreationWithoutLeaks_WhenHostDisposesRequestScopeAsync(bool synchronous)
     {
         // Arrange
         using var factory = CreateFactory();
-        using var client = factory.CreateClient();
-        var before = await client.GetStringAsync("/Expense/7");
-        var scope = factory.Services.CreateScope();
-        var detail = scope.ServiceProvider.GetRequiredService<IReadExpenseDetailService>();
-        var context = scope.ServiceProvider.GetRequiredService<PostgresTransactionContext>();
-        if (abandonTransaction) await BeginAbandonedWriteAsync(scope);
+        var lifecycle = new SynchronousRequestScopeStartupFilter(synchronous);
+        using var host = WithLifecycle(factory, lifecycle);
+        using var client = host.CreateClient();
+        using var observer = factory.CreateClient();
+        var before = await observer.GetStringAsync("/Expense/history");
+        using var request = AbandonedCreateRequest();
+
         // Act
-        var error = Record.Exception(scope.Dispose);
+        using var response = await client.SendAsync(request);
+        var failure = await lifecycle.DisposalCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
         // Assert
-        Assert.Null(error);
-        await AssertDisposedAsync(factory, client, context, before, abandonTransaction);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Null(failure);
+        await AssertRestoredAsync(factory, observer, before);
+        using var next = AbandonedCreateRequest();
+        using var repeated = await client.SendAsync(next);
+        Assert.Equal(HttpStatusCode.OK, repeated.StatusCode);
+        Assert.Equal(2, factory.Postgres.Rollbacks);
     }
 
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task Scope_ShouldSurfaceRollbackFailureAndRetainOpenContext_WhenProviderRejectsDisposalAsync(bool synchronous)
+    public async Task Http_ShouldSurfaceRollbackFailureAndRetainRecoverableUnit_WhenProviderRejectsHostDisposalAsync(bool synchronous)
     {
         // Arrange
         using var factory = CreateFactory();
-        using var client = factory.CreateClient();
-        var scope = factory.Services.CreateAsyncScope();
-        var unit = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-        var context = scope.ServiceProvider.GetRequiredService<PostgresTransactionContext>();
-        await unit.BeginAsync();
         var failure = new InvalidOperationException("Rollback transport failed.");
         factory.Postgres.RollbackException = failure;
+        var lifecycle = new SynchronousRequestScopeStartupFilter(synchronous, () => factory.Postgres.RollbackException = null);
+        using var host = WithLifecycle(factory, lifecycle);
+        using var client = host.CreateClient();
+        using var observer = factory.CreateClient();
+        var before = await observer.GetStringAsync("/Expense/history");
+        using var request = AbandonedCreateRequest();
+
         // Act
-        var error = synchronous ? Record.Exception(scope.Dispose) : await Record.ExceptionAsync(async () => await scope.DisposeAsync());
+        using var response = await client.SendAsync(request);
+        var actual = await lifecycle.DisposalCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
         // Assert
-        await AssertFailedRollbackAsync(factory, unit, context, failure, error);
+        Assert.Same(failure, actual);
+        await AssertRestoredAsync(factory, observer, before);
     }
 
     [Fact]
-    public async Task Scope_ShouldWaitForRollbackCompletion_WhenDisposedSynchronouslyAsync()
+    public async Task Http_ShouldWaitForRollbackCompletion_WhenHostDisposesRequestSynchronouslyAsync()
     {
         // Arrange
         using var factory = CreateFactory();
-        using var client = factory.CreateClient();
-        var scope = factory.Services.CreateScope();
-        await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().BeginAsync();
+        var lifecycle = new SynchronousRequestScopeStartupFilter();
+        using var host = WithLifecycle(factory, lifecycle);
+        using var client = host.CreateClient();
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         factory.Postgres.RollbackCompletion = completion.Task;
+        using var request = AbandonedCreateRequest();
+
         // Act
-        var disposal = Task.Run(scope.Dispose);
+        var response = client.SendAsync(request);
         await factory.Postgres.RollbackStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        var completedBeforeRollback = disposal.IsCompleted;
+        var completedBeforeRollback = lifecycle.DisposalCompleted.Task.IsCompleted;
         completion.SetResult();
-        await disposal.WaitAsync(TimeSpan.FromSeconds(5));
+        using var result = await response.WaitAsync(TimeSpan.FromSeconds(5));
+        var failure = await lifecycle.DisposalCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
         // Assert
         Assert.False(completedBeforeRollback);
+        Assert.Null(failure);
         Assert.Equal(1, factory.Postgres.Rollbacks);
         Assert.Equal(0, factory.Postgres.Commits);
     }
 
-    private static async Task AssertFailedRollbackAsync(CustomWebApplicationFactory factory, IUnitOfWork unit,
-        PostgresTransactionContext context, Exception expected, Exception? actual)
+    private static WebApplicationFactory<Program> WithLifecycle(CustomWebApplicationFactory factory,
+        SynchronousRequestScopeStartupFilter lifecycle) => factory.WithWebHostBuilder(builder =>
+            builder.ConfigureTestServices(services => services.AddSingleton<IStartupFilter>(lifecycle)));
+
+    private static HttpRequestMessage AbandonedCreateRequest()
     {
-        Assert.Same(expected, actual);
-        Assert.True(context.IsOpen);
-        Assert.Equal(0, factory.Postgres.Rollbacks);
-        Assert.Equal(0, factory.Postgres.Commits);
-        factory.Postgres.RollbackException = null;
-        await unit.DisposeAsync();
-        Assert.False(context.IsOpen);
+        var request = new HttpRequestMessage(HttpMethod.Post, "/Expense");
+        request.Headers.Add("X-Test-Abandon-Transaction", "true");
+        request.Content = JsonContent.Create(new { description = "Abandoned creation", category = "Groceries", amount = "12.3400", bookingDate = "2026-07-02" });
+        return request;
+    }
+
+    private static async Task AssertRestoredAsync(CustomWebApplicationFactory factory, HttpClient observer, string before)
+    {
         Assert.Equal(1, factory.Postgres.Rollbacks);
-    }
-
-    private static async Task BeginAbandonedWriteAsync(IServiceScope scope)
-    {
-        await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().BeginAsync();
-        await scope.ServiceProvider.GetRequiredService<IPostgresDataApiClient>().ExecuteAsync(
-            "DELETE FROM expenses WHERE id = :id", [new("id", PostgresValue.FromLong(7))]);
-    }
-
-    private static async Task AssertDisposedAsync(CustomWebApplicationFactory factory, HttpClient client,
-        PostgresTransactionContext context, string before, bool abandoned)
-    {
-        Assert.False(context.IsOpen);
-        Assert.Equal(abandoned ? 1 : 0, factory.Postgres.Rollbacks);
         Assert.Equal(0, factory.Postgres.Commits);
-        Assert.Equal(before, await client.GetStringAsync("/Expense/7"));
-        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/Expense/latest/1")).StatusCode);
-        if (abandoned)
-        {
-            using var next = factory.Services.CreateScope();
-            await next.ServiceProvider.GetRequiredService<IUnitOfWork>().BeginAsync();
-            next.Dispose();
-            Assert.Equal(2, factory.Postgres.Rollbacks);
-        }
+        Assert.Equal(before, await observer.GetStringAsync("/Expense/history"));
+        Assert.Equal(HttpStatusCode.OK, (await observer.GetAsync("/Expense/7")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await observer.GetAsync("/Expense/latest/1")).StatusCode);
     }
 
     private static CustomWebApplicationFactory CreateFactory()

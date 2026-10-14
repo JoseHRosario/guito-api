@@ -92,10 +92,13 @@ The [pinned endpoint contract](expense-edit-delete-contract.md) is the policy ba
   Verify installed gateway and application policies allow the intended UI's
   DELETE/preflight headers without trusting arbitrary origins.
 - `HttpExpenseRevisionResolver` requires one supported strong quoted revision:
-  missing is 428, malformed is 400. `DataApiPostgresExpenseDetailRepository` locks
+  missing is 428, malformed is 400. `DataApiPostgresExpenseRepository` locks
   the exact ID, checks revision, and deletes using ID plus revision in a transaction;
   stale revision is 412. Linked bank transactions are retained and unlinked.
-  Scope/store selection rejects smoke or Sheets authority with 409. These are
+  `PersonalExpenseOperationFilter` rejects smoke or Sheets authority with 409 on
+  invocation, before revision resolution; the Sheets adapter also rejects personal
+  operations without transport access. `DeleteSmokeAsync` remains separate Sheets
+  cleanup. These are
   concurrency, integrity, and datastore-scope controls—not credential checks.
 - Maintain HTTPS-only deployed access, credential secrecy/rotation, appropriate
   database permissions, and useful security logging without credentials. Confirm
@@ -121,8 +124,10 @@ For DELETE specifically, exercise the HTTP boundary with auth gates enabled:
    authenticated methods receive 405 and cannot tunnel into deletion.
 
 Existing boundary/human-auth test sources were inspected, **not executed as part
-of this documentation-only research**. These are acceptance expectations, not a
+of the original documentation-only research**. These are acceptance expectations, not a
 claim every case is already covered or passes. Hermetic fake-Data-API tests do not
 prove live PostgreSQL permissions/locking or installed gateway/CORS behavior;
 those remain separately approved staging checks. No production requests, AWS
-configuration changes, external PR comments, or source-code changes were made.
+configuration changes, external PR comments, or source-code changes were made
+as part of that research. The subsequent repository consolidation and executed
+hermetic evidence are recorded in [the contract](expense-edit-delete-contract.md#aggregate-repository-consolidation).

@@ -5,7 +5,7 @@ using GuitoApi.Repositories;
 
 namespace GuitoApi.Services.Expense;
 
-public sealed class UpdateExpenseService(IExpenseDetailRepository repository, IExpenseRevisionResolver revision) : IUpdateExpenseService
+public sealed class UpdateExpenseService(IExpenseRepository repository, IExpenseRevisionResolver revision) : IUpdateExpenseService
 {
     public async Task<ExpenseDetailResponse> UpdateAsync(int id, ExpenseUpdate value, CancellationToken cancellationToken = default)
     {

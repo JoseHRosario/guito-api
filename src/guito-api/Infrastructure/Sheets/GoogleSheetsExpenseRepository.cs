@@ -35,6 +35,15 @@ namespace GuitoApi.Infrastructure.Sheets
             _sheetScopeResolver = sheetScopeResolver;
         }
 
+        public Task<ExpenseDetail> ReadAsync(int id, CancellationToken cancellationToken = default) =>
+            throw new ProblemException(409, "Expense detail requires personal Postgres authority; smoke scope is unavailable.");
+
+        public Task<ExpenseDetail> UpdateAsync(int id, long revision, ExpenseEdit value, CancellationToken cancellationToken = default) =>
+            throw new ProblemException(409, "Expense edit requires personal Postgres authority; smoke scope is unavailable.");
+
+        public Task DeleteAsync(int id, long revision, CancellationToken cancellationToken = default) =>
+            throw new ProblemException(409, "Expense deletion requires personal Postgres authority; smoke scope is unavailable.");
+
         public Task<IReadOnlyList<ExpenseSummary>> ListAsync(string category, DateTimeOffset start,
             DateTimeOffset? endExclusiveOrStartOfYear10000, CancellationToken cancellationToken = default) =>
             throw new ProblemException(409, "Category/month expense queries require the Postgres Expense store; Sheets is not supported.");
@@ -171,7 +180,7 @@ namespace GuitoApi.Infrastructure.Sheets
             return output;
         }
 
-        public async Task DeleteAsync(int id, CancellationToken cancellationToken = default)
+        public async Task DeleteSmokeAsync(int id, CancellationToken cancellationToken = default)
         {
             // The Smoke-scoped delete per ADR-0009. Operates ONLY on the
             // environment's Smoke Test tab — the route /Smoke/{id} is the scope

@@ -3,7 +3,7 @@ using GuitoApi.Repositories;
 
 namespace GuitoApi.Services.Expense;
 
-public sealed class ReadExpenseDetailService(IExpenseDetailRepository repository) : IReadExpenseDetailService
+public sealed class ReadExpenseDetailService(IExpenseRepository repository) : IReadExpenseDetailService
 {
     public async Task<ExpenseDetailResponse> ReadAsync(int id, CancellationToken cancellationToken = default)
     {

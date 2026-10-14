@@ -1,6 +1,7 @@
 using GuitoApi.DataTransferObjects.Input;
 using GuitoApi.DataTransferObjects.Output;
 using GuitoApi.Services.Expense;
+using GuitoApi.Infrastructure.Validation;
 using Microsoft.AspNetCore.Mvc;
 
 namespace GuitoApi.Controllers
@@ -64,6 +65,7 @@ namespace GuitoApi.Controllers
         }
 
         [HttpGet("{id}")]
+        [ServiceFilter(typeof(PersonalExpenseOperationFilter))]
         [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         public async Task<ExpenseDetailResponse> DetailAsync(int id, CancellationToken cancellationToken)
         {
@@ -73,6 +75,7 @@ namespace GuitoApi.Controllers
         }
 
         [HttpPut("{id}")]
+        [ServiceFilter(typeof(PersonalExpenseOperationFilter))]
         [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         public async Task<ExpenseDetailResponse> UpdateAsync(int id, [FromBody] ExpenseUpdate value, CancellationToken cancellationToken)
         {
@@ -82,6 +85,7 @@ namespace GuitoApi.Controllers
         }
 
         [HttpDelete("{id}")]
+        [ServiceFilter(typeof(PersonalExpenseOperationFilter))]
         public async Task<IActionResult> DeleteAsync(int id, CancellationToken cancellationToken)
         {
             await _deleteExpenseService.DeleteAsync(id, cancellationToken);

@@ -110,7 +110,7 @@ public class GoogleSheetsExpenseRepositoryTests
     }
 
     [Fact]
-    public async Task DeleteAsync_ShouldDeleteOneRowDimensionOnSmokeTab_WhenRowExists()
+    public async Task DeleteSmokeAsync_ShouldDeleteOneRowDimensionOnSmokeTab_WhenRowExists()
     {
         // Arrange
         _handler.SmokeRowExists = true;
@@ -118,7 +118,7 @@ public class GoogleSheetsExpenseRepositoryTests
         var id = FakeSheetsHttpHandler.NextRowIndex;
 
         // Act
-        await repository.DeleteAsync(id);
+        await repository.DeleteSmokeAsync(id);
 
         // Assert
         var deletion = _handler.DeleteDimensions.Last();
@@ -129,7 +129,7 @@ public class GoogleSheetsExpenseRepositoryTests
     }
 
     [Fact]
-    public async Task DeleteAsync_ShouldThrowExpenseNotFound_WhenRowAbsent()
+    public async Task DeleteSmokeAsync_ShouldThrowExpenseNotFound_WhenRowAbsent()
     {
         // Arrange
         _handler.SmokeRowExists = false;
@@ -137,14 +137,14 @@ public class GoogleSheetsExpenseRepositoryTests
 
         // Act
         var exception = await Assert.ThrowsAsync<ExpenseNotFoundException>(
-            () => repository.DeleteAsync(FakeSheetsHttpHandler.NextRowIndex));
+            () => repository.DeleteSmokeAsync(FakeSheetsHttpHandler.NextRowIndex));
 
         // Assert
         Assert.Contains(FakeSheetsHttpHandler.NextRowIndex.ToString(), exception.Message);
     }
 
     [Fact]
-    public async Task DeleteAsync_ShouldThrowExpenseNotFound_WhenIdBeforeAnchor()
+    public async Task DeleteSmokeAsync_ShouldThrowExpenseNotFound_WhenIdBeforeAnchor()
     {
         // Arrange
         var repository = CreateRepository();
@@ -152,7 +152,7 @@ public class GoogleSheetsExpenseRepositoryTests
 
         // Act
         var exception = await Assert.ThrowsAsync<ExpenseNotFoundException>(
-            () => repository.DeleteAsync(firstDataRow - 1));
+            () => repository.DeleteSmokeAsync(firstDataRow - 1));
 
         // Assert
         Assert.Equal($"Expense {firstDataRow - 1} not found", exception.Message);
