@@ -102,11 +102,13 @@ Routine pipeline deployment and production enablement require owner approval;
 local hermetic evidence does not claim deployed/live acceptance.
 
 Release version is 0.21.0: master declares 0.19.0 and #133 reserves 0.20.0.
-This branch does not include #133's review routes or migration. Do not deploy this
-master-based build over that feature deployment and call it compatible solely
-because deletion handles its schema: first merge/integrate the approved sibling
-code or use an independently approved isolated target. Never reset staging's
-already-applied migration 009 or drop its constraints to make an older build work.
+This branch does not include #133's review routes or migration. José explicitly
+approved temporarily replacing its staging deployment with this master-based build
+and intends to merge #146 before Bank Review (#147). Schema compatibility does not
+mean feature parity: Bank Review routes will be unavailable until that story is
+redeployed. Retain staging's already-applied migration 009 and its constraints;
+never reset them to make the older application base work. Production rollout
+remains gated on José's review and merge.
 API Gateway CORS and both application policies expose ETag; gateway preflight must
 allow PUT/DELETE and If-Match. Verify those installed settings after deployment.
 
