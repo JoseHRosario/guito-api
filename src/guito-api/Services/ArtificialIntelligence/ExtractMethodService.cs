@@ -13,7 +13,7 @@ namespace GuitoApi.Services.ArtificialIntelligence
     /// </summary>
     public class ExtractMethodService(
         IExpenseExtractionRepository expenseExtractionRepository,
-        ICategoryRepository categoryRepository) : IExtractMethodService
+        ICategoriesRepository categoryRepository) : IExtractMethodService
     {
         public async Task<ExpenseExtracted> ExtractMethodAsync(ExpenseExtract input,
             CancellationToken cancellationToken = default)

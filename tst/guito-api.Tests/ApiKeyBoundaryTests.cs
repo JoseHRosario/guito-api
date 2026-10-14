@@ -99,7 +99,7 @@ public class ApiKeyBoundaryTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task CreateExpense_ShouldAppendRowToSpreadsheet_WhenApiKeyIsValid()
+    public async Task CreateExpense_ShouldPersistExpense_WhenApiKeyIsValid()
     {
         var client = ClientWith(gate: true, headerValue: StoredValue);
         var response = await client.PostAsJsonAsync("/expense", new ExpenseCreate
@@ -111,7 +111,8 @@ public class ApiKeyBoundaryTests : IClassFixture<CustomWebApplicationFactory>
         });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Contains("Espresso", _factory.SheetsHandler.AppendBodies.Last());
+        var latest = await client.GetFromJsonAsync<GuitoApi.DataTransferObjects.Output.ExpenseListLatest>("/Expense/latest/1");
+        Assert.Equal("espresso", Assert.Single(latest!.Expenses).Description);
     }
 
     [Fact]

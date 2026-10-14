@@ -15,14 +15,7 @@ case "$ENV" in
   staging)    SUFFIX="-staging";      ASPNETCORE_ENV=Staging;    SECRET_NAME=/guito-api/staging ;;
   *) echo "ENV must be 'production' or 'staging' (got '$ENV')" >&2; exit 1 ;;
 esac
-# Omitted selector preserves installed authority via apply_env. Production stays
-# Sheets until the explicitly approved one-time configuration change.
-case "${EXPENSE_STORE:-}" in
-  ""|Sheets|Postgres) ;;
-  *) echo "EXPENSE_STORE must be Sheets or Postgres" >&2; exit 1 ;;
-esac
 ACCOUNT_ID=$(aws --region "$REGION" sts get-caller-identity --query Account --output text)
-export EXPENSE_STORE
 API_NAME=guito-api$SUFFIX
 AUTH_NAME=guito-api-authorizer$SUFFIX
 
@@ -186,7 +179,7 @@ apply_env () { # function-name vars-json-file
   local cur
   cur=$(aws --region "$REGION" lambda get-function-configuration --function-name "$1" \
     --query 'Environment.Variables' --output json)
-  python3 -c "import json,sys; d=json.loads(sys.argv[1]) or {}; d.update(json.load(open(sys.argv[2]))); print(json.dumps({'Variables': d}))" \
+  python3 -c "import json,sys; d=json.loads(sys.argv[1]) or {}; d={k:v for k,v in d.items() if k != 'AppConfiguration__ExpenseStore' and not k.lower().startswith('appconfiguration__googlesheets__')}; d.update(json.load(open(sys.argv[2]))); print(json.dumps({'Variables': d}))" \
     "$cur" "$2" > "$DEPLOY_WORK_DIR/guito-env-$1.json"
   aws --region "$REGION" lambda update-function-configuration --function-name "$1" \
     --environment "file://$DEPLOY_WORK_DIR/guito-env-$1.json" >/dev/null
@@ -214,8 +207,6 @@ v = {
     'AppConfiguration__EnableBanking__SecretsSource': 'AwsSsm',
     'AppConfiguration__EnableBanking__SsmParameterName': '/guito-api/eb-' + ('prod' if os.environ['ASPNETCORE_ENV'] == 'Production' else 'staging') + '-pk',
 }
-if os.environ.get('EXPENSE_STORE'):
-    v['AppConfiguration__ExpenseStore'] = os.environ['EXPENSE_STORE']
 if os.environ.get('GOOGLE_CLIENT_ID'):
     v['AppConfiguration__Authentication__OAuthAudience'] = os.environ['GOOGLE_CLIENT_ID']
     v['AppConfiguration__Authentication__GoogleClientId'] = os.environ['GOOGLE_CLIENT_ID']

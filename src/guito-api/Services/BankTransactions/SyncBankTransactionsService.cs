@@ -110,17 +110,16 @@ namespace GuitoApi.Services.BankTransactions
                 return;
 
             var idsByName = categories.ToDictionary(c => c.Name, c => c.Id);
-            var candidates = categories.Select(c => new CategoryListDetail { Name = c.Name }).ToList();
             using var gate = new SemaphoreSlim(SuggestionConcurrency);
             var suggestions = await Task.WhenAll(newTransactions.Select(transaction => SuggestOneAsync(
-                transaction, idsByName, candidates, gate, cancellationToken)));
+                transaction, idsByName, categories, gate, cancellationToken)));
             foreach (var suggestion in suggestions.Where(s => s.CategoryId is not null))
                 await _transactions.UpdateSuggestedCategoryAsync(suggestion.SyncKey, suggestion.CategoryId, cancellationToken);
         }
 
         private async Task<(string SyncKey, long? CategoryId)> SuggestOneAsync(
             (string SyncKey, string? RemittanceInformation) transaction,
-            Dictionary<string, long> idsByName, IReadOnlyList<CategoryListDetail> candidates,
+            Dictionary<string, long> idsByName, IReadOnlyList<CategorySummary> candidates,
             SemaphoreSlim gate, CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(transaction.RemittanceInformation))

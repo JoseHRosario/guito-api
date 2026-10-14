@@ -27,6 +27,7 @@
     <File Path="docs/historical-expense-import.md" />
     <File Path="docs/expense-cutover.md" />
     <File Path="docs/expense-edit-delete-contract.md" />
+    <File Path="docs/sheets-persistence-retirement.md" />
     <File Path="docs/adr/0010-amounts-stored-positive.md" />
   </Folder>
   <Folder Name="/sit/">

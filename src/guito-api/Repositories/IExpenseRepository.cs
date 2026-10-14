@@ -4,10 +4,8 @@ namespace GuitoApi.Repositories
 {
     /// <summary>
     /// Persistence for the Expense aggregate. Implementations own every
-    /// storage-specific detail; Postgres personal operations and compatibility
-    /// Sheets smoke cleanup remain distinct.
-    /// The Id is an Int32 identity — a Sheets absolute row index or a Postgres primary key
-    /// (CONTEXT.md); callers must not interpret it.
+    /// storage-specific detail. The Id is an immutable Int32 database identity;
+    /// callers must not interpret it.
     /// </summary>
     public interface IExpenseRepository
     {
@@ -15,19 +13,11 @@ namespace GuitoApi.Repositories
         Task<int> CreateAsync(ExpenseDraft value, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Lists recent expenses. Postgres orders occurrence and ID descending;
-        /// the compatibility Sheets adapter reads its configured tail slice.
+        /// Lists recent expenses ordered by occurrence and ID descending.
         /// </summary>
         Task<IReadOnlyList<ExpenseSummary>> ListLatestAsync(int limit, CancellationToken cancellationToken = default);
 
-        /// <summary>
-        /// Cleans up only the Sheets smoke row with the given Id. Postgres rejects
-        /// this cleanup; personal deletion requires the separate revision-aware operation.
-        /// Throws <see cref="GuitoApi.Exceptions.ExpenseNotFoundException"/> when the smoke Id is absent or stale.
-        /// </summary>
-        Task DeleteSmokeAsync(int id, CancellationToken cancellationToken = default);
-
-        /// <summary>Reads personal Postgres detail including its opaque revision; unavailable stores/scopes reject with 409.</summary>
+        /// <summary>Reads personal Expense detail including its opaque revision.</summary>
         Task<ExpenseDetail> ReadAsync(int id, CancellationToken cancellationToken = default);
 
         /// <summary>Replaces editable personal fields atomically against the loaded revision.</summary>

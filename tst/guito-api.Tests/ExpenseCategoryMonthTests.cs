@@ -10,7 +10,7 @@ public class ExpenseCategoryMonthTests
     public async Task List_ShouldFailRatherThanRound_WhenDatabaseAmountCannotBeRepresentedExactly()
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         factory.Postgres.SeedExpense(1, "2026-10-10T10:00:00Z", "0.12345678901234567890123456789", "Test");
         using var client = factory.CreateClient();
 
@@ -34,7 +34,7 @@ public class ExpenseCategoryMonthTests
     public async Task List_ShouldPreserveIndependentAuthGates_WhenAuthenticationEnabled(string? key, string? authorization, string? googleToken, HttpStatusCode expected)
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         using var host = AuthenticatedHost(factory);
         using var client = host.CreateClient();
         AddAuthHeaders(client, key, authorization, googleToken);
@@ -71,7 +71,7 @@ public class ExpenseCategoryMonthTests
     public async Task List_ShouldRejectUnknownExactCategory_WhenMirrorDoesNotContainName(string category)
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient();
 
         // Act
@@ -82,35 +82,13 @@ public class ExpenseCategoryMonthTests
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
         Assert.Equal("SELECT id FROM categories WHERE name = :name", Assert.Single(factory.Postgres.ExecutedSql));
         Assert.Equal(Uri.UnescapeDataString(category), Assert.Single(factory.Postgres.ExecutedParameters)!.Single().Value.StringValue);
-        Assert.Empty(factory.SheetsHandler.ReadRanges);
-    }
-
-    [Theory]
-    [InlineData("Sheets", false)]
-    [InlineData("Sheets", true)]
-    [InlineData("Postgres", true)]
-    public async Task List_ShouldReturnConflictWithoutAnyDatastoreRead_WhenSelectedStoreIsSheets(string store, bool smoke)
-    {
-        // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = store };
-        using var client = factory.CreateClient();
-        if (smoke) client.DefaultRequestHeaders.Add("X-Sheet-Scope", "smoke");
-
-        // Act
-        var response = await client.GetAsync("/Expense?category=Test&month=2026-10");
-
-        // Assert
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
-        Assert.Empty(factory.Postgres.ExecutedSql);
-        Assert.Empty(factory.SheetsHandler.ReadRanges);
     }
 
     [Fact]
     public async Task List_ShouldUsePostgres_WhenProductionSelectsPostgres()
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Environment = "Production", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Environment = "Production", Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
         client.DefaultRequestHeaders.Add("X-Api-Key", "test-agent-key");
 
@@ -120,14 +98,13 @@ public class ExpenseCategoryMonthTests
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.NotEmpty(factory.Postgres.ExecutedSql);
-        Assert.Empty(factory.SheetsHandler.ReadRanges);
     }
 
     [Fact]
     public async Task List_ShouldReturnAllMatches_WhenMoreThanLatestCapExist()
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         for (var id = 1; id <= 137; id++) factory.Postgres.SeedExpense(id, "2026-10-10T10:00:00Z", "1", "Test");
         using var client = factory.CreateClient();
 
@@ -155,7 +132,7 @@ public class ExpenseCategoryMonthTests
     public async Task List_ShouldBindCalendarMonthBoundaries_WhenDstLeapYearOrYearRollover(string month, string start, string end)
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient();
 
         // Act
@@ -174,7 +151,7 @@ public class ExpenseCategoryMonthTests
     public async Task Create_ShouldStillRejectLegacyDate_WhenLisbonMidnightIsAmbiguousOrInvalid(string date)
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient();
 
         // Act
@@ -189,7 +166,7 @@ public class ExpenseCategoryMonthTests
     public async Task List_ShouldFilterBookingInstantsAndOrderTies_WhenOctoberCrossesDstAndCreatorsDiffer()
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         SeedOctoberExpenses(factory.Postgres);
         using var client = factory.CreateClient();
 
@@ -203,12 +180,11 @@ public class ExpenseCategoryMonthTests
         AssertExactValuesAndSharedVisibility(expenses);
         AssertReadFields(expenses);
         AssertOctoberQuery(factory.Postgres);
-        Assert.Empty(factory.SheetsHandler.ReadRanges);
     }
 
     private static void SeedOctoberExpenses(FakePostgresDataApiClient postgres)
     {
-        postgres.ExpenseCategoryIds["startup"] = 7;
+        postgres.CategoryRows.Add((7, "startup", null));
         postgres.SeedExpense(1, "2026-09-30T22:59:59.999999Z", "1", "startup");
         postgres.SeedExpense(2, "2026-09-30T23:00:00Z", "0", "startup");
         postgres.SeedExpense(3, "2026-10-25T00:30:00Z", "0.0000000000000000000000000001", "startup");
@@ -262,7 +238,7 @@ public class ExpenseCategoryMonthTests
     public async Task List_ShouldFailExplicitlyWithoutPartialArray_WhenDataApiFails(bool sizeLimit, int failingCall)
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         factory.Postgres.ExecuteExceptionAtCall = failingCall;
         factory.Postgres.ExecuteException = sizeLimit
             ? new Amazon.RDSDataService.Model.DatabaseErrorException("Database response exceeded size limit")
@@ -276,14 +252,13 @@ public class ExpenseCategoryMonthTests
         Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
         Assert.Contains("complete", await response.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
-        Assert.Empty(factory.SheetsHandler.ReadRanges);
     }
 
     [Fact]
     public async Task List_ShouldSerializeCompleteResult_WhenFakeProviderReturnsLargeDescription()
     {
         // The fake bypasses real Data API transport limits; this verifies MVC only.
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         var description = new string('x', 2_000_001);
         factory.Postgres.SeedExpense(1, "2026-10-10T10:00:00Z", "0", "Test", description: description);
         using var client = factory.CreateClient();
@@ -315,7 +290,7 @@ public class ExpenseCategoryMonthTests
     public async Task List_ShouldReturnBadRequestWithoutTransport_WhenRequiredFilterInvalid(string query)
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient();
 
         // Act
@@ -325,14 +300,13 @@ public class ExpenseCategoryMonthTests
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
         Assert.Empty(factory.Postgres.ExecutedSql);
-        Assert.Empty(factory.SheetsHandler.ReadRanges);
     }
 
     [Fact]
     public async Task List_ShouldReturnEmptyArray_WhenKnownCategoryHasNoExpenses()
     {
         // Arrange
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         using var client = factory.CreateClient();
 
         // Act
@@ -342,6 +316,5 @@ public class ExpenseCategoryMonthTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Empty(body.RootElement.GetProperty("expenses").EnumerateArray());
-        Assert.Empty(factory.SheetsHandler.ReadRanges);
     }
 }

@@ -46,7 +46,7 @@ namespace GuitoApi.Tests
         public async Task Extract_ShouldExposeExactAmountText_WhenModelDecimalExceedsJavascriptPrecision()
         {
             // Arrange
-            using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres" };
+            using var factory = new CustomWebApplicationFactory();
             factory.Postgres.PersistExpenses = true;
             factory.OpenRouterHandler.ChatResponseContent =
                 "{\"date\": \"2026-07-02\", \"amount\": 123456789.1234567890123456789, \"description\": \"Cafe\"}";

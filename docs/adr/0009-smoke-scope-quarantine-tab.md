@@ -1,5 +1,7 @@
 # Smoke scope: integration tests write to a quarantine tab, never to real tabs
 
+> **Status amendment — #150:** Retired by issue #150. `/Smoke/{id}`, Sheets smoke adapters and scope selection are removed. The legacy X-Sheet-Scope header is ignored; `/Smoke/{id}` returns 404. Replacement write acceptance is deferred; deployed business tests perform reads only. The quarantine rationale and row-ID behavior below are history, not supported commands. See [the approval-gated retirement/live-acceptance runbook](../sheets-persistence-retirement.md).
+
 > ADR-0015 retains this quarantine mechanism with Postgres personal Expense authority:
 > smoke-header create/list and every `/Smoke/{id}` cleanup still use Sheets only.
 > Postgres has no smoke scope column and personal-record deletion is unsupported.

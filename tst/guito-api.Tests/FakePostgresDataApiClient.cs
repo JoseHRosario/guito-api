@@ -11,6 +11,8 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
 {
     public Queue<PostgresResult> NextResults { get; } = new();
     public bool PersistExpenses { get; set; }
+    public List<(long Id, string Name, string? Description)> CategoryRows { get; } =
+        [(2, "Restaurants", null), (3, "Groceries", null), (2147483648L, "Test", null), (4, "Original category", null)];
     private readonly List<IReadOnlyList<PostgresValue>> _expenses = [];
     private readonly Dictionary<int, long> _revisions = [];
     private readonly SemaphoreSlim _transactionGate = new(1);
@@ -32,18 +34,12 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
 
     public void SeedExpense(IReadOnlyList<PostgresValue> row) => _expenses.Add(row);
 
-    public Dictionary<string, long> ExpenseCategoryIds { get; } = new(StringComparer.Ordinal)
-    {
-        ["Test"] = 2147483648L, ["Restaurants"] = 2, ["Groceries"] = 3, ["Original category"] = 4
-    };
-
     private PostgresResult ExecuteExpense(string sql, IReadOnlyList<PostgresParameter>? parameters)
     {
         var values = parameters!.ToDictionary(p => p.Name, p => p.Value);
         if (sql == "SELECT id FROM categories WHERE name = :name")
-            return ExpenseCategoryIds.TryGetValue(values["name"].StringValue!, out var categoryId)
-                ? new PostgresResult([], [[PostgresValue.FromLong(categoryId)]], 0)
-                : new PostgresResult([], [], 0);
+            return new PostgresResult([], CategoryRows.Where(category => category.Name == values["name"].StringValue)
+                .Select(category => (IReadOnlyList<PostgresValue>)new[] { PostgresValue.FromLong(category.Id) }).ToList(), 0);
         if (sql.StartsWith("DELETE FROM expenses", StringComparison.Ordinal))
         {
             var count = _expenses.RemoveAll(r => (!sql.Contains("id = :id", StringComparison.Ordinal) || int.Parse(r[0].StringValue!) == values["id"].LongValue)
@@ -83,7 +79,7 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
     {
         IEnumerable<IReadOnlyList<PostgresValue>> rows = _expenses;
         if (sql.Contains("e.category_id = :category_id", StringComparison.Ordinal))
-            rows = rows.Where(r => ExpenseCategoryIds[r[4].StringValue!] == values["category_id"].LongValue);
+            rows = rows.Where(r => CategoryRows.Single(category => category.Name == r[4].StringValue).Id == values["category_id"].LongValue);
         if (sql.Contains("e.booking_date >= CAST(:start AS timestamptz)", StringComparison.Ordinal))
             rows = rows.Where(r => DateTimeOffset.Parse(r[1].StringValue!) >= DateTimeOffset.Parse(values["start"].StringValue!));
         if (sql.Contains("e.booking_date < CAST(:end AS timestamptz)", StringComparison.Ordinal))
@@ -110,7 +106,7 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
             updated[1] = values["booking_date"];
             if (!sql.Contains("THEN amount ELSE", StringComparison.Ordinal) || decimal.Parse(row[2].StringValue!) != decimal.Parse(values["amount"].StringValue!)) updated[2] = values["amount"];
             updated[3] = values["description"];
-            updated[4] = PostgresValue.FromString(ExpenseCategoryIds.Single(c => c.Value == values["category_id"].LongValue).Key);
+            updated[4] = PostgresValue.FromString(CategoryRows.Single(category => category.Id == values["category_id"].LongValue).Name);
             if (sql.Contains("update_date = clock_timestamp()", StringComparison.Ordinal)) updated[7] = PostgresValue.FromString("2027-02-02T10:00:00.654321Z");
             if (sql.Contains("revision = revision + 1", StringComparison.Ordinal)) _revisions[id] = _revisions.GetValueOrDefault(id, 1) + 1;
             _expenses[_expenses.IndexOf(row)] = updated;
@@ -121,7 +117,7 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
     private PostgresResult InsertExpense(Dictionary<string, PostgresValue> values)
     {
         var id = _expenses.Count + 1;
-        var category = ExpenseCategoryIds.Single(c => c.Value == values["category_id"].LongValue).Key;
+        var category = CategoryRows.Single(category => category.Id == values["category_id"].LongValue).Name;
         var now = PostgresValue.FromString(DateTimeOffset.UtcNow.ToString("O"));
         _expenses.Add([PostgresValue.FromString(id.ToString(System.Globalization.CultureInfo.InvariantCulture)),
             values["booking_date"], values["amount"], values["description"],
@@ -133,7 +129,7 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
     {
         if (!sql.Contains("JOIN categories c ON c.id = e.category_id", StringComparison.Ordinal))
             throw new InvalidOperationException("History category lookup requires the mirror identity join.");
-        IEnumerable<IReadOnlyList<PostgresValue>> rows = _expenses.Where(row => ExpenseCategoryIds.ContainsKey(row[4].StringValue!));
+        IEnumerable<IReadOnlyList<PostgresValue>> rows = _expenses.Where(row => CategoryRows.Any(category => category.Name == row[4].StringValue));
         if (sql.Contains("ORDER BY e.booking_date DESC", StringComparison.Ordinal))
             rows = rows.OrderByDescending(row => DateTimeOffset.Parse(row[1].StringValue!))
                 .ThenByDescending(row => sql.Contains("e.id DESC", StringComparison.Ordinal)
@@ -170,6 +166,14 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
         ExecutedCancellationTokens.Add(cancellationToken);
         if (ExecuteException is not null && ExecutedSql.Count >= ExecuteExceptionAtCall)
             throw ExecuteException;
+        if (NextResults.Count == 0 && sql.StartsWith("SELECT id, name, description FROM categories", StringComparison.Ordinal))
+        {
+            var categories = sql.Contains("ORDER BY name", StringComparison.Ordinal)
+                ? CategoryRows.OrderBy(category => category.Name, StringComparer.Ordinal).ToList() : CategoryRows;
+            return Task.FromResult(new PostgresResult([], categories.Select(category => (IReadOnlyList<PostgresValue>)new[]
+                { PostgresValue.FromString(category.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                  PostgresValue.FromString(category.Name), category.Description is null ? PostgresValue.Null() : PostgresValue.FromString(category.Description) }).ToList(), 0));
+        }
         if (PersistExpenses && sql.Contains("information_schema.columns", StringComparison.Ordinal))
             return Task.FromResult(ReadLinkSchema(sql));
         if (PersistExpenses && NextResults.Count == 0 && (sql.Contains("expenses", StringComparison.Ordinal) || sql.StartsWith("UPDATE bank_transactions", StringComparison.Ordinal)

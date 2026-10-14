@@ -46,11 +46,11 @@ public class DataApiPostgresExpenseRepository(IPostgresDataApiClient client, IUn
 
     private async Task<long> ResolveCategoryIdAsync(string name, CancellationToken cancellationToken)
     {
-        // The mirror is seeded separately; a request must never invent a category.
+        // Categories are maintained separately; a request must never invent one.
         var result = await client.ExecuteAsync("SELECT id FROM categories WHERE name = :name",
             [Text("name", name)], cancellationToken: cancellationToken);
         if (result.Rows.Count == 0)
-            throw new ProblemException(422, "Category is not present in the Postgres categories mirror.");
+            throw new ProblemException(422, "Category is not present in Postgres.");
         return ReadId(result.Rows.Single()[0]);
     }
 
@@ -119,10 +119,6 @@ public class DataApiPostgresExpenseRepository(IPostgresDataApiClient client, IUn
 
     private static DateTimeOffset? ReadInstant(PostgresValue value) => value.IsNull ? null
         : TimeService.InLisbon(DateTimeOffset.Parse(value.StringValue!, CultureInfo.InvariantCulture));
-
-    // Smoke cleanup is a Sheets-only capability, never a personal-record delete.
-    public Task DeleteSmokeAsync(int id, CancellationToken cancellationToken = default) =>
-        throw new ProblemException(409, "Postgres expenses cannot be deleted through Smoke cleanup.");
 
     private static PostgresParameter Text(string name, string value) => new(name, PostgresValue.FromString(value));
 

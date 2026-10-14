@@ -5,9 +5,8 @@ using GuitoApi.Repositories;
 namespace GuitoApi.Infrastructure.Postgres;
 
 /// <summary>
-/// ICategoriesRepository over the Data API (issue #112, ADR-0014): raw SQL against
-/// the categories table, executed through IPostgresDataApiClient. The table is
-/// seeded by the numbered migration script (004_seed_categories.sql), not by the app.
+/// Authoritative category reader over the existing Data API table.
+/// Category maintenance is external to the app; requests never seed or create rows.
 /// </summary>
 public class DataApiPostgresCategoriesRepository(IPostgresDataApiClient client) : ICategoriesRepository
 {

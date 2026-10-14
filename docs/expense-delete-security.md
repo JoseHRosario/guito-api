@@ -95,10 +95,8 @@ The [pinned endpoint contract](expense-edit-delete-contract.md) is the policy ba
   missing is 428, malformed is 400. `DataApiPostgresExpenseRepository` locks
   the exact ID, checks revision, and deletes using ID plus revision in a transaction;
   stale revision is 412. Linked bank transactions are retained and unlinked.
-  `PersonalExpenseOperationFilter` rejects smoke or Sheets authority with 409 on
-  invocation, before revision resolution; the Sheets adapter also rejects personal
-  operations without transport access. `DeleteSmokeAsync` remains separate Sheets
-  cleanup. These are
+  Under #150, the legacy `X-Sheet-Scope` header is ignored. `/Smoke` and `DeleteSmokeAsync` are removed; sole-Postgres
+  operations retain their revision checks. These are
   concurrency, integrity, and datastore-scope controls—not credential checks.
 - Maintain HTTPS-only deployed access, credential secrecy/rotation, appropriate
   database permissions, and useful security logging without credentials. Confirm
@@ -114,8 +112,8 @@ For DELETE specifically, exercise the HTTP boundary with auth gates enabled:
    access. Attribute deployed denials to the gateway or application separately.
 2. Valid permitted human/agent → authorized shared access, including an Expense
    created by another permitted identity; only the exact selected ID changes.
-3. Reporting identity → 403 on DELETE; smoke scope or Sheets authority → 409,
-   with no personal mutation. `/Smoke/{id}` remains independent Sheets cleanup.
+3. Reporting identity → 403 on DELETE. The legacy `X-Sheet-Scope` header is
+   ignored; removed `/Smoke/{id}` returns 404 and cannot reach personal cleanup.
 4. Missing/malformed/stale If-Match → 428/400/412 without mutation; missing or
    already-deleted record → 404; accepted deletion → 204, subsequent GET → 404.
    Linked transactions survive and unrelated records/links remain unchanged.

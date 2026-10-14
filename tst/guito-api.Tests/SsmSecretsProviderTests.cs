@@ -11,7 +11,7 @@ public class SsmSecretsProviderTests
     public async Task GetAsync_ShouldReadDecryptedRuntimePayload_WhenLocationIsAwsSsmAsync()
     {
         // Arrange
-        using var fixture = new RuntimeFixture("{\"apiKeys\":[\"hermetic-key\"],\"openRouterApiKey\":\"hermetic-router\",\"googleServiceAccount\":{\"project_id\":\"hermetic\"}}");
+        using var fixture = new RuntimeFixture("{\"apiKeys\":[\"hermetic-key\"],\"openRouterApiKey\":\"hermetic-router\"}");
         using var cancellation = new CancellationTokenSource();
 
         // Act
@@ -20,7 +20,6 @@ public class SsmSecretsProviderTests
         // Assert
         Assert.Equal("hermetic-key", Assert.Single(payload.ApiKeys));
         Assert.Equal("hermetic-router", payload.OpenRouterApiKey);
-        Assert.Equal("hermetic", payload.GoogleServiceAccount.RootElement.GetProperty("project_id").GetString());
         Assert.Equal("/guito-api/staging", fixture.Client.Request!.Name);
         Assert.True(fixture.Client.Request.WithDecryption);
         Assert.Equal(cancellation.Token, fixture.Client.CancellationToken);

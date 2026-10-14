@@ -2,8 +2,8 @@
 
 `GET /Expense?category=Startup&month=2026-10` retrieves every individual matching
 Expense in one JSON response. This is a read operation, not aggregation or totals.
-It is available only when the selected Expense store is Postgres. Production remains
-Sheets-backed: issue #139 does not authorize cutover or deployment.
+Postgres is the sole Expense and Category authority (#150). This contract does not
+authorize deployment or claim live acceptance.
 
 ## Authentication
 
@@ -32,9 +32,9 @@ single-user visibility; `creatorEmail` is attribution, **not a filter**.
 ## Filters and ordering
 
 - `category` is required and nonblank. Match the exact existing name in the Postgres
-  `categories` mirror, including case and meaningful whitespace. No trimming, fuzzy
-  match, category IDs or runtime seeding. URL-encode the name. `/Category` remains
-  Sheets-backed and is not proof that a name has been mirrored into Postgres.
+  `categories` table, including case and meaningful whitespace. No trimming, fuzzy
+  match, category IDs or runtime seeding. URL-encode the name. `/Category` reads the same authoritative Postgres names, alphabetically ordered,
+  with the unchanged name-only response.
 - `month` is required: exactly ASCII `YYYY-MM`, with a real calendar month and year
   0001–9999. For example `2026-10`, not `2026-1`, `2026-13` or a date/time string.
 - Selection uses **bookingDate**, not creationDate. The range is the earliest instant
@@ -49,8 +49,8 @@ single-user visibility; `creatorEmail` is attribution, **not a filter**.
 - Order is `booking_date DESC, id DESC` (numeric identity breaks occurrence ties).
 - No pagination, cursor, record cap or latest-endpoint limit. A known category with
   no matching Expenses returns `200` and `{"expenses":[]}`.
-- `X-Sheet-Scope: smoke` selects Sheets and therefore returns `409` for this query,
-  even when normal personal Expenses use Postgres. There is no smoke query fallback.
+- The legacy `X-Sheet-Scope` header is ignored, not a datastore override.
+  No alternate dataset is queried.
 
 ## Successful response
 
@@ -86,10 +86,9 @@ Expected query errors use `application/problem+json` ProblemDetails:
 | Status | Meaning |
 | --- | --- |
 | 400 | Missing/empty category or month; malformed/non-calendar `YYYY-MM`. |
-| 422 | Nonblank category has no exact Postgres mirror match. |
-| 409 | Sheets is selected, including smoke scope. No alternate Postgres dataset is queried. |
+| 422 | Nonblank category has no exact Postgres match. |
 | 502 | Data API provider failure/response limit or unsupported exact database amount. No partial array is returned. |
-| 500 | Unexpected server failure, or the existing unapproved Production/Postgres cutover guard. |
+| 500 | Unexpected server failure. |
 
 Authentication errors retain the existing gateway/API contracts, not the query's
 ProblemDetails contract: missing credentials normally yield 401 and invalid credentials
@@ -115,8 +114,8 @@ API transport. Seeded transport rows independently exercise SQL predicates/order
 DST/range edges, attribution and precision. They do not prove live PostgreSQL execution,
 DDL, privileges, persistence or deployed gateway behavior. The large-response MVC
 regression uses a fake provider that bypasses real Data API transport limits; it does
-not prove that Data API can deliver a response of that size. Production cutover remains
-separately gated. Run local verification without credentials:
+not prove that Data API can deliver a response of that size. Deployment and live acceptance remain
+separately gated; see [the runbook](sheets-persistence-retirement.md). Run local verification without credentials:
 
 ```bash
 export PATH="$HOME/.dotnet:$PATH" DOTNET_ROOT="$HOME/.dotnet"

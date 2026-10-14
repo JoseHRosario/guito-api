@@ -8,13 +8,13 @@ Guidance for AI coding agents working in this repo. Keep it small and current �
 
 ## What this project is
 
-Guito: personal expense-tracking API (.NET 10, AWS Lambda + API Gateway HTTP API) doing CRUD on a Google Spreadsheet. Glossary in [CONTEXT.md](CONTEXT.md); decisions in [docs/adr/](docs/adr/); coding conventions in [docs/CONVENTIONS.md](docs/CONVENTIONS.md) (read before committing — its rules are enforced on every PR); current work plan in [docs/guito-revival.md](docs/guito-revival.md); active spec in [issue #1](https://github.com/JoseHRosario/guito-api/issues/1).
+Guito: personal expense-tracking API (.NET 10, AWS Lambda + API Gateway HTTP API) using Aurora PostgreSQL via RDS Data API for Expense, Category and Bank Transactions. Sheets is an API-fed presentation consumer. Glossary in [GLOSSARY.md](GLOSSARY.md); decisions in [docs/adr/](docs/adr/); coding conventions in [docs/CONVENTIONS.md](docs/CONVENTIONS.md) (read before committing — its rules are enforced on every PR); current work plan in [docs/guito-revival.md](docs/guito-revival.md); active spec in [issue #1](https://github.com/JoseHRosario/guito-api/issues/1).
 
 ## Layout
 
 - `src/guito-api/` — API source (one project, `src/guito-api/guito-api.csproj`)
-- `src/guito-api/Repositories/` — per-aggregate data-access INTERFACES only (`IExpenseRepository`, `ICategoryRepository`, `IExpenseExtractionRepository`)
-- `src/guito-api/Infrastructure/` — datastore/provider implementations behind those interfaces (`Sheets/`, `Secrets/`, `AI/`); Services never see a concrete datastore or provider type (ADR 0011)
+- `src/guito-api/Repositories/` — per-aggregate data-access INTERFACES only (`IExpenseRepository`, `ICategoriesRepository`, `IExpenseExtractionRepository`)
+- `src/guito-api/Infrastructure/` — datastore/provider implementations behind those interfaces (`Postgres/`, `Secrets/`, `AI/`); Services never see a concrete datastore or provider type (ADR 0011)
 - `src/guito-api-authorizer/` — X-Api-Key Lambda authorizer (separate project/function)
 - `tst/guito-api.Tests` — API tests
 - `tst/guito-api-authorizer.Tests` — authorizer tests
@@ -30,22 +30,22 @@ export PATH="$HOME/.dotnet:$PATH" DOTNET_ROOT="$HOME/.dotnet"   # .NET SDK is NO
 dotnet build          # build
 dotnet run --project src/guito-api  # local dev server (Kestrel) — plain dotnet run, no Lambda emulation
 dotnet test --filter "Category!=Integration"   # hermetic unit tests (bare `dotnet test` FAILS without env vars — sit/ suites are not hermetic)
-scripts/run-deployed-tests.sh       # deployed-staging SIT suites (business + auth contract); resolves application secrets from SSM SecureString
+scripts/run-deployed-tests.sh staging read-only  # approval-gated; business reads plus established auth-contract checks
 dotnet tool restore   # if Lambda tools are needed for packaging checks
-ENV=staging deploy/db-apply.sh   # apply pending DB migrations to an environment (called automatically by deploy/deploy.sh since issue #114 — never run prod manually unless CI is broken)
+# Migrations and deployment run through GitHub Actions; production requires explicit owner approval.
 ```
 
 Lambda packaging happens in CI (Amazon.Lambda.Tools). Do not add local Lambda emulation tooling.
 
 ## Rules
 
-- **Secrets never enter the repo.** Google service-account keys, bank-provider credentials, API keys — application secrets live in SSM Parameter Store SecureString; database credentials remain in Secrets Manager for RDS Data API (ADR 0008); local dev uses `appsettings.*.json` files that are gitignored. The Google service-account key is `src/guito-api/google-spreadsheets.json` (gitignored; relative paths in config resolve against the project directory, since `dotnet run` runs from there).
-- **Respect the ADRs.** Google Sheets stays the datastore; auth is dual (Google PKCE for humans, `X-Api-Key` for agents); bank sync goes through the provider interface — do not bypass these without a new ADR.
-- **Sheets schema is frozen.** Never change spreadsheet layout, column order, or header names — the UI and existing data depend on them.
+- **Secrets never enter the repo.** Bank-provider credentials, API keys — application secrets live in SSM Parameter Store SecureString; database credentials remain in Secrets Manager for RDS Data API (ADR 0008); local dev uses `appsettings.*.json` files that are gitignored. API startup has no Sheets service-account/key-file prerequisite.
+- **Respect the ADRs.** Postgres is the sole Expense and Category authority (#150, amended ADR-0014/0015); auth is dual (Google PKCE for humans, `X-Api-Key` for agents); bank sync goes through the provider interface — do not bypass these without a new ADR.
+- **Reporting boundary**: Apps Script reads the API and writes presentation tabs only; preserve archives, installer OAuth and reporting identity. For deployed acceptance or credential retirement, read [the approval-gated runbook](docs/sheets-persistence-retirement.md). The legacy `X-Sheet-Scope` header is ignored; `/Smoke` is removed (404), never personal cleanup.
 - **Auth paths are separate.** Human (Google ID token) and agent (`X-Api-Key`) authorization are distinct authorizers; never merge or weaken them.
 - **The extraction endpoint (`POST /AI/extract`) calls OpenRouter**: a chat model extracts date/amount/merchant, Jev gates the note and picks the category (PR #73).
 - **Workflow**: feature or bug branch → PR → reviewed and merged by José. One branch per issue, named `feature/<issue#>-<slug>` or `bug/<issue#>-<slug>` (issue number first); the PR body **must end with `Closes #N`** so GitHub closes the issue on merge into `master`. Feature issues use the Feature issue template; bug issues use the Bug issue template (bug = something that worked as intended is broken — code regression, wrong behavior, broken config; environment/CI/docs work stays under existing informal prefixes). **Version (ADR 0012)**: every feature/bug issue carries a mandatory *Proposed version*; the agent bumps the declared version (`<Version>` in `src/guito-api/guito-api.csproj`) on the branch as part of the work — no git tags, every build stamps `<version>+<UTCts>.<shortsha>`. Never push directly to `master`.
-- **Parallel sessions use git worktrees.** The main tree (`/d/srv/projects/guito-api`) stays on `master` and is shared (José's Windows sync + any agent session) — never check a feature branch out there. For work on a separate issue while another session works, create a worktree **inside the repo** under the gitignored `.worktrees/` dir: `git worktree add .worktrees/<issue#>-<slug> feature/<issue#>-<slug>`. Branches are exclusive per worktree, so sessions cannot collide. Note: gitignored secrets (`google-spreadsheets*.json`, `appsettings.*.json` locals) exist only in the main tree — copy them into the worktree or sourced commands will fail.
+- **Parallel sessions use git worktrees.** The main tree (`/d/srv/projects/guito-api`) stays on `master` and is shared (José's Windows sync + any agent session) — never check a feature branch out there. For work on a separate issue while another session works, create a worktree **inside the repo** under the gitignored `.worktrees/` dir: `git worktree add .worktrees/<issue#>-<slug> feature/<issue#>-<slug>`. Branches are exclusive per worktree, so sessions cannot collide. Hermetic build/tests need no copied secrets. Approved local runs need explicit non-production Data API and retained secret-provider configuration; never copy credentials merely to build/test.
 - **Before any blanket `git add -A`, verify `.worktrees/` is ignored on the current branch** (`git check-ignore .worktrees/` — branch history may predate the ignore entry); otherwise prefer adding explicit paths. A branch without the ignore entry would stage an entire nested repo copy.
 - **Always run `git branch --show-current` before starting work** — the shared tree may have been switched by another session since you last looked.
 - Remove the worktree when its PR merges: `git worktree remove .worktrees/<name> && git worktree prune`.
@@ -62,14 +62,14 @@ Request path: **Controller → Service → Data access**. Each layer has one job
 - One operation per action; async all the way.
 
 ### Service (`src/guito-api/Services/<Domain>/`)
-- **One interface per operation**: `I<Action>Service` + `<Action>Service` in the same folder (e.g. `Services/Expense/ICreateExpenseService.cs` + `CreateExpenseGoogleApisSheetsService.cs`). Never grow a god-interface; a new operation is a new pair.
+- **One interface per operation**: `I<Action>Service` + `<Action>Service` in the same folder (e.g. `Services/Expense/ICreateExpenseService.cs` + `CreateExpenseService.cs`). Never grow a god-interface; a new operation is a new pair.
 - Services own the business logic and produce/consume `DataTransferObjects/Output` and `Input` DTOs. `Input/` = request bodies, `Output/` = response payloads.
-- Data-access implementations live in `Infrastructure/` behind repository interfaces and are named by technology (`GoogleSheetsExpenseRepository`, `OpenRouterExpenseExtractionRepository`); the interface is the contract and the implementation is swappable (Nordigen ↔ dummy keeps PSD2 behind a seam, ADR-0004). The `Service` suffix stays reserved for application-layer collaborators.
+- Data-access implementations live in `Infrastructure/` behind repository interfaces and are named by technology (`DataApiPostgresExpenseRepository`, `OpenRouterExpenseExtractionRepository`); the interface is the contract and the implementation is swappable (Nordigen ↔ dummy keeps PSD2 behind a seam, ADR-0004). The `Service` suffix stays reserved for application-layer collaborators.
 - Register the pair in `src/guito-api/Startup.cs` `ConfigureServices`. Environment-specific overrides are explicit `if (environment == ...)` blocks with a comment saying why.
 
 ### Data access (`src/guito-api/Infrastructure/`)
-- `IGooglesheetsClientProvider.GetAsync()` returns an authenticated Google `SheetsService` — the credential/secrets concern is isolated here; everything else just calls it (interface lives in `Repositories/`, implementations in `Infrastructure/Sheets/`).
-- All ranges/spreadsheet ids come from `Configuration/` options (`AppConfigurationOptions`, populated from `appsettings*.json`); no hardcoded ids or ranges in services.
+- Expense and Category consumers use Postgres repositories through storage-agnostic ports. `/Category` and AI candidates use `DataApiPostgresCategoriesRepository`; preserve name-only wire shape, alphabetical names and internal Int64 IDs/FKs. No category CRUD, runtime seeding or schema changes.
+- Data API transport and transaction concerns stay in Infrastructure; database references come from Configuration. There is no Expense store selector, Sheets fallback or dual write.
 
 ### Errors
 - Services throw `Exceptions/ProblemException(statusCode, message)` for expected failures. `Exceptions/ExceptionToProblemDetailsHandler` converts them to RFC 7807 ProblemDetails — controllers never build error responses by hand. Deliberate exception (José-approved 2026-10-02): the `AuthController` Google actions (`/Auth/token`, `/Auth/logout`) map `GoogleTokenExchangeException` through a shared `CallGoogleAsync`/`GoogleError` helper to the verbatim RFC 6749 `{error, error_description}` body, because guito-ui's `tokenFailureMessage` parses THAT shape, not ProblemDetails; the status is Google's upstream status (or 502 on provider failure). Services classify the failure (throw the typed exception); the controller translates it to the wire contract — this translation is the only hand-built response in the codebase.
@@ -80,7 +80,7 @@ Request path: **Controller → Service → Data access**. Each layer has one job
   - **Human path (issue #13)**: the gateway identity source is a single header, `Authorization`. The edge authorizer dispatches: `Authorization: Bearer <jwt>` → `GoogleTokenValidator` (`src/guito-api-authorizer/GoogleToken/`) verifies the RS256 signature against Google's JWKS, then checks issuer, audience (`GOOGLE_CLIENT_ID` env), expiry, and the allowed-email allowlist (`GOOGLE_ALLOWED_EMAILS` env). A raw `Authorization` value → agent-key path. `GoogleIdTokenMiddleware` (`src/guito-api/Middleware/`) repeats the token check inside the API as defense-in-depth, configured via `AppConfiguration:Authentication` (set in production through `AppConfiguration__Authentication__*` Lambda env vars). Both env sets come from `deploy/deploy.sh` section 3b; unset → human path is deny-closed, agent key path unaffected. **UI contract (issue #8): send the Google ID token as `Authorization: Bearer <idtoken>`.** Agents keep sending `X-Api-Key` and now also `Authorization: <key>` — API Gateway invokes a REQUEST authorizer only when ALL identity sources are present, so multiple source headers would 401 single-header requests (hit live, 2026-09-24).
     - API Gateway allows one CUSTOM authorizer per route, so the edge is a single function with two independent validators dispatching on its sole identity source, `Authorization` (raw value → agent logic, `Bearer <jwt>` → Google logic, nothing → Deny). Other headers (`X-Api-Key`, `x-google-idtoken`) are never forwarded to REQUEST authorizers and must not be dispatched on at the edge. Independence is per-validator and per in-app middleware, not per function; never let one path fall back into the other.
     - `/healthz` is public in both gates; its single definition is `ApiKeyMiddleware.PublicPathKey`.
-- Both paths read the same environment parameter (`/guito-api/prod` or `/guito-api/staging`). The contract between the sides is the secret's JSON shape (`ApiKeys` array, SA key object); the API binds it as `SecretsPayload` (`src/guito-api/Configuration/Secrets.cs`), the authorizer parses the raw `ApiKeys` property — no shared type. Changing the payload shape requires deploying both functions.
+- Both paths read the same environment parameter (`/guito-api/prod` or `/guito-api/staging`). The contract between the sides is the secret's JSON shape (`ApiKeys` array and retained feature credentials; no Sheets service-account object); the API binds it as `SecretsPayload` (`src/guito-api/Configuration/Secrets.cs`), the authorizer parses the raw `ApiKeys` property — no shared type. Changing the payload shape requires deploying both functions.
 
 ### Authorizer (`src/guito-api-authorizer/`)
 - Separate Lambda project/function, invoked by API Gateway before any route. Deploys independently from `src/guito-api/` (separate GitHub Actions job/zip).
@@ -88,9 +88,9 @@ Request path: **Controller → Service → Data access**. Each layer has one job
 - Keep it small: no Sheets, no business logic, no API dependencies. Shared crypto/key logic between API and authorizer is duplicated on purpose (separate assemblies); note it if you change one.
 
 ### Testing (`tst/guito-api.Tests/`)
-- **Unit tests only — they run in CI.** No network, no credentials, no real Sheets access; the suite must pass on a machine with zero Google setup (verified by removing the key file). Anything needing the real spreadsheet or a bank provider is out of scope for this project.
+- **Unit tests only — they run in CI.** No network, no credentials, no live datastore access; the suite must pass without Sheets keys or persistence settings. Anything needing the real spreadsheet or a bank provider is out of scope for this project.
 - External behavior only: HTTP boundary via `WebApplicationFactory<Program>` (`CustomWebApplicationFactory`), never internals. Explicit issue #95 exception (José-approved test seams): secret-provider contract tests may call `ISecretsProvider`, `IHumanAuthSecretProvider`, and `IEnableBankingCredentialsProvider` directly with hermetic AWS fakes to verify decryption, caching, cancellation, and backend selection. Authorizer key-loading tests likewise exercise `IKeysLoader`. Live auth and business behavior remains covered by the deployed SIT suites.
-- The Sheets seam is faked at the HTTP level: `FakeGooglesheetsService` builds a real Google client whose transport is `FakeSheetsHttpHandler` (canned Sheets JSON responses + recorded writes). Tests therefore cover controller → service → real Google-client serialization, without network or credentials.
+- Expense/Category tests use fake Data API transport through HTTP/service/repository seams; retain unrelated human/agent/reporting auth coverage. Replacement deployed write acceptance is deferred; deployed business tests perform reads only.
 - Compositions get replaced via DI in the test factory (`IListTransactionsService` → dummy), mirroring the service-seam pattern.
 
 ### Configuration
@@ -99,7 +99,12 @@ Request path: **Controller → Service → Data access**. Each layer has one job
 ## Style
 
 - Follow the existing code layout: controllers thin, one service interface per operation (`I<Action>Service` + `<Action>Service`), services as thin adapters over repository interfaces (ADR 0011), configuration via `Configuration/` options classes.
-- Keep the API surface backward-compatible with the existing spreadsheet data and the planned Angular UI.
+- Keep the API surface backward-compatible with supported Expense/Category contracts and the Angular UI.
+
+## Living doc
+
+Prune stale guidance with the code change that invalidates it; preserve dated
+evidence behind explicit retirement notes. Broader routing/restructuring is #149.
 
 ## Agent skills
 
@@ -113,4 +118,4 @@ Five canonical roles used as-is: `needs-triage`, `needs-info`, `ready-for-agent`
 
 ### Domain docs
 
-Single-context: `CONTEXT.md` + `docs/adr/` at repo root. See `docs/agents/domain.md`.
+Single-context: `GLOSSARY.md` + `docs/adr/` at repo root. See `docs/agents/domain.md`.

@@ -3,7 +3,7 @@
 #   • deploy-staging — push to a feature/* branch (or manual dispatch) deploys
 #     staging and smokes it with the sit auth-contract + business suites.
 #   • deploy-production — push to master (or manual dispatch) deploys production
-#                      and smokes it the same way.
+#                      and verifies it read-only (never test writes).
 # AWS authentication is OIDC only (role guito-api-deploy, trust pinned to
 # repo:JoseHRosario/guito-api) — no long-lived AWS keys anywhere.
 name: ci-cd
@@ -78,9 +78,10 @@ jobs:
           SHEETS_REPORTING_GOOGLE_AUDIENCE: ${{ vars.SHEETS_REPORTING_AUTHENTICATION == 'enabled' && vars.SHEETS_REPORTING_GOOGLE_AUDIENCE || '' }}
           SHEETS_REPORTING_GOOGLE_SUBJECT: ${{ vars.SHEETS_REPORTING_AUTHENTICATION == 'enabled' && vars.SHEETS_REPORTING_GOOGLE_SUBJECT || '' }}
           SHEETS_REPORTING_IDENTITY_VERIFIED: ${{ vars.SHEETS_REPORTING_IDENTITY_VERIFIED || 'false' }}
-        run: ENV=staging EXPENSE_STORE=Postgres ./deploy/deploy.sh
-      - name: Smoke — auth contract (Google token + agent key) and business round-trip
-        run: ./scripts/run-deployed-tests.sh staging
+        run: ENV=staging ./deploy/deploy.sh
+      - name: Read-only auth and business verification (no synthetic records)
+        run: ./scripts/run-deployed-tests.sh staging read-only
+      # Replacement write acceptance is deferred; no synthetic financial records.
 
   deploy-production:
     name: deploy + smoke (production)
@@ -108,5 +109,5 @@ jobs:
           SHEETS_REPORTING_IDENTITY_VERIFIED: ${{ vars.SHEETS_REPORTING_IDENTITY_VERIFIED || 'false' }}
           ALLOW_PRODUCTION_SHEETS_REPORTING: ${{ vars.ALLOW_PRODUCTION_SHEETS_REPORTING || 'false' }}
         run: ENV=production ./deploy/deploy.sh
-      - name: Smoke — auth contract (Google token + agent key) and business round-trip
-        run: ./scripts/run-deployed-tests.sh production
+      - name: Read-only production auth and business verification
+        run: ./scripts/run-deployed-tests.sh production read-only

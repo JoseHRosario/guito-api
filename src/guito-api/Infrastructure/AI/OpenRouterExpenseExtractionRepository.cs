@@ -6,6 +6,7 @@ using GuitoApi.DataTransferObjects.Output;
 using GuitoApi.Exceptions;
 using GuitoApi.Infrastructure.Secrets;
 using GuitoApi.Repositories;
+using GuitoApi.Model;
 using Microsoft.Extensions.Options;
 
 namespace GuitoApi.Infrastructure.AI
@@ -100,7 +101,7 @@ namespace GuitoApi.Infrastructure.AI
         }
 
         public async Task<string> ResolveCategoryAsync(string prompt, string description,
-            IReadOnlyList<CategoryListDetail> categories, CancellationToken cancellationToken = default)
+            IReadOnlyList<CategorySummary> categories, CancellationToken cancellationToken = default)
         {
             if (categories.Count == 0)
                 return string.Empty;

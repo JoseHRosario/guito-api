@@ -1,5 +1,7 @@
 # PSD2 bank sync behind a swappable provider interface
 
+> **Status amendment — #150:** Bank-provider boundaries remain accepted. Issue #150 supersedes the Expense/Category Sheets-store statement below: both now use Postgres; transport-fake comparisons describe historical tests. See [the approval-gated retirement/live-acceptance runbook](../sheets-persistence-retirement.md).
+
 Date: 2026-10-03 (supersedes the GoCardless-first decision of the original 0004); amended 2026-10-05 per ADR-0013 (Postgres store, auth); amended 2026-10-08 per issues #89–#103 (adapter shipped — RS256 verified over PS256; "provider interface" = the Repositories/ ports)
 
 The old Nordigen integration (used until 2024) was never reimplemented; Nordigen is now GoCardless Bank Account Data, which is closed to new signups and being wound down as a data-only product. Bank sync returns in Phase 2 behind the existing provider interface (`IListTransactionsService`), with **Enable Banking as the only real provider** — its free "Restricted Production" tier gives real transactions from self-linked EU banks (Portugal covered: CGD, Millennium BCP, Santander Totta, Novo Banco, BPI, Montepio) without a contract or paid tier. `ListTransactionsNordigenService` and the `Nordigen` configuration block are deleted; no GoCardless adapter will be built.
