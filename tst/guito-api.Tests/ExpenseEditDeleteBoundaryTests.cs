@@ -24,7 +24,6 @@ public class ExpenseEditDeleteBoundaryTests
         Assert.Equal("\"1\"", response.Headers.ETag!.ToString());
         Assert.True(response.Headers.CacheControl!.NoStore);
         AssertOriginalDetail(detail);
-        Assert.Empty(factory.SheetsHandler.ReadRanges);
     }
 
     [Fact]
@@ -190,57 +189,6 @@ public class ExpenseEditDeleteBoundaryTests
         Assert.Equal(1, factory.Postgres.Commits);
         Assert.Contains(factory.Postgres.ExecutedSql, sql => sql.Contains("WHERE id = :id FOR UPDATE", StringComparison.Ordinal));
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/Expense/8")).StatusCode);
-    }
-
-    [Theory]
-    [InlineData("GET", "Sheets", false)]
-    [InlineData("PUT", "Sheets", false)]
-    [InlineData("DELETE", "Sheets", false)]
-    [InlineData("GET", "Postgres", true)]
-    [InlineData("PUT", "Postgres", true)]
-    [InlineData("DELETE", "Postgres", true)]
-    public async Task Expense_ShouldRejectWithoutDatastoreAccess_WhenStoreOrScopeIsUnavailableAsync(string method, string store, bool smoke)
-    {
-        // Arrange
-        using var factory = CreateFactory();
-        factory.ExpenseStore = store;
-        using var client = factory.CreateClient();
-        if (smoke) client.DefaultRequestHeaders.Add("X-Sheet-Scope", "smoke");
-        using var request = method == "PUT" ? UpdateRequest("7", "\"1\"") : method == "DELETE" ? DeleteRequest("7", "\"1\"") : new(HttpMethod.Get, "/Expense/7");
-
-        // Act
-        var response = await client.SendAsync(request);
-
-        // Assert
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Empty(factory.Postgres.ExecutedSql);
-        Assert.Empty(factory.SheetsHandler.ReadRanges);
-        Assert.Empty(factory.SheetsHandler.DeleteDimensions);
-        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/Expense/latest/1")).StatusCode);
-    }
-
-    [Theory]
-    [InlineData("PUT", "Sheets", false)]
-    [InlineData("DELETE", "Sheets", false)]
-    [InlineData("PUT", "Postgres", true)]
-    [InlineData("DELETE", "Postgres", true)]
-    public async Task Mutation_ShouldRejectUnavailablePersonalOperationsBeforeRevisionResolution_WhenIfMatchIsMissingAsync(string method, string store, bool smoke)
-    {
-        // Arrange
-        using var factory = CreateFactory();
-        factory.ExpenseStore = store;
-        using var client = factory.CreateClient();
-        if (smoke) client.DefaultRequestHeaders.Add("X-Sheet-Scope", "smoke");
-        using var request = method == "PUT" ? UpdateRequest("7", null) : DeleteRequest("7", null);
-
-        // Act
-        using var response = await client.SendAsync(request);
-
-        // Assert
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Empty(factory.Postgres.ExecutedSql);
-        Assert.Empty(factory.SheetsHandler.ReadRanges);
-        Assert.Empty(factory.SheetsHandler.DeleteDimensions);
     }
 
     [Fact]
@@ -574,7 +522,7 @@ public class ExpenseEditDeleteBoundaryTests
 
     private static CustomWebApplicationFactory CreateFactory()
     {
-        var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         factory.Postgres.NextTransactionId = "expense-test-transaction";
         factory.Postgres.SeedExpense(7, "2026-07-02T13:23:45.123456Z", "-9007199254740993.1200", "Groceries");
         factory.Postgres.SeedExpense(8, "2026-07-02T13:23:45.123456Z", "-9007199254740993.1200", "Groceries");

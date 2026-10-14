@@ -1,4 +1,5 @@
 using GuitoApi.DataTransferObjects.Output;
+using GuitoApi.Model;
 
 namespace GuitoApi.Repositories
 {
@@ -17,6 +18,6 @@ namespace GuitoApi.Repositories
 
         /// <summary>Picks a category among the given candidates; empty string when none fit.</summary>
         Task<string> ResolveCategoryAsync(string prompt, string description,
-            IReadOnlyList<CategoryListDetail> categories, CancellationToken cancellationToken = default);
+            IReadOnlyList<CategorySummary> categories, CancellationToken cancellationToken = default);
     }
 }

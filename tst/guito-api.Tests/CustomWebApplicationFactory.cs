@@ -2,7 +2,6 @@ using GuitoApi.Infrastructure.AI;
 using GuitoApi.Infrastructure.EnableBanking;
 using GuitoApi.Infrastructure.Postgres;
 using GuitoApi.Infrastructure.Secrets;
-using GuitoApi.Infrastructure.Sheets;
 using GuitoApi.Repositories;
 using GuitoApi.Services.Account;
 using Microsoft.AspNetCore.Hosting;
@@ -15,9 +14,6 @@ namespace GuitoApi.Tests;
 
 public class CustomWebApplicationFactory : WebApplicationFactory<Program>
 {
-    /// <summary>Shared stub for all Google Sheets traffic; tests assert against it.</summary>
-    public FakeSheetsHttpHandler SheetsHandler { get; } = new();
-
     /// <summary>Shared stub for all OpenRouter traffic; tests assert against it.</summary>
     public FakeOpenRouterHttpHandler OpenRouterHandler { get; } = new();
 
@@ -38,14 +34,13 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
     /// never construct the real DataApiClient (its AWS SDK client validates the
     /// ambient AWS config — a CI runner without it throws on every resolution).
     /// </summary>
-    public FakePostgresDataApiClient Postgres { get; } = new();
+    public FakePostgresDataApiClient Postgres { get; } = new() { PersistExpenses = true };
 
     /// <summary>
     /// When true the bank provider stays EnableBanking (real adapter over the faked EB
     /// transport); the default keeps the Dummy provider, mirroring the default config.
     /// </summary>
     public bool UseEnableBankingProvider { get; set; }
-    public string ExpenseStore { get; set; } = "Sheets";
     public string Environment { get; set; } = "Development";
 
     /// <summary>UI origin for the consent-callback 302 (issue #116) — lands in the test config as Cors:AllowedOrigins[0].</summary>
@@ -54,7 +49,7 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment(Environment);
-        var inMemory = new Dictionary<string, string?> { ["AppConfiguration:ExpenseStore"] = ExpenseStore };
+        var inMemory = new Dictionary<string, string?>();
         if (UseEnableBankingProvider)
         {
             inMemory["AppConfiguration:BankProvider"] = "EnableBanking";
@@ -70,9 +65,7 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
 
         builder.ConfigureTestServices(services =>
         {
-            var sheets = SheetsHandler;
             var openRouter = OpenRouterHandler;
-            Replace<IGooglesheetsClientProvider>(services, sp => new FakeGooglesheetsClientProvider(sheets));
             Replace<IOpenRouterClientProvider>(services, _ => new FakeOpenRouterClientProvider(openRouter));
             var postgres = Postgres;
             Replace<IPostgresDataApiClient>(services, _ => postgres);

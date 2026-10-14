@@ -1,6 +1,35 @@
 # Guito Revival Plan (2026-09)
 
-Result of a grill session. Decisions are recorded as ADRs in `docs/adr/`; this file is the operational summary. The current delivery target is an end-to-end MVP: deployed API + authenticated Angular UI, with the UI reading and creating expenses through the API and Google Sheets.
+## Current supported architecture (#150)
+
+Expense and Category authority is solely Aurora PostgreSQL through RDS Data API.
+The UI and agents use the authenticated API; Apps Script consumes API history and
+writes replaceable presentation data into Sheets. There is no API-side Sheets
+persistence, store selector, reverse synchronization or legacy smoke cleanup.
+GET `/Category` and AI extraction use the existing Postgres category reader with
+alphabetical names; retain name-only wire shape and existing IDs/FKs. No category
+CRUD, automatic creation, schema changes or reseeding.
+
+Build/hermetic tests need no Sheets key. Local Kestrel uses
+`dotnet run --project src/guito-api` with approved non-production configuration.
+Deployment/migrations remain through GitHub Actions. Staging write acceptance
+requires proven isolated Postgres and revision-aware cleanup; production checks
+are read-only. Human Google login, agent auth, OpenRouter/bank/database secrets,
+Apps Script installer OAuth and reporting identity remain supported.
+
+[Retirement/live acceptance](sheets-persistence-retirement.md) separates code,
+hermetic tests, approved rollout, isolated staging cleanup, production reads,
+reporting verification and destructive credential approval. No new live gate or
+credential destruction is asserted here. Completed #129 imports remain retired.
+#149 owns broader docs routing/restructuring; this update changes authority and
+operational safety only, preserving its future file-move/entry-point work.
+
+## Historical revival decisions and phase plan
+
+The following grill-session plan and migration notes record their original scope.
+Their Sheets datastore/service-account, selector and smoke assumptions are
+superseded by #150 and amended ADR-0014/0015; they are not current instructions.
+Original MVP exclusions and pending gates do not prove present live acceptance.
 
 ## What Guito is
 

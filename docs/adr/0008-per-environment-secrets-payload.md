@@ -1,5 +1,7 @@
 # Deployed secrets: one service account per environment
 
+> **Status amendment — #150:** SSM application secrets and the Data API Secrets Manager exception remain accepted. Issue #150 retires API-side GoogleServiceAccount loading/key-file configuration and supersedes the SA provisioning/diagnosis instructions below. Payload removal, key revocation and exclusive permission cleanup need separate owner approval and read-back evidence; none is claimed here. Preserve human OAuth, agent/provider/database credentials and Apps Script installer/reporting permissions. See [the approval-gated retirement/live-acceptance runbook](../sheets-persistence-retirement.md).
+
 ## Status
 
 Accepted (2026-09-25, found live during T8.3 prod regression proof — issue #23)

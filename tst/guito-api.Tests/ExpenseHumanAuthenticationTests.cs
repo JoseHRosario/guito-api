@@ -75,7 +75,7 @@ public class ExpenseHumanAuthenticationTests
 
     private static CustomWebApplicationFactory CreateFactory()
     {
-        var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         factory.Postgres.NextTransactionId = "human-expense-test";
         factory.Postgres.SeedExpense(7, "2026-07-02T13:23:45Z", "12.3400", "Groceries", "different-creator@example.com");
         factory.Postgres.SeedExpense(8, "2026-07-02T13:23:45Z", "12.3400", "Groceries", "different-creator@example.com");

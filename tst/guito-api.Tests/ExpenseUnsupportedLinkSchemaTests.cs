@@ -30,7 +30,7 @@ public class ExpenseUnsupportedLinkSchemaTests
 
     private static CustomWebApplicationFactory CreateFactory(string? linkType, string? reviewType)
     {
-        var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         factory.Postgres.NextTransactionId = "unsupported-schema";
         factory.Postgres.SeedExpense(7, "2026-07-02T13:23:45Z", "12.3400", "Groceries");
         factory.Postgres.LinkSchemaColumns = [];

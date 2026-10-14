@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # T8.2 (issue #22) / T5 (issue #6): run the deployed-endpoint integration test
 # suite against the LIVE stack of a target environment.
-#   Usage: scripts/run-deployed-tests.sh [staging|production]   (default: staging)
+#   Usage: scripts/run-deployed-tests.sh [staging|production] [read-only|round-trip] (default: staging read-only)
 #
 # The suite needs four values this script resolves from AWS (SSM Parameter Store /
 # API Gateway / Lambda) at run time; no key or token is ever stored in the repo
@@ -31,6 +31,17 @@ HUMAN_AUTH_SECRET=/guito-api/human-auth
 PROD_AUTHORIZER=guito-api-authorizer   # GOOGLE_CLIENT_ID always read from prod (ADR-0007 parity)
 
 ENV_TARGET=${1:-staging}
+MODE=${2:-read-only}
+export GUITO_TARGET_ENVIRONMENT="$ENV_TARGET" GUITO_TEST_MODE="$MODE"
+unset GUITO_STAGING_ISOLATION
+case "$MODE" in
+  read-only) TEST_FILTER='Category=Integration&LiveMutation!=true' ;;
+  round-trip)
+    [ "$ENV_TARGET" = staging ] || { echo 'FATAL: production verification is read-only' >&2; exit 1; }
+    [ -n "${GUITO_STAGING_ISOLATION_FILE:-}" ] || { echo 'FATAL: operator-attested disposable staging isolation is required' >&2; exit 1; }
+    TEST_FILTER='Category=Integration' ;;
+  *) echo 'Usage: run-deployed-tests.sh [staging|production] [read-only|round-trip]' >&2; exit 1 ;;
+esac
 case "$ENV_TARGET" in
   staging)    API_NAME=guito-api-staging; TARGET_SECRET=/guito-api/staging; OTHER_SECRET=/guito-api/prod ;;
   production) API_NAME=guito-api;         TARGET_SECRET=/guito-api/prod;    OTHER_SECRET=/guito-api/staging ;;
@@ -82,8 +93,12 @@ else
   echo "No custom-domain mapping for $API_NAME — using $GUITO_TARGET_BASE_URL."
 fi
 
-# Business smoke CRUD always targets the isolated Sheets tab (ADR-0009),
-# including when personal expenses are Postgres-authoritative. No personal writes.
+# Establish isolation before credentials are minted or any test can send a mutation.
+if [ "$MODE" = round-trip ]; then
+  GUITO_STAGING_ISOLATION=$(python3 "$REPO_ROOT/scripts/validate-staging-isolation.py" \
+    "$GUITO_STAGING_ISOLATION_FILE" "$GUITO_TARGET_BASE_URL")
+  export GUITO_STAGING_ISOLATION
+fi
 
 # --- Resolve both agent keys from SSM Parameter Store -----------------------------
 secret_key() {
@@ -145,21 +160,21 @@ cd "$REPO_ROOT"
 # fire-and-forget warm-up is not enough: while the APP function is still mid-init,
 # the gateway 500s the request and NOTHING is warmed — observed live (2026-10-02,
 # guito-api#65) as the first auth test failing 500-where-204-expected. So: retry
-# the authed request until the APP actually answers (non-5xx), bounded.
+# the authenticated read until the app answers HTTP 200, bounded.
 WARM_CODE=000
 for attempt in $(seq 1 15); do
-  WARM_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 \
-    -H "Authorization: $GUITO_TARGET_AGENT_KEY" \
-    -H "X-Api-Key: $GUITO_TARGET_AGENT_KEY" \
-    "$GUITO_TARGET_BASE_URL/Expense/latest/5" || echo "warmup-failed")
-  if [ "$WARM_CODE" != "500" ] && [ "$WARM_CODE" != "502" ] && [ "$WARM_CODE" != "503" ] \
-     && [ "$WARM_CODE" != "504" ] && [ "$WARM_CODE" != "warmup-failed" ]; then
+  # Ignore user curl config; credentials stay on stdin, not process arguments.
+  WARM_CODE=$(printf 'header = "Authorization: %s"\nheader = "X-Api-Key: %s"\n' \
+    "$GUITO_TARGET_AGENT_KEY" "$GUITO_TARGET_AGENT_KEY" \
+    | curl --disable --config - --request GET -s -o /dev/null -w '%{http_code}' --max-time 30 \
+      "$GUITO_TARGET_BASE_URL/Expense/latest/5" || echo "warmup-failed")
+  if [ "$WARM_CODE" = 200 ]; then
     break
   fi
   echo "warm-up attempt $attempt returned HTTP $WARM_CODE (function still cold) — retrying."
   sleep 5
 done
-if [ "$WARM_CODE" = "500" ] || [ "$WARM_CODE" = "warmup-failed" ]; then
+if [ "$WARM_CODE" != 200 ]; then
   echo "FATAL: warm-up never reached the app (last HTTP $WARM_CODE) — a mid-init drop would fail the first auth test with 500-where-2xx-expected." >&2
   exit 1
 fi
@@ -169,7 +184,7 @@ FAILED=0
 for PROJECT in "${PROJECTS[@]}"; do
   echo "=== $PROJECT ==="
   if ! dotnet test "$PROJECT" \
-    --filter "Category=Integration" \
+    --filter "$TEST_FILTER" \
     --logger "console;verbosity=normal"; then
     FAILED=1
   fi

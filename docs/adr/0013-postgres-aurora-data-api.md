@@ -1,5 +1,7 @@
 # Postgres (Aurora Serverless v2 + Data API) becomes the Bank Transactions store
 
+> **Status amendment — #150:** Aurora/Data API infrastructure remains accepted. ADR-0015 and issue #150 supersede the Bank-only scope/no-Expense-migration and category-mirror authority statements below: Expense and Category are solely Postgres. Historical migrations and relational rationale remain evidence. See [the approval-gated retirement/live-acceptance runbook](../sheets-persistence-retirement.md).
+
 Date: 2026-10-05 (decided in the 2026-10-03 grilling session, T4 evolution — issues #81/#82)
 
 ## Status

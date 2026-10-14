@@ -1,7 +1,9 @@
 # ADR-0014: Categories mirror in Postgres (seeded from Sheets, declared future source of truth)
 
+> **Status amendment — #150:** Amended by the owner decision in issue #150: the existing categories table is authoritative, not a mirror. GET /Category and AI extraction use DataApiPostgresCategoriesRepository, retaining alphabetical name-only responses, Int64 IDs and FKs. No new schema/query, CRUD, automatic creation, reseeding or ID reassignment. Original mirror/seeding rationale below is retained history; its Sheets-write and future-authority statements are superseded. See [the approval-gated retirement/live-acceptance runbook](../sheets-persistence-retirement.md).
+
 Date: 2026-10-08
-Status: Accepted
+Status: Accepted; category authority amended by #150 as noted above. Original decision below is historical.
 Extends: ADR-0013 (Postgres/Aurora/Data API — Bank Transactions)
 
 ## Context

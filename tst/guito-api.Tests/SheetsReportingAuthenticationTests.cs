@@ -17,7 +17,7 @@ public class SheetsReportingAuthenticationTests
     {
         // Arrange
         using var transport = new ReportingTokenFixture();
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         using var configured = ConfigureReporting(factory, transport);
         using var client = CreateReportingClient(configured, transport.Token());
 
@@ -34,7 +34,7 @@ public class SheetsReportingAuthenticationTests
     {
         // Arrange
         using var transport = new ReportingTokenFixture();
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         using var configured = ConfigureReporting(factory, transport);
         using var client = configured.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", transport.Token());
@@ -60,7 +60,7 @@ public class SheetsReportingAuthenticationTests
     {
         // Arrange
         using var transport = new ReportingTokenFixture();
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres" };
+        using var factory = new CustomWebApplicationFactory();
         using var configured = ConfigureReporting(factory, transport);
         using var client = CreateReportingClient(configured, transport.Token());
         client.DefaultRequestHeaders.Remove("x-google-idtoken");
@@ -83,7 +83,7 @@ public class SheetsReportingAuthenticationTests
     {
         // Arrange
         using var transport = new ReportingTokenFixture();
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres" };
+        using var factory = new CustomWebApplicationFactory();
         using var configured = ConfigureReporting(factory, transport);
         using var client = CreateReportingClient(configured, transport.Token(payload => payload[claim] = value));
         client.DefaultRequestHeaders.Remove("x-google-idtoken");
@@ -103,7 +103,7 @@ public class SheetsReportingAuthenticationTests
     {
         // Arrange
         using var transport = new ReportingTokenFixture();
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres" };
+        using var factory = new CustomWebApplicationFactory();
         using var configured = ConfigureReporting(factory, transport, receiveEmptyDuplicate: duplicate.Length == 0);
         using var client = configured.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", transport.Token());
@@ -134,7 +134,7 @@ public class SheetsReportingAuthenticationTests
     {
         // Arrange
         using var transport = new ReportingTokenFixture();
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         using var configured = ConfigureReporting(factory, transport);
         using var client = CreateReportingClient(configured, transport.Token());
         using var request = new HttpRequestMessage(new HttpMethod(method), route);
@@ -157,7 +157,7 @@ public class SheetsReportingAuthenticationTests
     {
         // Arrange
         using var transport = new ReportingTokenFixture();
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres" };
+        using var factory = new CustomWebApplicationFactory();
         using var configured = ConfigureReporting(factory, transport);
         using var client = configured.CreateClient();
         client.DefaultRequestHeaders.Add("x-google-idtoken", transport.Token());
@@ -178,7 +178,7 @@ public class SheetsReportingAuthenticationTests
     {
         // Arrange
         using var transport = new ReportingTokenFixture();
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres" };
+        using var factory = new CustomWebApplicationFactory();
         using var configured = ConfigureReporting(factory, transport, subject: subject);
         using var client = CreateReportingClient(configured, transport.Token());
 
@@ -195,7 +195,7 @@ public class SheetsReportingAuthenticationTests
     {
         // Arrange
         using var transport = new ReportingTokenFixture();
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres" };
+        using var factory = new CustomWebApplicationFactory();
         using var configured = ConfigureReporting(factory, transport, humanAudience: ReportingTokenFixture.Audience);
         using var client = CreateReportingClient(configured, transport.Token());
 
@@ -214,7 +214,7 @@ public class SheetsReportingAuthenticationTests
     {
         // Arrange
         using var transport = new ReportingTokenFixture();
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres" };
+        using var factory = new CustomWebApplicationFactory();
         using var configured = ConfigureReporting(factory, transport);
         using var client = CreateReportingClient(configured, transport.Token(wrongSignature: true));
         if (!duplicateHeader) client.DefaultRequestHeaders.Remove("x-google-idtoken");
@@ -240,7 +240,7 @@ public class SheetsReportingAuthenticationTests
     {
         // Arrange
         using var transport = new ReportingTokenFixture();
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         using var configured = ConfigureReporting(factory, transport, validateIdToken: false, validateApiKey: false);
         using var client = CreateReportingClient(configured, transport.Token(p => { if (value is null) p.Remove(claim); else p[claim] = value; }));
 
@@ -257,7 +257,7 @@ public class SheetsReportingAuthenticationTests
     {
         // Arrange
         using var transport = new ReportingTokenFixture();
-        using var factory = new CustomWebApplicationFactory { ExpenseStore = "Postgres", Postgres = { PersistExpenses = true } };
+        using var factory = new CustomWebApplicationFactory { Postgres = { PersistExpenses = true } };
         using var configured = ConfigureReporting(factory, transport, validateIdToken: false, validateApiKey: false);
         using var client = CreateReportingClient(configured, UnsignedReportingToken());
 
@@ -300,7 +300,6 @@ public class SheetsReportingAuthenticationTests
     private static void AssertNoDataAccess(CustomWebApplicationFactory factory)
     {
         Assert.Empty(factory.Postgres.ExecutedSql);
-        Assert.Empty(factory.SheetsHandler.ReadRanges);
     }
 
     // HttpClient omits empty request headers; replay the received-header state at the host boundary.

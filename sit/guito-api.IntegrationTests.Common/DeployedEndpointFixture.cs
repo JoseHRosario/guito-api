@@ -5,8 +5,8 @@ namespace GuitoApi.IntegrationTests.Common;
 
 /// <summary>
 /// Live configuration of the TARGET environment (staging by default, or
-/// production), populated by scripts/run-deployed-tests.sh from AWS Secrets
-/// Manager before dotnet test starts. This process never reads AWS itself:
+/// production), populated by scripts/run-deployed-tests.sh from SSM Parameter
+/// Store before dotnet test starts. This process never reads AWS itself:
 /// the runner is the only component that touches secrets, so no credential
 /// logic is duplicated in the test code and keys exist only as process
 /// environment variables for the duration of one run.
@@ -16,10 +16,10 @@ public static class DeployedEndpointFixture
     public const string CategoryTrait = "Category";
     public const string CategoryValue = "Integration";
 
-    private static readonly Lazy<string> _baseUrl = new(RequiredEnvironment("GUITO_TARGET_BASE_URL"));
-    private static readonly Lazy<string> _agentKey = new(RequiredEnvironment("GUITO_TARGET_AGENT_KEY"));
-    private static readonly Lazy<string> _otherKey = new(RequiredEnvironment("GUITO_OTHER_AGENT_KEY"));
-    private static readonly Lazy<string> _googleIdToken = new(RequiredEnvironment("GUITO_TARGET_GOOGLE_ID_TOKEN"));
+    private static readonly Lazy<string> _baseUrl = new(() => RequiredEnvironment("GUITO_TARGET_BASE_URL"));
+    private static readonly Lazy<string> _agentKey = new(() => RequiredEnvironment("GUITO_TARGET_AGENT_KEY"));
+    private static readonly Lazy<string> _otherKey = new(() => RequiredEnvironment("GUITO_OTHER_AGENT_KEY"));
+    private static readonly Lazy<string> _googleIdToken = new(() => RequiredEnvironment("GUITO_TARGET_GOOGLE_ID_TOKEN"));
 
     /// <summary>Root of the deployed TARGET environment stack (staging default, or production), e.g. https://abc123.execute-api.eu-west-1.amazonaws.com.</summary>
     public static string BaseUrl => _baseUrl.Value.TrimEnd('/');
@@ -39,7 +39,7 @@ public static class DeployedEndpointFixture
     /// <summary>A plain client with no credentials attached.</summary>
     public static HttpClient CreateAnonymousClient()
     {
-        var client = new HttpClient();
+        var client = new HttpClient(new DeployedRequestGuard());
         client.BaseAddress = new Uri(BaseUrl);
         return client;
     }

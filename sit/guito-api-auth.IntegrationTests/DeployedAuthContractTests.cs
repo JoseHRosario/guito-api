@@ -33,6 +33,7 @@ public class DeployedAuthContractTests
     }
 
     [Fact]
+    [Trait("LiveMutation", "true")]
     public async Task TokenExchangeEndpoint_ShouldReachTheApp_WhenCalledAnonymously()
     {
         // Arrange — the exchange is unauthenticated by design (issue #52): the code
@@ -190,6 +191,7 @@ public class DeployedAuthContractTests
     /// refresh token is the human-auth minting source itself).
     /// </summary>
     [Fact]
+    [Trait("LiveMutation", "true")]
     public async Task LogoutEndpoint_ShouldReturnNoContent_WhenAgentRevokesAGarbageToken()
     {
         // Arrange
@@ -206,6 +208,7 @@ public class DeployedAuthContractTests
     /// same GARBAGE-token case as the agent-path test (never the presented token).
     /// </summary>
     [Fact]
+    [Trait("LiveMutation", "true")]
     public async Task LogoutEndpoint_ShouldReturnNoContent_WhenValidGoogleIdTokenIsPresentInBothHeaders()
     {
         // Arrange
@@ -222,6 +225,7 @@ public class DeployedAuthContractTests
     /// request was never gated at the edge.
     /// </summary>
     [Fact]
+    [Trait("LiveMutation", "true")]
     public async Task LogoutEndpoint_ShouldReturnUnauthorizedFromGateway_WhenNoAuthorizationHeaderIsPresent()
     {
         // Arrange

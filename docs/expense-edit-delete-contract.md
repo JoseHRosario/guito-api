@@ -1,10 +1,10 @@
 # Expense detail, edit and permanent deletion (#146 / guito-ui#70)
 
-Pinned API/UI contract before implementation. Personal Postgres authority only;
-all three routes reject `X-Sheet-Scope: smoke` or Sheets authority with 409.
+Supported API/UI contract. Postgres is the sole Expense authority (#150);
+any retired `X-Sheet-Scope` header is rejected with 400 before persistence writes.
 Existing shared authorised humans and agents can use them irrespective of creator.
 Reporting identities remain confined to GET /Expense/history; they cannot use these
-routes. `/Smoke/{id}` remains independent Sheets-only cleanup.
+routes. `/Smoke/{id}` is removed and never maps to personal cleanup.
 
 ## Wire contract
 
@@ -35,7 +35,7 @@ Date-only means Lisbon midnight; explicit-offset timestamps identify instants
 normalised to Europe/Lisbon. Naive local timestamps (DST gaps or unresolved folds)
 and fractions longer than six digits are 400. Clients resolve Lisbon local inputs
 before submission. Removed date/occurredAt fields are 400, other extensions ignored.
-Category is an exact name in the authoritative seeded mirror; unknown is 422.
+Category is an exact name in the authoritative Postgres categories table; unknown is 422.
 Description may be empty; omitted/null editable properties are 400.
 
 PUT returns 200 with the same detail shape and new ETag/revision. Identity,
@@ -50,7 +50,7 @@ values/list position. Latest/history subsequently reflect the committed mutation
 Errors use ProblemDetails: unauthenticated 401/403 under existing gates; invalid
 Int32 path token/overflow 400; missing If-Match 428; malformed, weak, wildcard,
 unquoted, multiple or unsupported revision tokens 400; missing/already-deleted ID
-404; existing ID with stale revision 412; scope/store unavailable 409; invalid
+404; existing ID with stale revision 412; retired X-Sheet-Scope header 400; invalid
 category 422. Preconditions and mutation are atomic, not read-then-write races.
 A successful update makes every older revision stale, including equal-value edits.
 Concurrent update/delete may produce 412 or 404 according to committed existence.
@@ -119,8 +119,8 @@ rejects removed occurrence aliases at the MVC boundary while request DTOs remain
 data-only. `HttpExpenseRevisionResolver` owns header parsing behind the service
 interface; it does not replace the repository's atomic revision check. Both detail
 operations use the explicit `ExpenseDetailResponseMapper` at the service boundary.
-Personal deletion is `IDeleteExpenseService` / `DeleteExpenseService`; the separate
-Sheets smoke cleanup is `IDeleteExpenseRowService` / `DeleteExpenseRowService`.
+Personal deletion is `IDeleteExpenseService` / `DeleteExpenseService`.
+The former `IDeleteExpenseRowService` / `DeleteExpenseRowService` Sheets smoke cleanup is retired under #150.
 The HTTP DELETE verb and reporting confinement are unchanged.
 
 Human acceptance now exercises the real HTTP pipeline and Google SDK RS256
@@ -167,7 +167,12 @@ five of six cases; `/warm` remained successful because it does not resolve that
 unit. Restoring the fix passed all nine scope regressions. These are local
 HTTP-host/real-repository checks, not live PostgreSQL or deployed acceptance.
 
-## Aggregate repository consolidation
+## Historical aggregate repository consolidation (#146)
+
+The following implementation/test evidence predates #150. Its Sheets adapters,
+`DeleteSmokeAsync`, `/Smoke` and store/scope guards are retired; current behavior
+is the supported contract above. Preserve these results as evidence of that ref,
+not instructions or acceptance of the retirement build.
 
 The per-operation services now consume `IExpenseRepository` for `ReadAsync(id)`,
 `UpdateAsync(id, revision, ExpenseEdit)` and `DeleteAsync(id, revision)`, alongside

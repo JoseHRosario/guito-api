@@ -55,7 +55,7 @@ public class BankTransactionSyncSuggestionTests
             transactions,
             categories,
             new OpenRouterExpenseExtractionRepository(
-                Microsoft.Extensions.Options.Options.Create(TestSheetsConfiguration.Build()),
+                Microsoft.Extensions.Options.Options.Create(new GuitoApi.Configuration.AppConfigurationOptions()),
                 new FakeSecretsProvider(),
                 new FakeOpenRouterClientProvider(openRouter)));
     }
