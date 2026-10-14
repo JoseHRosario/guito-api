@@ -22,7 +22,7 @@ reads current values; clients requiring a stable archive must coordinate writes
 outside this endpoint. Single-page consistency does not guarantee multi-page
 consistency.
 
-Any retired `X-Sheet-Scope` header returns 400 before writes; there is no
+The legacy `X-Sheet-Scope` header is ignored; there is no
 Sheets-history fallback or selectable authority. `/Smoke` is removed. Human/agent
 auth and ADR-0017 reporting-only confinement remain unchanged.
 
@@ -35,7 +35,7 @@ guarantee for unusually large descriptions/amounts.
 ## Verification
 
 The endpoint's hermetic C# HTTP tests remain in CI, along with the existing
-isolated staging auth/business round-trip suites. See [live acceptance](sheets-persistence-retirement.md); production verification is read-only. Full-history database parity is a one-time
+deployed auth-contract and read-only business suites. See [live acceptance](sheets-persistence-retirement.md); production verification is read-only. Full-history database parity is a one-time
 acceptance check performed through the agent session, not a recurring pipeline
 job. Record the exact deployed commit, all-page retrieval through both auth paths,
 per-record stored parity and source-drift checks in the PR. No dedicated Python

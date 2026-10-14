@@ -81,8 +81,7 @@ jobs:
         run: ENV=staging ./deploy/deploy.sh
       - name: Read-only auth and business verification (no synthetic records)
         run: ./scripts/run-deployed-tests.sh staging read-only
-      # Disposable Postgres acceptance is a separate, operator-attested local runner
-      # gate; deploying staging does not establish isolation or authorize test writes.
+      # Replacement write acceptance is deferred; no synthetic financial records.
 
   deploy-production:
     name: deploy + smoke (production)

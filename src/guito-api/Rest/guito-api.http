@@ -65,9 +65,7 @@ x-google-idtoken: {{MintToken.response.body.$.id_token}}
 Authorization: Bearer {{Mint...en}}
 
 
-# No header-based test datastore exists: X-Sheet-Scope is retired (400).
-# Synthetic create/delete acceptance must use operator-attested disposable Postgres:
-# GUITO_STAGING_ISOLATION_FILE=<attestation.json> scripts/run-deployed-tests.sh staging round-trip
-# Never manually POST test Expenses or delete guessed/list-position IDs.
+# X-Sheet-Scope is ignored; no header-based test datastore exists. /Smoke is removed (404).
+# Deployed business checks are read-only; replacement write acceptance is deferred.
 # Production verification: scripts/run-deployed-tests.sh production read-only
-# Isolation/approval contract: scripts/deployed-tests.md
+# Evidence and credential approval boundaries: docs/sheets-persistence-retirement.md

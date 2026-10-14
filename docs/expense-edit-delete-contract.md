@@ -1,7 +1,7 @@
 # Expense detail, edit and permanent deletion (#146 / guito-ui#70)
 
 Supported API/UI contract. Postgres is the sole Expense authority (#150);
-any retired `X-Sheet-Scope` header is rejected with 400 before persistence writes.
+the legacy `X-Sheet-Scope` header is ignored.
 Existing shared authorised humans and agents can use them irrespective of creator.
 Reporting identities remain confined to GET /Expense/history; they cannot use these
 routes. `/Smoke/{id}` is removed and never maps to personal cleanup.
@@ -50,7 +50,7 @@ values/list position. Latest/history subsequently reflect the committed mutation
 Errors use ProblemDetails: unauthenticated 401/403 under existing gates; invalid
 Int32 path token/overflow 400; missing If-Match 428; malformed, weak, wildcard,
 unquoted, multiple or unsupported revision tokens 400; missing/already-deleted ID
-404; existing ID with stale revision 412; retired X-Sheet-Scope header 400; invalid
+404; existing ID with stale revision 412; invalid
 category 422. Preconditions and mutation are atomic, not read-then-write races.
 A successful update makes every older revision stale, including equal-value edits.
 Concurrent update/delete may produce 412 or 404 according to committed existence.

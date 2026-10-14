@@ -30,7 +30,7 @@ export PATH="$HOME/.dotnet:$PATH" DOTNET_ROOT="$HOME/.dotnet"   # .NET SDK is NO
 dotnet build          # build
 dotnet run --project src/guito-api  # local dev server (Kestrel) — plain dotnet run, no Lambda emulation
 dotnet test --filter "Category!=Integration"   # hermetic unit tests (bare `dotnet test` FAILS without env vars — sit/ suites are not hermetic)
-scripts/run-deployed-tests.sh staging read-only  # approval-gated; round-trip requires isolated Postgres (docs/sheets-persistence-retirement.md)
+scripts/run-deployed-tests.sh staging read-only  # approval-gated; business reads plus established auth-contract checks
 dotnet tool restore   # if Lambda tools are needed for packaging checks
 # Migrations and deployment run through GitHub Actions; production requires explicit owner approval.
 ```
@@ -41,7 +41,7 @@ Lambda packaging happens in CI (Amazon.Lambda.Tools). Do not add local Lambda em
 
 - **Secrets never enter the repo.** Bank-provider credentials, API keys — application secrets live in SSM Parameter Store SecureString; database credentials remain in Secrets Manager for RDS Data API (ADR 0008); local dev uses `appsettings.*.json` files that are gitignored. API startup has no Sheets service-account/key-file prerequisite.
 - **Respect the ADRs.** Postgres is the sole Expense and Category authority (#150, amended ADR-0014/0015); auth is dual (Google PKCE for humans, `X-Api-Key` for agents); bank sync goes through the provider interface — do not bypass these without a new ADR.
-- **Reporting boundary**: Apps Script reads the API and writes presentation tabs only; preserve archives, installer OAuth and reporting identity. For deployed acceptance or credential retirement, read [the approval-gated runbook](docs/sheets-persistence-retirement.md). Reject every retired `X-Sheet-Scope` header before writes; `/Smoke` is removed, never personal cleanup.
+- **Reporting boundary**: Apps Script reads the API and writes presentation tabs only; preserve archives, installer OAuth and reporting identity. For deployed acceptance or credential retirement, read [the approval-gated runbook](docs/sheets-persistence-retirement.md). The legacy `X-Sheet-Scope` header is ignored; `/Smoke` is removed (404), never personal cleanup.
 - **Auth paths are separate.** Human (Google ID token) and agent (`X-Api-Key`) authorization are distinct authorizers; never merge or weaken them.
 - **The extraction endpoint (`POST /AI/extract`) calls OpenRouter**: a chat model extracts date/amount/merchant, Jev gates the note and picks the category (PR #73).
 - **Workflow**: feature or bug branch → PR → reviewed and merged by José. One branch per issue, named `feature/<issue#>-<slug>` or `bug/<issue#>-<slug>` (issue number first); the PR body **must end with `Closes #N`** so GitHub closes the issue on merge into `master`. Feature issues use the Feature issue template; bug issues use the Bug issue template (bug = something that worked as intended is broken — code regression, wrong behavior, broken config; environment/CI/docs work stays under existing informal prefixes). **Version (ADR 0012)**: every feature/bug issue carries a mandatory *Proposed version*; the agent bumps the declared version (`<Version>` in `src/guito-api/guito-api.csproj`) on the branch as part of the work — no git tags, every build stamps `<version>+<UTCts>.<shortsha>`. Never push directly to `master`.
@@ -90,7 +90,7 @@ Request path: **Controller → Service → Data access**. Each layer has one job
 ### Testing (`tst/guito-api.Tests/`)
 - **Unit tests only — they run in CI.** No network, no credentials, no live datastore access; the suite must pass without Sheets keys or persistence settings. Anything needing the real spreadsheet or a bank provider is out of scope for this project.
 - External behavior only: HTTP boundary via `WebApplicationFactory<Program>` (`CustomWebApplicationFactory`), never internals. Explicit issue #95 exception (José-approved test seams): secret-provider contract tests may call `ISecretsProvider`, `IHumanAuthSecretProvider`, and `IEnableBankingCredentialsProvider` directly with hermetic AWS fakes to verify decryption, caching, cancellation, and backend selection. Authorizer key-loading tests likewise exercise `IKeysLoader`. Live auth and business behavior remains covered by the deployed SIT suites.
-- Expense/Category tests use fake Data API transport through HTTP/service/repository seams; retain unrelated human/agent/reporting auth coverage. Live staging writes require proven datastore isolation; production verification is read-only.
+- Expense/Category tests use fake Data API transport through HTTP/service/repository seams; retain unrelated human/agent/reporting auth coverage. Replacement deployed write acceptance is deferred; deployed business tests perform reads only.
 - Compositions get replaced via DI in the test factory (`IListTransactionsService` → dummy), mirroring the service-seam pattern.
 
 ### Configuration

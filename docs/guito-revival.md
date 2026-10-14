@@ -12,13 +12,12 @@ CRUD, automatic creation, schema changes or reseeding.
 
 Build/hermetic tests need no Sheets key. Local Kestrel uses
 `dotnet run --project src/guito-api` with approved non-production configuration.
-Deployment/migrations remain through GitHub Actions. Staging write acceptance
-requires proven isolated Postgres and revision-aware cleanup; production checks
-are read-only. Human Google login, agent auth, OpenRouter/bank/database secrets,
+Deployment/migrations remain through GitHub Actions. Replacement write acceptance
+is deferred; deployed business tests perform reads only. Human Google login, agent auth, OpenRouter/bank/database secrets,
 Apps Script installer OAuth and reporting identity remain supported.
 
 [Retirement/live acceptance](sheets-persistence-retirement.md) separates code,
-hermetic tests, approved rollout, isolated staging cleanup, production reads,
+hermetic tests, approved rollout, deferred write acceptance, production reads,
 reporting verification and destructive credential approval. No new live gate or
 credential destruction is asserted here. Completed #129 imports remain retired.
 #149 owns broader docs routing/restructuring; this update changes authority and

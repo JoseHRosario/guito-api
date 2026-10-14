@@ -49,7 +49,7 @@ single-user visibility; `creatorEmail` is attribution, **not a filter**.
 - Order is `booking_date DESC, id DESC` (numeric identity breaks occurrence ties).
 - No pagination, cursor, record cap or latest-endpoint limit. A known category with
   no matching Expenses returns `200` and `{"expenses":[]}`.
-- Any `X-Sheet-Scope` header returns `400`; it is retired, not a datastore override.
+- The legacy `X-Sheet-Scope` header is ignored, not a datastore override.
   No alternate dataset is queried.
 
 ## Successful response
@@ -87,7 +87,6 @@ Expected query errors use `application/problem+json` ProblemDetails:
 | --- | --- |
 | 400 | Missing/empty category or month; malformed/non-calendar `YYYY-MM`. |
 | 422 | Nonblank category has no exact Postgres match. |
-| 400 | Retired `X-Sheet-Scope` header is present. No alternate dataset is queried. |
 | 502 | Data API provider failure/response limit or unsupported exact database amount. No partial array is returned. |
 | 500 | Unexpected server failure. |
 

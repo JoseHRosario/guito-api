@@ -39,7 +39,7 @@ public static class DeployedEndpointFixture
     /// <summary>A plain client with no credentials attached.</summary>
     public static HttpClient CreateAnonymousClient()
     {
-        var client = new HttpClient(new DeployedRequestGuard());
+        var client = new HttpClient();
         client.BaseAddress = new Uri(BaseUrl);
         return client;
     }

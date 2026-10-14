@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # T8.2 (issue #22) / T5 (issue #6): run the deployed-endpoint integration test
 # suite against the LIVE stack of a target environment.
-#   Usage: scripts/run-deployed-tests.sh [staging|production] [read-only|round-trip] (default: staging read-only)
+#   Usage: scripts/run-deployed-tests.sh [staging|production] [read-only] (default: staging read-only)
 #
 # The suite needs four values this script resolves from AWS (SSM Parameter Store /
 # API Gateway / Lambda) at run time; no key or token is ever stored in the repo
@@ -32,15 +32,9 @@ PROD_AUTHORIZER=guito-api-authorizer   # GOOGLE_CLIENT_ID always read from prod 
 
 ENV_TARGET=${1:-staging}
 MODE=${2:-read-only}
-export GUITO_TARGET_ENVIRONMENT="$ENV_TARGET" GUITO_TEST_MODE="$MODE"
-unset GUITO_STAGING_ISOLATION
 case "$MODE" in
-  read-only) TEST_FILTER='Category=Integration&LiveMutation!=true' ;;
-  round-trip)
-    [ "$ENV_TARGET" = staging ] || { echo 'FATAL: production verification is read-only' >&2; exit 1; }
-    [ -n "${GUITO_STAGING_ISOLATION_FILE:-}" ] || { echo 'FATAL: operator-attested disposable staging isolation is required' >&2; exit 1; }
-    TEST_FILTER='Category=Integration' ;;
-  *) echo 'Usage: run-deployed-tests.sh [staging|production] [read-only|round-trip]' >&2; exit 1 ;;
+  read-only) ;;
+  *) echo 'Usage: run-deployed-tests.sh [staging|production] [read-only]' >&2; exit 1 ;;
 esac
 case "$ENV_TARGET" in
   staging)    API_NAME=guito-api-staging; TARGET_SECRET=/guito-api/staging; OTHER_SECRET=/guito-api/prod ;;
@@ -93,13 +87,6 @@ else
   echo "No custom-domain mapping for $API_NAME — using $GUITO_TARGET_BASE_URL."
 fi
 
-# Establish isolation before credentials are minted or any test can send a mutation.
-if [ "$MODE" = round-trip ]; then
-  GUITO_STAGING_ISOLATION=$(python3 "$REPO_ROOT/scripts/validate-staging-isolation.py" \
-    "$GUITO_STAGING_ISOLATION_FILE" "$GUITO_TARGET_BASE_URL")
-  export GUITO_STAGING_ISOLATION
-fi
-
 # --- Resolve both agent keys from SSM Parameter Store -----------------------------
 secret_key() {
   aws --region "$REGION" ssm get-parameter --with-decryption --name "$1" \
@@ -148,7 +135,8 @@ except Exception as e:
 echo "Google ID token minted for human-path tests."
 
 # --- Run both suites (keys passed as env vars; never written anywhere) -------
-# One resolution, both domain suites: auth contract, then business round-trip.
+# One resolution, both suites: established auth contract, then business reads.
+# No financial writes; auth tests retain invalid-code/garbage-token POST coverage.
 # Common (guito-api.IntegrationTests.Common) is shared plumbing, never run directly.
 cd "$REPO_ROOT"
 
@@ -184,7 +172,7 @@ FAILED=0
 for PROJECT in "${PROJECTS[@]}"; do
   echo "=== $PROJECT ==="
   if ! dotnet test "$PROJECT" \
-    --filter "$TEST_FILTER" \
+    --filter "Category=Integration" \
     --logger "console;verbosity=normal"; then
     FAILED=1
   fi

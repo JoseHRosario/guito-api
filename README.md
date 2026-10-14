@@ -44,7 +44,7 @@ dotnet run --project src/guito-api  # Kestrel on an explicitly configured non-pr
 
 ```bash
 dotnet test --filter "Category!=Integration"   # hermetic unit tests (CI gate)
-scripts/run-deployed-tests.sh staging read-only  # approved window; writes require isolated Postgres preflight
+scripts/run-deployed-tests.sh staging read-only  # approved window; business reads and established auth checks
 ```
 
 Configuration comes from `appsettings.{Environment}.json` plus environment variables (Data API references, authentication and provider configuration). Application secrets remain in SSM SecureString; database credentials remain in Secrets Manager for RDS Data API (ADR-0008). Never commit either or copy them for hermetic tests. Local development must not target production.
@@ -101,19 +101,17 @@ stored. EUR remains a compatibility wire value. Latest orders booking date then 
 ID descending; `updateDate` is null until an explicit update. Unknown category names
 not present in Postgres return 422; requests never seed categories.
 Latest has no `storedOrder`, `date` or `occurredAt` aliases; callers use `id`.
-Every request carrying `X-Sheet-Scope` is rejected before persistence writes;
+The legacy `X-Sheet-Scope` header is ignored;
 there is no scope override. `/Smoke/{id}` is removed and must never map to a
 personal Expense operation. `AppConfiguration:ExpenseStore` / `EXPENSE_STORE`
 are retired, not deployment controls.
 
-Deployed staging verification uses a proven isolated Postgres datastore and the
-supported create/list/detail/revision-aware DELETE round-trip. Production checks
-are read-only. [The runbook](docs/sheets-persistence-retirement.md) defines approval,
-isolation, cleanup, reporting/auth retention and credential-retirement gates.
-If safe isolation is unavailable, the write gate is BLOCKED, not redirected to
-personal data. Routine deployment/migrations run through GitHub Actions, without
-Expense resets or repeated historical imports. Real persistence and privileges
-need separate deployed evidence; fake Data API tests cannot establish them.
+Deployed business verification performs reads only; the established auth-contract
+checks still POST invalid codes and garbage tokens, never valid financial writes.
+Replacement write acceptance is deferred; this removal adds no isolation or
+cleanup framework. See [retirement evidence boundaries](docs/sheets-persistence-retirement.md).
+Routine deployment/migrations run through GitHub Actions without Expense resets
+or repeated imports. Hermetic fakes do not establish live persistence or privileges.
 
 ## Deployment
 

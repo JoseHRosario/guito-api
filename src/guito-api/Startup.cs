@@ -204,7 +204,6 @@ namespace GuitoApi
             // Build-version stamp on every response (issue #75) — before the auth
             // middlewares so rejected requests carry it too.
             app.UseMiddleware<VersionHeaderMiddleware>();
-            app.UseMiddleware<RetiredSheetScopeMiddleware>();
             // Confine reporting first (ADR-0017), then preserve independent agent/human gates (ADR-0003).
             app.UseMiddleware<SheetsReportingAuthenticationMiddleware>();
             app.UseMiddleware<ApiKeyMiddleware>();

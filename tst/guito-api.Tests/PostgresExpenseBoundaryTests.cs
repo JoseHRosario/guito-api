@@ -179,7 +179,7 @@ public class PostgresExpenseBoundaryTests
         var response = await client.SendAsync(request);
 
         // Assert
-        Assert.Equal(smoke ? HttpStatusCode.BadRequest : HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Empty(factory.Postgres.ExecutedSql);
     }
 

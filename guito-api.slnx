@@ -31,7 +31,6 @@
     <File Path="docs/adr/0010-amounts-stored-positive.md" />
   </Folder>
   <Folder Name="/sit/">
-    <Project Path="sit/guito-api.GuardTests/guito-api.GuardTests.csproj" />
     <Project Path="sit/guito-api-auth.IntegrationTests/guito-api-auth.IntegrationTests.csproj" />
     <Project Path="sit/guito-api.IntegrationTests.Common/guito-api.IntegrationTests.Common.csproj" />
     <Project Path="sit/guito-api.IntegrationTests/guito-api.IntegrationTests.csproj" />

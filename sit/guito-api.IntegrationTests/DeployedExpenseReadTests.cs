@@ -5,26 +5,8 @@ using GuitoApi.IntegrationTests.Common;
 namespace GuitoApi.IntegrationTests;
 
 [Trait(DeployedEndpointFixture.CategoryTrait, DeployedEndpointFixture.CategoryValue)]
-public class DeployedExpenseRoundTripTests
+public class DeployedExpenseReadTests
 {
-    [Fact]
-    [Trait("LiveMutation", "true")]
-    public async Task ExpenseRoundTrip_ShouldCreateListReadThenDelete_WhenDisposableStagingIsAttested()
-    {
-        var expense = new DisposableExpenseFixture(DeployedRequestGuard.RequireIsolation());
-        using var client = DeployedEndpointFixture.CreateAgentClient(DeployedEndpointFixture.AgentKey);
-        await expense.CreateAsync(client);
-        try
-        {
-            using var freshClient = DeployedEndpointFixture.CreateGoogleClient(DeployedEndpointFixture.GoogleIdToken);
-            await expense.VerifyCreatedAsync(freshClient);
-        }
-        finally
-        {
-            await expense.CleanupAsync(client);
-        }
-    }
-
     [Fact]
     public async Task Categories_ShouldReturnNameOnlyRows_WhenReadingPostgres()
     {
