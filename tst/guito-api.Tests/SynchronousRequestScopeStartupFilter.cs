@@ -25,12 +25,7 @@ internal sealed class SynchronousRequestScopeStartupFilter(bool synchronous = tr
         IUnitOfWork? abandonedUnit = null;
         try
         {
-            // A host-abandoned transaction wraps the actual create action, not test SQL.
-            if (context.Request.Headers.ContainsKey("X-Test-Abandon-Transaction"))
-            {
-                abandonedUnit = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-                await abandonedUnit.BeginAsync(context.RequestAborted);
-            }
+            abandonedUnit = await BeginAbandonedUnitAsync(context, scope.ServiceProvider);
             await next(context);
         }
         finally
@@ -45,20 +40,39 @@ internal sealed class SynchronousRequestScopeStartupFilter(bool synchronous = tr
         Exception? failure = null;
         try
         {
-            if (synchronous) scope.Dispose();
-            else await scope.DisposeAsync();
+            await DisposeModeAsync(scope);
         }
         catch (Exception exception)
         {
             failure = exception;
             if (recoverRollback is null || abandonedUnit is null) throw;
-            // Retry the same unit after restoring transport; only an uncleared context can roll back.
-            recoverRollback();
-            await abandonedUnit.DisposeAsync();
+            await RecoverRollbackAsync(abandonedUnit);
         }
         finally
         {
             DisposalCompleted.TrySetResult(failure);
         }
+    }
+
+    private async Task DisposeModeAsync(AsyncServiceScope scope)
+    {
+        if (synchronous) scope.Dispose();
+        else await scope.DisposeAsync();
+    }
+
+    private static async Task<IUnitOfWork?> BeginAbandonedUnitAsync(HttpContext context, IServiceProvider services)
+    {
+        // A host-abandoned transaction wraps the actual create action, not test SQL.
+        if (!context.Request.Headers.ContainsKey("X-Test-Abandon-Transaction")) return null;
+        var unit = services.GetRequiredService<IUnitOfWork>();
+        await unit.BeginAsync(context.RequestAborted);
+        return unit;
+    }
+
+    private async Task RecoverRollbackAsync(IUnitOfWork abandonedUnit)
+    {
+        // Retry the same unit after restoring transport; only an uncleared context can roll back.
+        recoverRollback!();
+        await abandonedUnit.DisposeAsync();
     }
 }

@@ -55,8 +55,26 @@ public class ExpenseSynchronousScopeDisposalTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Null(failure);
         await AssertRestoredAsync(factory, observer, before);
-        using var next = AbandonedCreateRequest();
-        using var repeated = await client.SendAsync(next);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Http_ShouldRollbackRepeatedCreation_WhenPreviousScopeWasDisposedAsync(bool synchronous)
+    {
+        // Arrange
+        using var factory = CreateFactory();
+        using var host = WithLifecycle(factory, new SynchronousRequestScopeStartupFilter(synchronous));
+        using var client = host.CreateClient();
+        using var first = AbandonedCreateRequest();
+        using var second = AbandonedCreateRequest();
+
+        // Act
+        using var original = await client.SendAsync(first);
+        using var repeated = await client.SendAsync(second);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, original.StatusCode);
         Assert.Equal(HttpStatusCode.OK, repeated.StatusCode);
         Assert.Equal(2, factory.Postgres.Rollbacks);
     }
