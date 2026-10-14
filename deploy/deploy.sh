@@ -243,7 +243,7 @@ AUTH_ARN=$(aws --region "$REGION" lambda get-function --function-name "$AUTH_NAM
 # sees an OPTIONS. AllowOrigins * is safe here: every non-exchange route stays
 # auth-gated at the authorizer; the exchange is unauthenticated by design.
 aws --region "$REGION" apigatewayv2 update-api --api-id "$API_ID" \
-  --cors-configuration '{"AllowOrigins":["*"],"AllowMethods":["GET","POST","OPTIONS"],"AllowHeaders":["content-type","x-api-key","authorization","x-google-idtoken"],"ExposeHeaders":["x-api-version"],"MaxAge":86400}' >/dev/null 2>&1 || true
+  --cors-configuration '{"AllowOrigins":["*"],"AllowMethods":["GET","POST","PUT","DELETE","OPTIONS"],"AllowHeaders":["content-type","x-api-key","authorization","x-google-idtoken","if-match"],"ExposeHeaders":["x-api-version","etag"],"MaxAge":86400}' >/dev/null 2>&1 || true
 
 AUTH_ID=$(aws --region "$REGION" apigatewayv2 get-authorizers --api-id "$API_ID" --query "Items[?Name=='guito-key-authorizer'].AuthorizerId" --output text)
 [ -n "$AUTH_ID" ] || AUTH_ID=$(aws --region "$REGION" apigatewayv2 create-authorizer --api-id "$API_ID" --name guito-key-authorizer \

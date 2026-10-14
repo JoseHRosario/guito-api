@@ -12,6 +12,16 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
     public Queue<PostgresResult> NextResults { get; } = new();
     public bool PersistExpenses { get; set; }
     private readonly List<IReadOnlyList<PostgresValue>> _expenses = [];
+    private readonly Dictionary<int, long> _revisions = [];
+    private readonly SemaphoreSlim _transactionGate = new(1);
+    private List<IReadOnlyList<PostgresValue>>? _snapshot;
+    private Dictionary<int, long>? _revisionSnapshot;
+    public int Commits { get; private set; }
+    public int Rollbacks { get; private set; }
+    public bool HasBankReviewSchema { get; set; }
+    public Dictionary<long, (int? ExpenseId, string Status)> LinkedTransactions { get; } = [];
+    private Dictionary<long, (int? ExpenseId, string Status)>? _linksSnapshot;
+
 
     public void SeedExpense(int id, string bookingDate, string amount, string category, string creatorEmail = "human@example.com", string description = "Original purchase") =>
         _expenses.Add([PostgresValue.FromString(id.ToString(System.Globalization.CultureInfo.InvariantCulture)),
@@ -33,6 +43,31 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
             return ExpenseCategoryIds.TryGetValue(values["name"].StringValue!, out var categoryId)
                 ? new PostgresResult([], [[PostgresValue.FromLong(categoryId)]], 0)
                 : new PostgresResult([], [], 0);
+        if (sql.StartsWith("DELETE FROM expenses", StringComparison.Ordinal))
+        {
+            var count = _expenses.RemoveAll(r => (!sql.Contains("id = :id", StringComparison.Ordinal) || int.Parse(r[0].StringValue!) == values["id"].LongValue)
+                && (!sql.Contains("revision = :revision", StringComparison.Ordinal) || _revisions.GetValueOrDefault(int.Parse(r[0].StringValue!), 1) == values["revision"].LongValue));
+            return new PostgresResult([], [], count);
+        }
+        if (sql.StartsWith("UPDATE bank_transactions", StringComparison.Ordinal))
+        {
+            var parameter = values["expense_id"];
+            if (HasBankReviewSchema && (parameter.LongValue is null || !sql.Contains("review_status = 'needsReview'", StringComparison.Ordinal)))
+                throw new InvalidOperationException("Integer links require typed binding and atomic review-state reset.");
+            var id = parameter.LongValue ?? long.Parse(parameter.StringValue!);
+            var targets = LinkedTransactions.Where(t => !sql.Contains("WHERE expense_id = :expense_id", StringComparison.Ordinal) || t.Value.ExpenseId == id).ToArray();
+            foreach (var target in targets)
+                LinkedTransactions[target.Key] = (null, HasBankReviewSchema ? "needsReview" : target.Value.Status);
+            return new PostgresResult([], [], targets.Length);
+        }
+        if (sql.StartsWith("UPDATE expenses", StringComparison.Ordinal))
+            return UpdateExpense(sql, values);
+        if (sql.StartsWith("SELECT id FROM expenses", StringComparison.Ordinal))
+        {
+            var rows = _expenses.Where(r => !sql.Contains("WHERE id = :id", StringComparison.Ordinal)
+                || int.Parse(r[0].StringValue!) == values["id"].LongValue).Select(r => (IReadOnlyList<PostgresValue>)new[] { r[0] }).ToList();
+            return new PostgresResult([], rows, 0);
+        }
         if (sql.StartsWith("INSERT INTO expenses", StringComparison.Ordinal))
             return InsertExpense(values);
         if (sql.Contains("LEFT JOIN LATERAL", StringComparison.Ordinal))
@@ -56,7 +91,30 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
             rows = rows.OrderByDescending(r => DateTimeOffset.Parse(r[1].StringValue!))
                 .ThenByDescending(r => int.Parse(r[0].StringValue!, System.Globalization.CultureInfo.InvariantCulture));
         if (sql.Contains("LIMIT :limit", StringComparison.Ordinal)) rows = rows.Take((int)values["limit"].LongValue!);
+        if (sql.Contains("e.id = :id", StringComparison.Ordinal))
+            rows = rows.Where(r => int.Parse(r[0].StringValue!) == values["id"].LongValue);
+        if (sql.Contains("CAST(e.revision AS text)", StringComparison.Ordinal))
+            rows = rows.Select(r => (IReadOnlyList<PostgresValue>)r.Concat([PostgresValue.FromString(_revisions.GetValueOrDefault(int.Parse(r[0].StringValue!), 1).ToString())]).ToArray());
         return new PostgresResult([], rows.ToList(), 0);
+    }
+
+    private PostgresResult UpdateExpense(string sql, Dictionary<string, PostgresValue> values)
+    {
+        var targets = _expenses.Where(r => (!sql.Contains("id = :id", StringComparison.Ordinal) || int.Parse(r[0].StringValue!) == values["id"].LongValue)
+            && (!sql.Contains("revision = :revision", StringComparison.Ordinal) || _revisions.GetValueOrDefault(int.Parse(r[0].StringValue!), 1) == values["revision"].LongValue)).ToArray();
+        foreach (var row in targets)
+        {
+            var updated = row.ToArray();
+            var id = int.Parse(row[0].StringValue!);
+            updated[1] = values["booking_date"];
+            if (!sql.Contains("THEN amount ELSE", StringComparison.Ordinal) || decimal.Parse(row[2].StringValue!) != decimal.Parse(values["amount"].StringValue!)) updated[2] = values["amount"];
+            updated[3] = values["description"];
+            updated[4] = PostgresValue.FromString(ExpenseCategoryIds.Single(c => c.Value == values["category_id"].LongValue).Key);
+            if (sql.Contains("update_date = clock_timestamp()", StringComparison.Ordinal)) updated[7] = PostgresValue.FromString("2027-02-02T10:00:00.654321Z");
+            if (sql.Contains("revision = revision + 1", StringComparison.Ordinal)) _revisions[id] = _revisions.GetValueOrDefault(id, 1) + 1;
+            _expenses[_expenses.IndexOf(row)] = updated;
+        }
+        return new PostgresResult([], [], targets.Length);
     }
 
     private PostgresResult InsertExpense(Dictionary<string, PostgresValue> values)
@@ -111,7 +169,12 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
         ExecutedCancellationTokens.Add(cancellationToken);
         if (ExecuteException is not null && ExecutedSql.Count >= ExecuteExceptionAtCall)
             throw ExecuteException;
-        if (PersistExpenses && NextResults.Count == 0 && (sql.Contains("expenses", StringComparison.Ordinal)
+        if (PersistExpenses && sql.Contains("information_schema.columns", StringComparison.Ordinal))
+            return Task.FromResult(HasBankReviewSchema
+                ? new PostgresResult([], [[PostgresValue.FromString("expense_id"), PostgresValue.FromString("integer")],
+                    [PostgresValue.FromString("review_status"), PostgresValue.FromString("text")]], 0)
+                : new PostgresResult([], [[PostgresValue.FromString("expense_id"), PostgresValue.FromString("text")]], 0));
+        if (PersistExpenses && NextResults.Count == 0 && (sql.Contains("expenses", StringComparison.Ordinal) || sql.StartsWith("UPDATE bank_transactions", StringComparison.Ordinal)
             || sql == "SELECT id FROM categories WHERE name = :name"))
             return Task.FromResult(ExecuteExpense(sql, parameters));
         return Task.FromResult(NextResults.Count > 0
@@ -119,10 +182,35 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
             : new PostgresResult([], [], 0));
     }
 
-    public Task<string> BeginTransactionAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult(NextTransactionId ?? throw new InvalidOperationException("No transaction id scripted."));
+    public async Task<string> BeginTransactionAsync(CancellationToken cancellationToken = default)
+    {
+        var id = NextTransactionId ?? throw new InvalidOperationException("No transaction id scripted.");
+        await _transactionGate.WaitAsync(cancellationToken);
+        _snapshot = _expenses.ToList();
+        _revisionSnapshot = new(_revisions);
+        _linksSnapshot = new(LinkedTransactions);
+        return id;
+    }
 
-    public Task CommitAsync(string transactionId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    public Task CommitAsync(string transactionId, CancellationToken cancellationToken = default)
+    {
+        Commits++;
+        _snapshot = null;
+        _transactionGate.Release();
+        return Task.CompletedTask;
+    }
 
-    public Task RollbackAsync(string transactionId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    public Task RollbackAsync(string transactionId, CancellationToken cancellationToken = default)
+    {
+        Rollbacks++;
+        _expenses.Clear();
+        _expenses.AddRange(_snapshot!);
+        _revisions.Clear();
+        foreach (var pair in _revisionSnapshot!) _revisions.Add(pair.Key, pair.Value);
+        LinkedTransactions.Clear();
+        foreach (var pair in _linksSnapshot!) LinkedTransactions.Add(pair.Key, pair.Value);
+        _snapshot = null;
+        _transactionGate.Release();
+        return Task.CompletedTask;
+    }
 }

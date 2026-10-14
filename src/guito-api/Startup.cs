@@ -48,7 +48,7 @@ namespace GuitoApi
                     builder.AllowAnyOrigin()
                            .AllowAnyMethod()
                            .AllowAnyHeader()
-                           .WithExposedHeaders(VersionHeaderMiddleware.HeaderName);
+                           .WithExposedHeaders(VersionHeaderMiddleware.HeaderName, "ETag");
                 });
                 o.AddPolicy("AllowOnlyWebApp", builder =>
                 {
@@ -58,7 +58,7 @@ namespace GuitoApi
                     builder.WithOrigins(allowedOrigins)
                            .AllowAnyMethod()
                            .AllowAnyHeader()
-                           .WithExposedHeaders(VersionHeaderMiddleware.HeaderName);
+                           .WithExposedHeaders(VersionHeaderMiddleware.HeaderName, "ETag");
                 });
             });
             services.AddHttpClient("SheetsReportingJwks");
@@ -112,6 +112,17 @@ namespace GuitoApi
                 return ActivatorUtilities.CreateInstance<DataApiPostgresExpenseHistoryRepository>(sp);
             });
             services.AddScoped<IReadExpenseHistoryService, ReadExpenseHistoryService>();
+            services.AddScoped<IExpenseDetailRepository>(sp =>
+            {
+                if (sp.GetRequiredService<ISheetScopeResolver>().IsSmokeScope
+                    || sp.GetRequiredService<IOptions<AppConfigurationOptions>>().Value.ExpenseStore != "Postgres")
+                    return new UnavailableExpenseDetailRepository();
+                return ActivatorUtilities.CreateInstance<DataApiPostgresExpenseDetailRepository>(sp);
+            });
+            services.AddScoped<IReadExpenseDetailService, ReadExpenseDetailService>();
+            services.AddScoped<IUpdateExpenseService, UpdateExpenseService>();
+            services.AddScoped<IDeletePersonalExpenseService, DeletePersonalExpenseService>();
+            services.AddScoped<IExpenseRevisionResolver, HttpExpenseRevisionResolver>();
 
             services.AddScoped<ICreateExpenseService, CreateExpenseService>();
             services.AddScoped<IMatchExpensesService, MatchExpensesService>();

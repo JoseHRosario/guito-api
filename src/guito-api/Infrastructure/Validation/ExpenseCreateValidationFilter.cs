@@ -8,8 +8,9 @@ public sealed class ExpenseCreateValidationFilter : IActionFilter
 {
     public void OnActionExecuting(ActionExecutingContext context)
     {
-        var input = context.ActionArguments.Values.OfType<ExpenseCreate>().SingleOrDefault();
-        if (input?.AdditionalProperties is not { } properties) return;
+        var properties = context.ActionArguments.Values.OfType<ExpenseCreate>().SingleOrDefault()?.AdditionalProperties
+            ?? context.ActionArguments.Values.OfType<ExpenseUpdate>().SingleOrDefault()?.AdditionalProperties;
+        if (properties is null) return;
 
         // Ignore unrelated extensions, but never silently discard a removed occurrence field.
         foreach (var key in properties.Keys.Where(IsRemovedField))
