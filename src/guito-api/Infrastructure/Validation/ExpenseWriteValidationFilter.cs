@@ -4,7 +4,12 @@ using Microsoft.AspNetCore.Mvc.Filters;
 
 namespace GuitoApi.Infrastructure.Validation;
 
-public sealed class ExpenseCreateValidationFilter : IActionFilter
+/// <summary>
+/// Rejects removed occurrence fields for both create and update at the MVC boundary.
+/// JSON extension data otherwise tolerates unknown fields; keeping this rule here
+/// prevents silently accepting an old date contract without adding behavior to DTOs.
+/// </summary>
+public sealed class ExpenseWriteValidationFilter : IActionFilter
 {
     public void OnActionExecuting(ActionExecutingContext context)
     {

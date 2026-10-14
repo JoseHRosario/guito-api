@@ -112,6 +112,43 @@ remains gated on José's review and merge.
 API Gateway CORS and both application policies expose ETag; gateway preflight must
 allow PUT/DELETE and If-Match. Verify those installed settings after deployment.
 
+## Review follow-up and request-scope regression
+
+`ExpenseWriteValidationFilter` is deliberately shared by create and update: it
+rejects removed occurrence aliases at the MVC boundary while request DTOs remain
+data-only. `HttpExpenseRevisionResolver` owns header parsing behind the service
+interface; it does not replace the repository's atomic revision check. Both detail
+operations use the explicit `ExpenseDetailResponseMapper` at the service boundary.
+Personal deletion is `IDeleteExpenseService` / `DeleteExpenseService`; the separate
+Sheets smoke cleanup is `IDeleteExpenseRowService` / `DeleteExpenseRowService`.
+The HTTP DELETE verb and reporting confinement are unchanged.
+
+Human acceptance now exercises the real HTTP pipeline and Google SDK RS256
+validation against a fake JWKS transport, with both authentication gates enabled
+and no agent key. GET, PUT and DELETE succeed on another creator's Expense;
+invalid signatures cannot reach storage. The middleware receives the SDK's
+`ValidationSettings` through DI, with unchanged SDK defaults in production.
+The test-only certificate-cache hook uses reflection because Google keeps that
+hook internal; it changes only transport and does not replace signature, issuer,
+expiry, audience or allowlist checks. There is no global cache replacement.
+
+Unsupported/partial link metadata tests first produced six unexpected 204s while
+the fake ignored its new metadata configuration, then passed with configurable,
+predicate-sensitive schema reads. All six require 409, rollback, unchanged HTTP
+Expense detail and all bank links, no commit and no unlink/delete statement.
+Human success tests first produced three 403s with outbound certificate retrieval
+blocked, then passed after wiring the per-host transport hook into SDK settings.
+
+The live-reported Lambda failure was reproduced hermetically: resolving the detail
+service makes an idle or abandoned request scope fail synchronous disposal because
+`DataApiUnitOfWork` implemented only `IAsyncDisposable` (two failing cases).
+The concrete unit now also supports `IDisposable`, waits for rollback completion,
+and propagates rollback failure without clearing the open transaction context.
+Coverage includes abandoned-write restoration through HTTP, no commit, subsequent
+scope usability, pending rollback, both disposal modes on provider failure, and a
+real HTTP startup filter replaying synchronous Lambda request-scope disposal for
+detail/latest/history/warm. This is a local regression fix, not deployed acceptance.
+
 ## Local test evidence
 
 Resumption reproduced the missing ETag exposure (36 passed, 1 failed); the CORS
@@ -120,5 +157,10 @@ fix made all original 37 pass. The integer-link/state regression first failed wi
 unlinking. Removing PUT's revision predicate made stale PUT return 200 and both
 same-revision writers succeed (2 failures in 4 tests). Restoring CAS and removing
 only the ID predicate failed exact-target update (1 failure in 1 test). All
-sabotage was restored before rebuilding; final endpoint coverage has 72 passing
-cases. These are HTTP-host/real-repository checks, not live PostgreSQL evidence.
+sabotage was restored before rebuilding; the original endpoint coverage had 72
+passing cases. Review follow-up passes 148 targeted cases and the full hermetic
+solution suites (539 API + 79 authorizer). Replaying the original unit-of-work
+against synchronous scope/HTTP tests reproduced the exact Lambda exception in
+five of six cases; `/warm` remained successful because it does not resolve that
+unit. Restoring the fix passed all nine scope regressions. These are local
+HTTP-host/real-repository checks, not live PostgreSQL or deployed acceptance.

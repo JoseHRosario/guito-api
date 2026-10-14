@@ -9,7 +9,7 @@ namespace GuitoApi.Tests;
 public class ExpenseEditDeleteBoundaryTests
 {
     [Fact]
-    public async Task Detail_ShouldReturnExactStoredValuesAndRevision_WhenIdExists()
+    public async Task Detail_ShouldReturnExactStoredValuesAndRevision_WhenIdExistsAsync()
     {
         // Arrange
         using var factory = CreateFactory();
@@ -23,17 +23,12 @@ public class ExpenseEditDeleteBoundaryTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("\"1\"", response.Headers.ETag!.ToString());
         Assert.True(response.Headers.CacheControl!.NoStore);
-        Assert.Equal(7, detail.GetProperty("id").GetInt32());
-        Assert.Equal("-9007199254740993.1200", detail.GetProperty("amount").GetString());
-        Assert.Equal("2026-07-02T14:23:45.123456+01:00", detail.GetProperty("bookingDate").GetString());
-        Assert.Equal("human@example.com", detail.GetProperty("creatorEmail").GetString());
-        Assert.Equal("1", detail.GetProperty("revision").GetString());
-        Assert.Equal(JsonValueKind.Null, detail.GetProperty("updateDate").ValueKind);
+        AssertOriginalDetail(detail);
         Assert.Empty(factory.SheetsHandler.ReadRanges);
     }
 
     [Fact]
-    public async Task Update_ShouldAdvanceRevisionAndPreserveIdentityAuditAndPrecision_WhenLoadedRevisionMatches()
+    public async Task Update_ShouldAdvanceRevisionAndPreserveIdentityAuditAndPrecision_WhenLoadedRevisionMatchesAsync()
     {
         // Arrange
         using var factory = CreateFactory();
@@ -48,16 +43,12 @@ public class ExpenseEditDeleteBoundaryTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var after = await response.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("\"2\"", response.Headers.ETag!.ToString());
-        Assert.Equal("2", after.GetProperty("revision").GetString());
-        foreach (var field in new[] { "id", "amount", "bookingDate", "creatorEmail", "creationDate" })
-            Assert.Equal(before.GetProperty(field).GetRawText(), after.GetProperty(field).GetRawText());
-        Assert.Equal("Corrected purchase", after.GetProperty("description").GetString());
-        Assert.NotEqual(JsonValueKind.Null, after.GetProperty("updateDate").ValueKind);
+        AssertCorrectedDetail(before, after);
         Assert.Equal("Original purchase", (await client.GetFromJsonAsync<JsonElement>("/Expense/8")).GetProperty("description").GetString());
     }
 
     [Fact]
-    public async Task Delete_ShouldRemoveOnlyTargetAndUnlinkItsTransactions_WhenLoadedRevisionMatches()
+    public async Task Delete_ShouldRemoveOnlyTargetAndUnlinkItsTransactions_WhenLoadedRevisionMatchesAsync()
     {
         // Arrange
         using var factory = CreateFactory();
@@ -90,7 +81,7 @@ public class ExpenseEditDeleteBoundaryTests
     [InlineData("PUT", "\"9223372036854775808\"", 400)]
     [InlineData("DELETE", "\"2\"", 412)]
     [InlineData("PUT", "\"2\"", 412)]
-    public async Task Mutation_ShouldRejectWithoutChangingExpense_WhenRevisionIsMissingMalformedOrStale(string method, string? revision, int status)
+    public async Task Mutation_ShouldRejectWithoutChangingExpense_WhenRevisionIsMissingMalformedOrStaleAsync(string method, string? revision, int status)
     {
         // Arrange
         using var factory = CreateFactory();
@@ -120,7 +111,7 @@ public class ExpenseEditDeleteBoundaryTests
     [InlineData("GET", "999", 404)]
     [InlineData("PUT", "999", 404)]
     [InlineData("DELETE", "999", 404)]
-    public async Task Expense_ShouldReturnBindingOrNotFoundError_WhenIdIsInvalidOrAbsent(string method, string id, int status)
+    public async Task Expense_ShouldReturnBindingOrNotFoundError_WhenIdIsInvalidOrAbsentAsync(string method, string id, int status)
     {
         // Arrange
         using var factory = CreateFactory();
@@ -139,7 +130,7 @@ public class ExpenseEditDeleteBoundaryTests
     [Theory]
     [InlineData("PUT")]
     [InlineData("DELETE")]
-    public async Task Mutation_ShouldReturnNotFound_WhenExpenseWasAlreadyDeleted(string method)
+    public async Task Mutation_ShouldReturnNotFound_WhenExpenseWasAlreadyDeletedAsync(string method)
     {
         // Arrange
         using var factory = CreateFactory();
@@ -159,7 +150,7 @@ public class ExpenseEditDeleteBoundaryTests
     [Theory]
     [InlineData("PUT")]
     [InlineData("DELETE")]
-    public async Task Mutation_ShouldRejectOldRevision_WhenAnotherUpdateCommitted(string method)
+    public async Task Mutation_ShouldRejectOldRevision_WhenAnotherUpdateCommittedAsync(string method)
     {
         // Arrange
         using var factory = CreateFactory();
@@ -182,7 +173,7 @@ public class ExpenseEditDeleteBoundaryTests
     [Theory]
     [InlineData("PUT")]
     [InlineData("DELETE")]
-    public async Task Mutation_ShouldPermitOnlyOneWinner_WhenConcurrentOperationsShareRevision(string secondMethod)
+    public async Task Mutation_ShouldPermitOnlyOneWinner_WhenConcurrentOperationsShareRevisionAsync(string secondMethod)
     {
         // Arrange
         using var factory = CreateFactory();
@@ -208,7 +199,7 @@ public class ExpenseEditDeleteBoundaryTests
     [InlineData("GET", "Postgres", true)]
     [InlineData("PUT", "Postgres", true)]
     [InlineData("DELETE", "Postgres", true)]
-    public async Task Expense_ShouldRejectWithoutDatastoreAccess_WhenStoreOrScopeIsUnavailable(string method, string store, bool smoke)
+    public async Task Expense_ShouldRejectWithoutDatastoreAccess_WhenStoreOrScopeIsUnavailableAsync(string method, string store, bool smoke)
     {
         // Arrange
         using var factory = CreateFactory();
@@ -229,7 +220,7 @@ public class ExpenseEditDeleteBoundaryTests
     }
 
     [Fact]
-    public async Task Detail_ShouldExposeEtagToBrowser_WhenCrossOriginRequestUsesAllowedOrigin()
+    public async Task Detail_ShouldExposeEtagToBrowser_WhenCrossOriginRequestUsesAllowedOriginAsync()
     {
         // Arrange
         using var factory = CreateFactory();
@@ -246,14 +237,12 @@ public class ExpenseEditDeleteBoundaryTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task Delete_ShouldRetainTransactionAndResetOnlyTargetLink_WhenLinkSchemaIsSupported(bool reviewSchema)
+    public async Task Delete_ShouldRetainTransactionAndResetOnlyTargetLink_WhenLinkSchemaIsSupportedAsync(bool reviewSchema)
     {
         // Arrange
         using var factory = CreateFactory();
         factory.Postgres.HasBankReviewSchema = reviewSchema;
-        factory.Postgres.LinkedTransactions.Add(100, (7, "matched"));
-        factory.Postgres.LinkedTransactions.Add(101, (8, "matched"));
-        factory.Postgres.LinkedTransactions.Add(102, (null, "ignored"));
+        SeedBankLinks(factory);
         using var client = factory.CreateClient();
         using var request = DeleteRequest("7", "\"1\"");
 
@@ -287,22 +276,12 @@ public class ExpenseEditDeleteBoundaryTests
     [InlineData("currency", "\"USD\"")]
     [InlineData("date", "null")]
     [InlineData("OccurredAt", "null")]
-    public async Task Update_ShouldRejectBeforeStorage_WhenRequiredFieldsOrExactValuesAreInvalid(string property, string? rawValue)
+    public async Task Update_ShouldRejectBeforeStorage_WhenRequiredFieldsOrExactValuesAreInvalidAsync(string property, string? rawValue)
     {
         // Arrange
         using var factory = CreateFactory();
         using var client = factory.CreateClient();
-        var fields = new Dictionary<string, JsonElement>
-        {
-            ["description"] = JsonSerializer.SerializeToElement("Updated"),
-            ["category"] = JsonSerializer.SerializeToElement("Groceries"),
-            ["amount"] = JsonSerializer.SerializeToElement("-9007199254740993.1200"),
-            ["bookingDate"] = JsonSerializer.SerializeToElement("2026-07-02T14:23:45.123456+01:00")
-        };
-        if (rawValue is null) fields.Remove(property);
-        else fields[property] = JsonSerializer.Deserialize<JsonElement>(rawValue);
-        using var request = UpdateRequest("7", "\"1\"");
-        request.Content = JsonContent.Create(fields);
+        using var request = InvalidUpdateRequest(property, rawValue);
 
         // Act
         var response = await client.SendAsync(request);
@@ -317,7 +296,7 @@ public class ExpenseEditDeleteBoundaryTests
     [InlineData("0", "2026-01-02", "2026-01-02T00:00:00+00:00")]
     [InlineData("79228162514264337593543950335", "2026-07-02", "2026-07-02T00:00:00+01:00")]
     [InlineData("-0.0000000000000000000000000001", "2026-10-25T01:30:00Z", "2026-10-25T01:30:00+00:00")]
-    public async Task Update_ShouldReplaceEditableValuesExactly_WhenValidAmountAndResolvedOccurrenceAreSubmitted(string amount, string bookingDate, string expectedDate)
+    public async Task Update_ShouldReplaceEditableValuesExactly_WhenValidAmountAndResolvedOccurrenceAreSubmittedAsync(string amount, string bookingDate, string expectedDate)
     {
         // Arrange
         using var factory = CreateFactory();
@@ -333,15 +312,12 @@ public class ExpenseEditDeleteBoundaryTests
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(amount, detail.GetProperty("amount").GetString());
-        Assert.Equal(expectedDate, detail.GetProperty("bookingDate").GetString());
-        Assert.Equal("Restaurants", detail.GetProperty("category").GetString());
-        Assert.Equal("", detail.GetProperty("description").GetString());
+        AssertEditableValues(detail, amount, expectedDate);
         Assert.Equal((7, "matched"), factory.Postgres.LinkedTransactions[100]);
     }
 
     [Fact]
-    public async Task Update_ShouldRejectUnknownCategoryWithoutChanges_WhenCategoryIsNotAnExactMirrorName()
+    public async Task Update_ShouldRejectUnknownCategoryWithoutChanges_WhenCategoryIsNotAnExactMirrorNameAsync()
     {
         // Arrange
         using var factory = CreateFactory();
@@ -361,7 +337,7 @@ public class ExpenseEditDeleteBoundaryTests
     }
 
     [Fact]
-    public async Task Update_ShouldAdvanceRevision_WhenEveryEditableValueIsUnchanged()
+    public async Task Update_ShouldAdvanceRevision_WhenEveryEditableValueIsUnchangedAsync()
     {
         // Arrange
         using var factory = CreateFactory();
@@ -381,7 +357,7 @@ public class ExpenseEditDeleteBoundaryTests
     [Theory]
     [InlineData("PUT", 4)]
     [InlineData("DELETE", 5)]
-    public async Task Mutation_ShouldRollbackAllChanges_WhenProviderFailsAfterWrite(string method, int failAt)
+    public async Task Mutation_ShouldRollbackAllChanges_WhenProviderFailsAfterWriteAsync(string method, int failAt)
     {
         // Arrange
         using var factory = CreateFactory();
@@ -389,9 +365,7 @@ public class ExpenseEditDeleteBoundaryTests
         factory.Postgres.LinkedTransactions.Add(100, (7, "matched"));
         using var client = factory.CreateClient();
         var before = await client.GetStringAsync("/Expense/7");
-        factory.Postgres.ExecutedSql.Clear();
-        factory.Postgres.ExecuteException = new InvalidOperationException("Transport failed after mutation.");
-        factory.Postgres.ExecuteExceptionAtCall = failAt;
+        FailMutationAt(factory, failAt);
         using var request = method == "PUT" ? UpdateRequest("7", "\"1\"") : DeleteRequest("7", "\"1\"");
 
         // Act
@@ -400,14 +374,11 @@ public class ExpenseEditDeleteBoundaryTests
 
         // Assert
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        Assert.Equal(before, await client.GetStringAsync("/Expense/7"));
-        Assert.Equal((7, "matched"), factory.Postgres.LinkedTransactions[100]);
-        Assert.Equal(0, factory.Postgres.Commits);
-        Assert.Equal(1, factory.Postgres.Rollbacks);
+        await AssertMutationRolledBackAsync(factory, client, before);
     }
 
     [Fact]
-    public async Task Reads_ShouldReflectUpdateAndDeletion_WhenMutationsCommit()
+    public async Task Reads_ShouldReflectUpdateAndDeletion_WhenMutationsCommitAsync()
     {
         // Arrange
         using var factory = CreateFactory();
@@ -425,8 +396,7 @@ public class ExpenseEditDeleteBoundaryTests
         Assert.Contains("Updated in history", latest);
         Assert.Contains("Updated in history", history);
         Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
-        Assert.DoesNotContain("Updated in history", await client.GetStringAsync("/Expense/latest/10"));
-        Assert.DoesNotContain("Updated in history", await client.GetStringAsync("/Expense/history"));
+        await AssertDeletedFromListsAsync(client);
     }
 
     [Theory]
@@ -436,16 +406,11 @@ public class ExpenseEditDeleteBoundaryTests
     [InlineData("GET", true, 200)]
     [InlineData("PUT", true, 200)]
     [InlineData("DELETE", true, 204)]
-    public async Task Expense_ShouldEnforceExistingAuthGates_WhenAgentCredentialsAreRequired(string method, bool authenticated, int status)
+    public async Task Expense_ShouldEnforceExistingAuthGates_WhenAgentCredentialsAreRequiredAsync(string method, bool authenticated, int status)
     {
         // Arrange
         using var factory = CreateFactory();
-        using var host = factory.WithWebHostBuilder(builder => builder.ConfigureAppConfiguration((_, config) =>
-            Microsoft.Extensions.Configuration.MemoryConfigurationBuilderExtensions.AddInMemoryCollection(config, new Dictionary<string, string?>
-            {
-                ["AppConfiguration:Authentication:ValidateApiKey"] = "true",
-                ["AppConfiguration:Authentication:ValidateIdToken"] = "true"
-            })));
+        using var host = ConfigureAuthentication(factory);
         using var client = host.CreateClient();
         if (authenticated) client.DefaultRequestHeaders.Add("X-Api-Key", "test-agent-key");
         using var request = method == "PUT" ? UpdateRequest("7", "\"1\"") : method == "DELETE" ? DeleteRequest("7", "\"1\"") : new(HttpMethod.Get, "/Expense/7");
@@ -461,17 +426,14 @@ public class ExpenseEditDeleteBoundaryTests
     [Theory]
     [InlineData("Development")]
     [InlineData("Staging")]
-    public async Task Mutation_ShouldAllowBrowserPreflight_WhenIfMatchAndAuthorizationAreRequested(string environment)
+    public async Task Mutation_ShouldAllowBrowserPreflight_WhenIfMatchAndAuthorizationAreRequestedAsync(string environment)
     {
         // Arrange
         using var factory = CreateFactory();
         factory.Environment = environment;
         factory.UiOrigin = "https://ui.example.test";
         using var client = factory.CreateClient();
-        using var request = new HttpRequestMessage(HttpMethod.Options, "/Expense/7");
-        request.Headers.Add("Origin", factory.UiOrigin);
-        request.Headers.Add("Access-Control-Request-Method", "PUT");
-        request.Headers.Add("Access-Control-Request-Headers", "authorization,content-type,if-match");
+        using var request = PreflightRequest(factory.UiOrigin);
 
         // Act
         var response = await client.SendAsync(request);
@@ -481,6 +443,94 @@ public class ExpenseEditDeleteBoundaryTests
         Assert.Contains("PUT", string.Join(",", response.Headers.GetValues("Access-Control-Allow-Methods")));
         Assert.Contains("if-match", string.Join(",", response.Headers.GetValues("Access-Control-Allow-Headers")), StringComparison.OrdinalIgnoreCase);
         Assert.Empty(factory.Postgres.ExecutedSql);
+    }
+
+    private static async Task AssertMutationRolledBackAsync(CustomWebApplicationFactory factory, HttpClient client, string before)
+    {
+        Assert.Equal(before, await client.GetStringAsync("/Expense/7"));
+        Assert.Equal((7, "matched"), factory.Postgres.LinkedTransactions[100]);
+        Assert.Equal(0, factory.Postgres.Commits);
+        Assert.Equal(1, factory.Postgres.Rollbacks);
+    }
+
+    private static async Task AssertDeletedFromListsAsync(HttpClient client)
+    {
+        Assert.DoesNotContain("Updated in history", await client.GetStringAsync("/Expense/latest/10"));
+        Assert.DoesNotContain("Updated in history", await client.GetStringAsync("/Expense/history"));
+    }
+
+    private static Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> ConfigureAuthentication(CustomWebApplicationFactory factory) =>
+        factory.WithWebHostBuilder(builder => builder.ConfigureAppConfiguration((_, config) =>
+            config.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AppConfiguration:Authentication:ValidateApiKey"] = "true",
+                ["AppConfiguration:Authentication:ValidateIdToken"] = "true"
+            })));
+
+    private static HttpRequestMessage PreflightRequest(string origin)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Options, "/Expense/7");
+        request.Headers.Add("Origin", origin);
+        request.Headers.Add("Access-Control-Request-Method", "PUT");
+        request.Headers.Add("Access-Control-Request-Headers", "authorization,content-type,if-match");
+        return request;
+    }
+
+    private static void AssertOriginalDetail(JsonElement detail)
+    {
+        Assert.Equal(7, detail.GetProperty("id").GetInt32());
+        Assert.Equal("-9007199254740993.1200", detail.GetProperty("amount").GetString());
+        Assert.Equal("2026-07-02T14:23:45.123456+01:00", detail.GetProperty("bookingDate").GetString());
+        Assert.Equal("human@example.com", detail.GetProperty("creatorEmail").GetString());
+        Assert.Equal("1", detail.GetProperty("revision").GetString());
+        Assert.Equal(JsonValueKind.Null, detail.GetProperty("updateDate").ValueKind);
+    }
+
+    private static void AssertCorrectedDetail(JsonElement before, JsonElement after)
+    {
+        Assert.Equal("2", after.GetProperty("revision").GetString());
+        foreach (var field in new[] { "id", "amount", "bookingDate", "creatorEmail", "creationDate" })
+            Assert.Equal(before.GetProperty(field).GetRawText(), after.GetProperty(field).GetRawText());
+        Assert.Equal("Corrected purchase", after.GetProperty("description").GetString());
+        Assert.NotEqual(JsonValueKind.Null, after.GetProperty("updateDate").ValueKind);
+    }
+
+    private static void SeedBankLinks(CustomWebApplicationFactory factory)
+    {
+        factory.Postgres.LinkedTransactions.Add(100, (7, "matched"));
+        factory.Postgres.LinkedTransactions.Add(101, (8, "matched"));
+        factory.Postgres.LinkedTransactions.Add(102, (null, "ignored"));
+    }
+
+    private static HttpRequestMessage InvalidUpdateRequest(string property, string? rawValue)
+    {
+        var fields = new Dictionary<string, JsonElement>
+        {
+            ["description"] = JsonSerializer.SerializeToElement("Updated"),
+            ["category"] = JsonSerializer.SerializeToElement("Groceries"),
+            ["amount"] = JsonSerializer.SerializeToElement("-9007199254740993.1200"),
+            ["bookingDate"] = JsonSerializer.SerializeToElement("2026-07-02T14:23:45.123456+01:00")
+        };
+        if (rawValue is null) fields.Remove(property);
+        else fields[property] = JsonSerializer.Deserialize<JsonElement>(rawValue);
+        var request = UpdateRequest("7", "\"1\"");
+        request.Content = JsonContent.Create(fields);
+        return request;
+    }
+
+    private static void AssertEditableValues(JsonElement detail, string amount, string expectedDate)
+    {
+        Assert.Equal(amount, detail.GetProperty("amount").GetString());
+        Assert.Equal(expectedDate, detail.GetProperty("bookingDate").GetString());
+        Assert.Equal("Restaurants", detail.GetProperty("category").GetString());
+        Assert.Equal("", detail.GetProperty("description").GetString());
+    }
+
+    private static void FailMutationAt(CustomWebApplicationFactory factory, int failAt)
+    {
+        factory.Postgres.ExecutedSql.Clear();
+        factory.Postgres.ExecuteException = new InvalidOperationException("Transport failed after mutation.");
+        factory.Postgres.ExecuteExceptionAtCall = failAt;
     }
 
     private static HttpRequestMessage DeleteRequest(string id, string? revision)

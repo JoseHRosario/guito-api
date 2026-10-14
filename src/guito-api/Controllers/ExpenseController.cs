@@ -17,7 +17,7 @@ namespace GuitoApi.Controllers
         private readonly IReadExpenseHistoryService _readExpenseHistoryService;
         private readonly IReadExpenseDetailService _readExpenseDetailService;
         private readonly IUpdateExpenseService _updateExpenseService;
-        private readonly IDeletePersonalExpenseService _deletePersonalExpenseService;
+        private readonly IDeleteExpenseService _deleteExpenseService;
 
         public ExpenseController(ICreateExpenseService createExpenseService, 
             IListLatestExpensesService listLatestExpensesService, 
@@ -26,7 +26,7 @@ namespace GuitoApi.Controllers
             IListExpensesService listExpensesService,
             IReadExpenseHistoryService readExpenseHistoryService,
             IReadExpenseDetailService readExpenseDetailService, IUpdateExpenseService updateExpenseService,
-            IDeletePersonalExpenseService deletePersonalExpenseService)
+            IDeleteExpenseService deleteExpenseService)
         {
             _listExpensesService = listExpensesService;
             _createExpenseService = createExpenseService;
@@ -36,7 +36,7 @@ namespace GuitoApi.Controllers
             _readExpenseHistoryService = readExpenseHistoryService;
             _readExpenseDetailService = readExpenseDetailService;
             _updateExpenseService = updateExpenseService;
-            _deletePersonalExpenseService = deletePersonalExpenseService;
+            _deleteExpenseService = deleteExpenseService;
         }
 
         [HttpGet]
@@ -82,9 +82,9 @@ namespace GuitoApi.Controllers
         }
 
         [HttpDelete("{id}")]
-        public async Task<IActionResult> DeletePersonalAsync(int id, CancellationToken cancellationToken)
+        public async Task<IActionResult> DeleteAsync(int id, CancellationToken cancellationToken)
         {
-            await _deletePersonalExpenseService.DeleteAsync(id, cancellationToken);
+            await _deleteExpenseService.DeleteAsync(id, cancellationToken);
             return NoContent();
         }
 

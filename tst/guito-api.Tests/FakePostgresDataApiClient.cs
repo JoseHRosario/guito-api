@@ -19,6 +19,7 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
     public int Commits { get; private set; }
     public int Rollbacks { get; private set; }
     public bool HasBankReviewSchema { get; set; }
+    public Dictionary<string, string>? LinkSchemaColumns { get; set; }
     public Dictionary<long, (int? ExpenseId, string Status)> LinkedTransactions { get; } = [];
     private Dictionary<long, (int? ExpenseId, string Status)>? _linksSnapshot;
 
@@ -170,16 +171,30 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
         if (ExecuteException is not null && ExecutedSql.Count >= ExecuteExceptionAtCall)
             throw ExecuteException;
         if (PersistExpenses && sql.Contains("information_schema.columns", StringComparison.Ordinal))
-            return Task.FromResult(HasBankReviewSchema
-                ? new PostgresResult([], [[PostgresValue.FromString("expense_id"), PostgresValue.FromString("integer")],
-                    [PostgresValue.FromString("review_status"), PostgresValue.FromString("text")]], 0)
-                : new PostgresResult([], [[PostgresValue.FromString("expense_id"), PostgresValue.FromString("text")]], 0));
+            return Task.FromResult(ReadLinkSchema(sql));
         if (PersistExpenses && NextResults.Count == 0 && (sql.Contains("expenses", StringComparison.Ordinal) || sql.StartsWith("UPDATE bank_transactions", StringComparison.Ordinal)
             || sql == "SELECT id FROM categories WHERE name = :name"))
             return Task.FromResult(ExecuteExpense(sql, parameters));
         return Task.FromResult(NextResults.Count > 0
             ? NextResults.Dequeue()
             : new PostgresResult([], [], 0));
+    }
+
+    private PostgresResult ReadLinkSchema(string sql)
+    {
+        var columns = LinkSchemaColumns ?? (HasBankReviewSchema
+            ? new Dictionary<string, string> { ["expense_id"] = "integer", ["review_status"] = "text", ["provider_payload"] = "jsonb" }
+            : new Dictionary<string, string> { ["expense_id"] = "text", ["provider_payload"] = "jsonb" });
+        IEnumerable<KeyValuePair<string, string>> selected = columns;
+        if (sql.Contains("column_name IN ('expense_id', 'review_status')", StringComparison.Ordinal))
+            selected = selected.Where(column => column.Key is "expense_id" or "review_status");
+        var rows = selected.Select(column => (IReadOnlyList<PostgresValue>)new[]
+            { PostgresValue.FromString(column.Key), PostgresValue.FromString(column.Value) }).ToList();
+        // Other tables/schemas have the same column names: omitted predicates expose that ambiguity.
+        if (!sql.Contains("table_schema = current_schema()", StringComparison.Ordinal)
+            || !sql.Contains("table_name = 'bank_transactions'", StringComparison.Ordinal))
+            rows.Add([PostgresValue.FromString("expense_id"), PostgresValue.FromString("uuid")]);
+        return new PostgresResult([], rows, 0);
     }
 
     public async Task<string> BeginTransactionAsync(CancellationToken cancellationToken = default)
@@ -200,8 +215,15 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
         return Task.CompletedTask;
     }
 
-    public Task RollbackAsync(string transactionId, CancellationToken cancellationToken = default)
+    public Exception? RollbackException { get; set; }
+    public Task RollbackCompletion { get; set; } = Task.CompletedTask;
+    public TaskCompletionSource RollbackStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public async Task RollbackAsync(string transactionId, CancellationToken cancellationToken = default)
     {
+        RollbackStarted.TrySetResult();
+        await RollbackCompletion.ConfigureAwait(false);
+        if (RollbackException is not null) throw RollbackException;
         Rollbacks++;
         _expenses.Clear();
         _expenses.AddRange(_snapshot!);
@@ -211,6 +233,5 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
         foreach (var pair in _linksSnapshot!) LinkedTransactions.Add(pair.Key, pair.Value);
         _snapshot = null;
         _transactionGate.Release();
-        return Task.CompletedTask;
     }
 }

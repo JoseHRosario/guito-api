@@ -11,7 +11,6 @@ public sealed class UpdateExpenseService(IExpenseDetailRepository repository, IE
     {
         var edit = new ExpenseEdit(value.Description, value.Category, value.Amount, TimeService.InLisbon(value.BookingDate));
         var detail = await repository.UpdateAsync(id, revision.RequireRevision(), edit, cancellationToken);
-        return new(detail.Id, detail.Amount, detail.Description, detail.Category, detail.BookingDate,
-            detail.CreatorEmail, detail.CreationDate, detail.UpdateDate, detail.Revision);
+        return ExpenseDetailResponseMapper.Map(detail);
     }
 }

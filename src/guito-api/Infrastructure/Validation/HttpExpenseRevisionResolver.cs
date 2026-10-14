@@ -4,6 +4,11 @@ using GuitoApi.Services.Expense;
 
 namespace GuitoApi.Infrastructure.Validation;
 
+/// <summary>
+/// Owns HTTP If-Match parsing so services depend on a revision contract, not headers.
+/// Missing and malformed preconditions fail before datastore access; the repository
+/// checks this loaded revision atomically with the write to prevent lost updates.
+/// </summary>
 public sealed class HttpExpenseRevisionResolver(IHttpContextAccessor accessor) : IExpenseRevisionResolver
 {
     public long RequireRevision()
