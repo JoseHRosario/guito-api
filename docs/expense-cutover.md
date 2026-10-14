@@ -1,5 +1,32 @@
 # One-time Expense cutover (#132)
 
+## Owner disposition recorded 13 October 2026
+
+[Closure evidence](https://github.com/JoseHRosario/guito-api/issues/132#issuecomment-6135613997)
+records José's acceptance: production Postgres authority, working saves, private
+reporting installation (98 records), editor reopen refresh and UI reads. It cites
+UI merged ref `744797e6335875850559eae2261d4dacd7fa4278` and
+[deployment run](https://github.com/JoseHRosario/guito-ui/actions/runs/38328944997).
+This is dated owner/agent-reported evidence, **not a fresh live configuration audit**.
+Distinct pre-switch abort/post-switch recovery rehearsal was **not performed**;
+latest new-Expense appearance in Sheets was not independently verified by the agent.
+Accepted import/parity was not repeated. Source-sheet edits do not resume as authority.
+
+[Subsequent owner approval](https://github.com/JoseHRosario/guito-api/issues/133#issuecomment-6157279425)
+allows #133 design/development without retroactively claiming those rehearsals.
+Its newer documentation supplied this correction; API Bank-review PR #147 at
+`44bc637af59a5cda10e2291446164af227a39026` is open/unmerged at the #149 baseline.
+No proposed ADR-0018 or Bank-review behavior is treated as merged here; staging
+persistence/constraint acceptance remains separate. Reverify live authority/ref and
+obtain explicit scope approval before any new operation.
+
+## Historical #132 preparation record (retained below)
+
+The original BLOCKED/not-approved instructions and pending checklist below describe
+pre-execution preparation. The dated owner disposition above supersedes their status,
+not their safety/recovery rationale. They do not reopen #132 or authorize repeat
+execution; unperformed steps remain unperformed.
+
 ## Status and evidence boundary
 
 **Staging readiness: BLOCKED. Production execution: NOT APPROVED / NOT RUN.**

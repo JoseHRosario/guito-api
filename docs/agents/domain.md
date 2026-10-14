@@ -1,51 +1,23 @@
-# Domain Docs
+# Domain documentation
 
-How the engineering skills should consume this repo's domain documentation when exploring the codebase.
+Read before domain modeling, contract changes or domain-oriented planning.
+This is a single-context repository: [GLOSSARY.md](../../GLOSSARY.md) owns vocabulary;
+[ADRs](../adr/) own decisions. A missing required glossary/link is a defect: report
+and fix discovery, never silently proceed as though no contract exists.
 
-## Before exploring, read these
+Use glossary terms in issues, code, tests and proposals. Flag a real vocabulary gap
+rather than inventing synonyms. Surface any ADR conflict explicitly; do not override
+an accepted decision without an approved successor. Check the next unused ADR number;
+never renumber merged historical ADRs. Read only decisions relevant to the task:
 
-- **`CONTEXT.md`** at the repo root, or
-- **`CONTEXT-MAP.md`** at the repo root if it exists: it points at one `CONTEXT.md` per context. Read each one relevant to the topic.
-- **`docs/adr/`**: read ADRs that touch the area you're about to work in. In multi-context repos, also check `src/<context>/docs/adr/` for context-scoped decisions.
+- Expense identity/date/amount/store: [ADR-0015](../adr/0015-postgres-expenses-and-lisbon-occurrence.md).
+- Personal edit/delete: [contract](../expense-edit-delete-contract.md),
+  [security](../expense-delete-security.md), ADR-0011's merged #146 aggregate extension.
+- Bank/provider/storage: ADR-0004 and ADR-0013; Categories: ADR-0014.
+- Auth: [authentication](../authentication.md), ADR-0003/0008; reporting: ADR-0017.
+- Historical provenance: ADR-0016 and [import record](../historical-expense-import.md).
 
-If any of these files don't exist, **proceed silently**. Don't flag their absence; don't suggest creating them upfront. The `/domain-modeling` skill (reached via `/grill-with-docs` and `/improve-codebase-architecture`) creates them lazily when terms or decisions actually get resolved.
-
-## File structure
-
-Single-context repo (most repos):
-
-```
-/
-├── CONTEXT.md
-├── docs/adr/
-│   ├── 0001-event-sourced-orders.md
-│   └── 0002-postgres-for-write-model.md
-└── src/
-```
-
-Multi-context repo (presence of `CONTEXT-MAP.md` at the root):
-
-```
-/
-├── CONTEXT-MAP.md
-├── docs/adr/                          ← system-wide decisions
-└── src/
-    ├── ordering/
-    │   ├── CONTEXT.md
-    │   └── docs/adr/                  ← context-specific decisions
-    └── billing/
-        ├── CONTEXT.md
-        └── docs/adr/
-```
-
-## Use the glossary's vocabulary
-
-When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the term as defined in `CONTEXT.md`. Don't drift to synonyms the glossary explicitly avoids.
-
-If the concept you need isn't in the glossary yet, that's a signal: either you're inventing language the project doesn't use (reconsider) or there's a real gap (note it for `/domain-modeling`).
-
-## Flag ADR conflicts
-
-If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
-
-> _Contradicts ADR-0007 (event-sourced orders), but worth reopening because…_
+Bank review remains on open PR #147 at the #149 baseline. Consult its exact branch
+and owner decisions when coordinating that work; do not treat proposed ADR-0018 or
+its routes as merged. Cross-repo work reads the UI worktree's own root instructions
+and glossary explicitly, not a fragile relative path to a neighboring checkout.

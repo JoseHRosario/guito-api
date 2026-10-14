@@ -2,8 +2,9 @@
 
 `GET /Expense?category=Startup&month=2026-10` retrieves every individual matching
 Expense in one JSON response. This is a read operation, not aggregation or totals.
-It is available only when the selected Expense store is Postgres. Production remains
-Sheets-backed: issue #139 does not authorize cutover or deployment.
+It is available only when the selected Expense store is Postgres. The original #139 slice did not authorize cutover/deployment. See
+[dated cutover evidence](expense-cutover.md); this contract does not assert current
+live authority or grant operational approval.
 
 ## Authentication
 
@@ -89,7 +90,7 @@ Expected query errors use `application/problem+json` ProblemDetails:
 | 422 | Nonblank category has no exact Postgres mirror match. |
 | 409 | Sheets is selected, including smoke scope. No alternate Postgres dataset is queried. |
 | 502 | Data API provider failure/response limit or unsupported exact database amount. No partial array is returned. |
-| 500 | Unexpected server failure, or the existing unapproved Production/Postgres cutover guard. |
+| 500 | Unexpected server failure. No Production-only Postgres runtime guard remains. |
 
 Authentication errors retain the existing gateway/API contracts, not the query's
 ProblemDetails contract: missing credentials normally yield 401 and invalid credentials

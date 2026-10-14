@@ -2,7 +2,11 @@
 
 > ADR-0015 retains this quarantine mechanism with Postgres personal Expense authority:
 > smoke-header create/list and every `/Smoke/{id}` cleanup still use Sheets only.
-> Postgres has no smoke scope column and personal-record deletion is unsupported.
+> Postgres has no smoke scope column. The later merged #146
+> [personal mutation contract](../expense-edit-delete-contract.md) supersedes the
+> general-delete prohibition below for revision-aware Postgres operations only.
+> Smoke cleanup remains Sheets-only; numeric identities follow [GLOSSARY](../../GLOSSARY.md).
+> Original rejection/opaque-identity rationale below is historical, not a current API ban.
 
 The deployed-endpoint integration tests (staging on every push, production on master/dispatch) round-trip a €0.01 expense through the deployed API. Before this decision, that meant a permanent fake row — plus an empty "dummy row" leaked by list-latest's append-to-find-last-row trick — in the environment's real Expenses tab, i.e. in the sheet holding real financial data (dev/staging) and, on production deploys, in the prod sheet. We decided tests must **never write to a real tab, in any environment, ever**, and that the smoke still exercises the full write path in production (the point of a prod smoke is to verify the deployed wiring, which a staging-only write test cannot).
 

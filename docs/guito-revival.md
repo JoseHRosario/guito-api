@@ -1,6 +1,9 @@
 # Guito Revival Plan (2026-09)
 
-Result of a grill session. Decisions are recorded as ADRs in `docs/adr/`; this file is the operational summary. The current delivery target is an end-to-end MVP: deployed API + authenticated Angular UI, with the UI reading and creating expenses through the API and Google Sheets.
+Dated September 2026 grill/MVP planning record, not current deployment status.
+Original phase decisions below remain historical; later amendments at the end
+route to current contracts and dated operational evidence. Read for revival planning,
+not as an eager prerequisite for every change.
 
 ## What Guito is
 
@@ -34,7 +37,11 @@ The MVP is complete when the app is deployed and usable end-to-end:
 - **Workflow**: **feature branches + PRs**; José reviews and merges. Revisit once CI/CD hard gates exist. Agent commits authored as `Meireles`.
 - **Secrets**: application secrets (Google service account, API keys and provider credentials) in **SSM Parameter Store SecureString**; database credentials stay in **Secrets Manager** for RDS Data API (ADR-0008); GitHub Actions deploys via **OIDC role assumption** — no long-lived keys in GitHub.
 - **CI**: replace the legacy `master_guito-api.yml` with API deployment workflow (Amazon.Lambda.Tools + OIDC); strip Azure packages (Serilog Azure sink, Azure.Storage) as part of API modernization.
-- **AI extraction**: `AIController`/`ExtractMethodService` stubbed (501) until a separate OpenRouter implementation is planned; not part of the MVP.
+- **AI extraction (original MVP exclusion, later implemented)**: `POST /AI/extract`
+  now uses the OpenRouter repository: Jev note gate, chat date/amount/merchant
+  extraction, then real-category choice. ExtractMethodService normalizes a positive
+  nonzero amount; models remain configurable. Code presence does not prove a live
+  provider/model deployment. See README and current source, not the former 501 plan.
 
 ## Implementation decisions (round 5)
 
@@ -60,12 +67,13 @@ historical import and verified identical reruns in staging and production. José
 removed the temporary provenance tables after verification; import tooling and its
 DDL are retired. Production storage cutover remains separate under #132. See
 [the historical import record](historical-expense-import.md) and ADR-0016.
-Issue #132 prepares a one-time owner-coordinated production switch, not reusable
-pipeline approval/pause controls. [The runbook](expense-cutover.md) keeps staging
-readiness BLOCKED pending real rehearsal/reopen evidence and production execution
-subject to separate approval. The existing selector now works in production;
-routine deployments preserve installed authority/reporting instead of pinning Sheets.
-Production retains its Sheets default until the approved explicit override.
+Issue #132 originally prepared a one-time owner-coordinated switch, not reusable
+pipeline approval/pause controls. [The cutover record](expense-cutover.md) preserves
+that preparation and the later 13 October owner acceptance, separate from unperformed
+abort/recovery rehearsals. Routine deploys preserve installed authority/reporting;
+committed defaults are not deployed-state evidence. The merged #146 detail/edit/delete
+[contract](expense-edit-delete-contract.md) extends the Expense aggregate. Bank-review
+PR #147 remains unmerged at the #149 baseline; do not claim its routes are on master.
 
 ## Relevant GitHub issues
 

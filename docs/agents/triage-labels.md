@@ -12,4 +12,7 @@ The skills speak in terms of five canonical triage roles. This file maps those r
 
 When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the corresponding label string from this table.
 
-These labels may not exist on the GitHub repo yet; the `triage` skill creates them on first use (`gh label create`).
+Check actual labels with `gh label list --repo JoseHRosario/guito-api` before writes.
+If a canonical label is missing, create it only within authorized triage scope,
+then read it back. Scripted issue creation does not inherit form labels; see
+[tracker guidance](issue-tracker.md).
