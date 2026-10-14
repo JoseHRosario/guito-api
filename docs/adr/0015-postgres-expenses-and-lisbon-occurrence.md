@@ -1,6 +1,11 @@
 # ADR-0015: Opt-in Postgres Expenses and Lisbon occurrence timestamps
 
-Status: Accepted for staged implementation; production execution remains unapproved. Issue #132 prepares one-time enablement without executing production.
+Status: Accepted. Original staged-slice and #132 preparation statements below are
+historical; [dated cutover evidence](../expense-cutover.md) records later owner
+operational acceptance and unperformed rehearsals. It is not a fresh live audit.
+The merged #146 [aggregate extension](0011-repository-pattern.md#expense-aggregate-extension-146)
+and [mutation contract](../expense-edit-delete-contract.md) supersede future-only
+update/delete statements; isolated Sheets smoke remains separate.
 Issue: #128 (first implementation slice of #126).
 Supersedes: the Expense-only storage assumptions of ADR-0005, ADR-0011 and ADR-0013.
 Categories remain governed by ADR-0014.

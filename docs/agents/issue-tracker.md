@@ -1,101 +1,68 @@
 # Issue tracker: GitHub
 
-Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
+Read before issue/PR creation, edits, triage, ticket publication or wayfinding.
+Repository: `JoseHRosario/guito-api`. Use `gh` with explicit repository/endpoints;
+verify `git remote -v` and bot account `xungameireles` before writes. Root
+[AGENTS](../../AGENTS.md) owns worktree, branch, attribution and merge rules.
 
-## Conventions
+## Bodies, forms and labels
 
-- **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.
-- **Read an issue**: `gh issue view <number> --comments`, filtering comments by `jq` and also fetching labels.
-- **List issues**: `gh issue list --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'` with appropriate `--label` and `--state` filters.
-- **Comment on an issue**: `gh issue comment <number> --body "..."`
-- **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
-- **Close**: `gh issue close <number> --comment "..."`
+Read `.github/ISSUE_TEMPLATE/feature.yml` or `bug.yml` before creating the issue.
+Scripted creation does **not** inherit web-form fields or labels: construct the
+complete body and pass existing labels explicitly. Features need What, Acceptance
+criteria checkboxes, Out of scope, Open questions and Proposed version; bugs need
+What broke, Steps to reproduce, Acceptance criteria and Suspected cause/affected
+area. The bug form currently omits Proposed version, so add that policy-required
+section explicitly. Blank issues are allowed for work fitting neither form.
+#149 expressly preserves runtime versions for documentation-only restructuring.
 
-Infer the repo from `git remote -v`; `gh` does this automatically when run inside a clone.
-
-## Repo-specific conventions
-
-- **Branch naming**: `feature/<issue#>-<slug>` / `bug/<issue#>-<slug>` (issue number first). Never push to `master`.
-- **PR body must end with `Closes #N`** so GitHub closes the issue on merge into `master` (staging merges don't close — that's deliberate).
-
-## Issue templates
-
-Both repos define GitHub issue forms under `.github/ISSUE_TEMPLATE/`. Create issues using them — `gh issue create --template` opens the form interactively; when scripting, construct the body from the template's fields so issues stay uniform. The form's `labels:` are applied automatically on issue creation.
-
-### Feature (`feature.yml`, label `feature`)
-
-Body fields:
-
-- **What** (required): one paragraph — the user-visible outcome.
-- **Acceptance criteria** (required): verifiable, one `- [ ]` checkbox per criterion.
-- **Out of scope**: explicitly excluded, so scope creep has a name.
-- **Open questions**: decisions still to settle before implementation.
-
-### Bug (`bug.yml`, label `bug`)
-
-Body fields:
-
-- **What broke** (required): one paragraph — expected vs actual behavior.
-- **Steps to reproduce** (required): minimal, verifiable steps from a clean state.
-- **Acceptance criteria** (required): how we verify it's fixed — one `- [ ]` checkbox per criterion.
-- **Suspected cause / affected area** (optional): area of code, config, or infra you suspect.
-
-### guito-ui only
-
-`feature.yml` adds a **Figma frame** field: link to the frame the work traces to (Guito App page); omit for non-UI work.
-
-A scripted create looks like:
+Write multiline bodies/comments to UTF-8 files; do not loop over shell heredocs or
+inline-escape Markdown. Check labels with `gh label list --repo JoseHRosario/guito-api`;
+create missing labels only within authorized triage scope, then read back the result.
 
 ```bash
-gh issue create --title "..." --label feature --body "$(cat <<'EOF'
-## What
-
-<one paragraph>
-
-## Acceptance criteria
-
-- [ ] ...
-
-## Out of scope
-
-- ...
-
-## Open questions
-
-- ...
-EOF
-)"
+gh issue create --repo JoseHRosario/guito-api --title "..." --label feature --body-file issue-body.md
+gh api repos/JoseHRosario/guito-api/issues/149
+gh api --paginate repos/JoseHRosario/guito-api/issues/149/comments
+gh issue list --repo JoseHRosario/guito-api --state open --json number,title,body,labels
+gh issue comment 149 --repo JoseHRosario/guito-api --body-file comment.md
 ```
 
-Blank issues are enabled (`config.yml`) — use them only for work that fits neither form (e.g. infra/docs chores).
+Use explicit `--json` selections for `gh issue/pr view`; implicit views/edits may
+hit deprecated projectCards queries. REST alternatives: PATCH `/issues/N` or
+`/pulls/N` with `-F body=@complete-body.md`. Body PATCH replaces the entire body;
+read it first, preserve other owners' changes and verify exact stored text after
+writing. It is not a closure command. Verify labels, assignees and comments by
+read-back too. Never rewrite an issue body incidentally while closing it.
 
-## Pull requests as a triage surface
+## PRs and closure
 
-**PRs as a request surface: no.** _(Set to `yes` if this repo treats external PRs as feature requests; `/triage` reads this flag.)_
+Ordinary single-repo implementation PRs end with `Closes #N` for the intended local
+issue, closing on merge to default `master`, not a staging branch. Cross-repo
+references use `JoseHRosario/guito-api#N` (or the full URL), never a bare number in
+a UI PR targeting an unrelated UI issue. Component PRs for cross-repo #149 use
+`Refs JoseHRosario/guito-api#149`, **no closing keyword**; José closes the tracking
+issue after repository and local-skill deliverables plus verification are complete.
+Agents report completion/evidence and await owner review/merge; do not close a
+product issue to substitute for unmerged/unverified work. Manual closure of a
+research/triage ticket needs the owner's agreed disposition.
 
-When set to `yes`, PRs run through the same labels and states as issues, using the `gh pr` equivalents:
+PRs as a request/triage surface: **no**. Read PRs for implementation/review, not as
+new feature requests. GitHub shares issue/PR numbering; resolve resource type via
+REST (`pull_request` on `/issues/N`) or explicit JSON views, not guessed numbers.
 
-- **Read a PR**: `gh pr view <number> --comments` and `gh pr diff <number>` for the diff.
-- **List external PRs for triage**: `gh pr list --state open --json number,title,body,labels,author,authorAssociation,comments` then keep only `authorAssociation` of `CONTRIBUTOR`, `FIRST_TIME_CONTRIBUTOR`, or `NONE` (drop `OWNER`/`MEMBER`/`COLLABORATOR`).
-- **Comment / label / close**: `gh pr comment`, `gh pr edit --add-label`/`--remove-label`, `gh pr close`.
+## Wayfinding
 
-GitHub shares one number space across issues and PRs, so a bare `#42` may be either: resolve with `gh pr view 42` and fall back to `gh issue view 42`.
+A map issue holds Notes / Decisions-so-far / Fog; children are tickets. Validate
+existing `wayfinder:map` and `wayfinder:<type>` labels (research/prototype/grilling/task).
+Link native sub-issues through GitHub's supported endpoint; if unavailable, keep
+an explicit child task list in the map and `Part of #<map>` on each child. Do not
+put the epic's child inventory on unrelated prerequisites.
 
-## When a skill says "publish to the issue tracker"
-
-Create a GitHub issue.
-
-## When a skill says "fetch the relevant ticket"
-
-Run `gh issue view <number> --comments`.
-
-## Wayfinding operations
-
-Used by `/wayfinder`. The **map** is a single issue with **child** issues as tickets.
-
-- **Map**: a single issue labelled `wayfinder:map`, holding the Notes / Decisions-so-far / Fog body. `gh issue create --label wayfinder:map`.
-- **Child ticket**: an issue linked to the map as a GitHub sub-issue (`gh api` on the sub-issues endpoint). Where sub-issues aren't enabled, add the child to a task list in the map body and put `Part of #<map>` at the top of the child body. Labels: `wayfinder:<type>` (`research`/`prototype`/`grilling`/`task`). Once claimed, the ticket is assigned to the driving dev.
-- **Blocking**: GitHub's **native issue dependencies**, the canonical, UI-visible representation. Add an edge with `gh api --method POST repos/<owner>/<repo>/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`, where `<blocker-db-id>` is the blocker's numeric **database id** (`gh api repos/<owner>/<repo>/issues/<n> --jq .id`, _not_ the `#number` or `node_id`). GitHub reports `issue_dependencies_summary.blocked_by` (open blockers only, the live gate). Where dependencies aren't available, fall back to a `Blocked by: #<n>, #<n>` line at the top of the child body. A ticket is unblocked when every blocker is closed.
-- **Frontier query**: list the map's open children (`gh issue list --state open`, scoped to the map's sub-issues / task list), drop any with an open blocker (`issue_dependencies_summary.blocked_by > 0`, or an open issue in the `Blocked by` line) or an assignee; first in map order wins.
-- **Claim**: `gh issue edit <n> --add-assignee @me`, the session's first write.
-- **Resolve**: `gh issue comment <n> --body "<answer>"`, then `gh issue close <n>`, then append a context pointer (gist + link) to the map's Decisions-so-far.
+Native blocking edges use numeric database IDs, not issue numbers or node IDs:
+`POST repos/<owner>/<repo>/issues/<child>/dependencies/blocked_by -F issue_id=<id>`.
+Read `.id` from the blocker and reverify open dependencies; where unavailable use
+`Blocked by: #N` with live blocker states. Frontier: open unassigned children in map
+order without open blockers. Claim via explicit assignee only within authorized
+scope. Resolve by posting evidence/context pointers, then owner-approved closure;
+implementation tickets still require the PR/verification lifecycle above.

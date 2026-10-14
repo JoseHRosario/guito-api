@@ -1,169 +1,108 @@
 # Guito API
 
-Personal expense-tracking API. Guito helps José control expenses and maximize savings: expenses are created manually, extracted by AI from free-form input, or matched from bank transactions. The API exposes HTTP endpoints consumed by the Guito web UI and CLI/AI agents. Sheets remains the default Expense authority; staged Postgres migration uses the existing Aurora Data API infrastructure.
-
-> Currently under revival (2026): migrating to AWS, modernizing the stack, and fixing bank sync. See the [revival plan](docs/guito-revival.md) and [issue #1](https://github.com/JoseHRosario/guito-api/issues/1).
+Personal expense-tracking API consumed by the Angular [guito-ui](https://github.com/JoseHRosario/guito-ui)
+and CLI/AI agents. Expenses can be entered manually or proposed by AI; bank consent,
+transaction retrieval/sync and category suggestions use Enable Banking behind provider
+interfaces. Proposed Bank-review work is not the same as merged matching capability.
 
 ## Architecture
 
-```
-Google (ID token)            CLI / AI agents (X-Api-Key)
-        │                              │
-        ▼                              ▼
-   ┌───────────────────────────────────────────────────────────┐
-   │  API Gateway HTTP API  (identity source: Authorization)   │
-   │  guito-key-authorizer (REQUEST, one function)             │
-   │      dispatches on header:                                │
-   │        Bearer <jwt>  → Google ID-token validator  ────────│──▶ Google JWKS
-   │        raw Authorization → agent-key validator ────────────│──▶ SSM Parameter Store
-   │          │ (allowed)                                      │
-   │          ▼                                                │
-   │  Lambda — guito-api (.NET 10, arm64)                      │──▶ SSM Parameter Store
-   │          │ (GoogleIdTokenMiddleware / ApiKeyMiddleware)   │
-   └──────────┼────────────────────────────────────────────────┘
-              ▼
-     Google Sheets (datastore)          PSD2 provider (Enable Banking)
-```
+.NET 10 (`src/guito-api`) runs on AWS Lambda behind API Gateway HTTP API. A separate
+`src/guito-api-authorizer` REQUEST authorizer dispatches independent agent-key and
+Google ID-token validation; checks repeat inside the API. Deployed agent requests
+send the same key in raw `Authorization` and `X-Api-Key`; human requests send the same
+ID token in Bearer `Authorization` and `x-google-idtoken`. Reporting has a distinct,
+GET-history-only Google identity. See [authentication](docs/authentication.md).
 
-- **Runtime**: .NET 10 on AWS Lambda (managed dotnet10 runtime, arm64, eu-west-1) behind API Gateway HTTP API; logs in CloudWatch. Two functions: `guito-api` (the app) and `guito-api-authorizer` (the edge auth gate).
-- **Datastore**: Sheets remains the default/production Expense and Category authority. Aurora PostgreSQL via RDS Data API stores Bank Transactions and the Categories mirror; Expense reads/writes can opt into Postgres outside Production (ADR-0015).
-- **Auth**: dual scheme — a personal `X-Api-Key` for CLI/AI agents and Google ID tokens for the UI (issue #13/#8). API Gateway allows one CUSTOM authorizer per route, so the `guito-key-authorizer` REQUEST authorizer is a single function dispatching on the `Authorization` header (its sole identity source): `Bearer <jwt>` → Google ID-token validation (RS256 against Google's JWKS, issuer/audience/expiry/allowlisted-email checks), raw value → agent-key validation. The two validators are independent — neither path falls back into the other. The same checks repeat inside the API (`ApiKeyMiddleware` / `GoogleIdTokenMiddleware`) as defense-in-depth, and each middleware is path-aware: agent requests carry the key in **both** `X-Api-Key` and `Authorization`; human requests carry the ID token in **both** `Authorization: Bearer <token>` and `x-google-idtoken` (see the sample requests in `src/guito-api/Rest/guito-api.http`). Human-path config (`GOOGLE_CLIENT_ID`, `GOOGLE_ALLOWED_EMAILS`) arrives via Lambda env vars set in `deploy/deploy.sh` §3b; unset → human path deny-closed.
-- **Human-token smoke**: the OAuth consent happens once (OAuth Playground, `openid email` scope); the refresh token lives in SSM SecureString `/guito-api/human-auth`, and fresh ID tokens are minted unattended via the Google token endpoint — so the live positive smoke needs no human in the loop.
-- **Bank sync**: PSD2 transaction retrieval behind `IListTransactionsService` — Enable Banking (free "Restricted Production" tier) is the provider, selected by `AppConfiguration:BankProvider`; consents are re-authenticated manually (~90 days). Provider adapter ships with the T4 Phase-2 work (issue #5 / ADR-0004).
-- **AI extraction**: endpoint stubbed (501) during the revival; a new implementation over OpenRouter is planned.
+Controllers delegate to per-operation services. Repository interfaces exchange
+internal Model values; technology adapters under Infrastructure own Sheets, Postgres
+Data API, OpenRouter, SSM and bank transports. HTTP DTOs are separate from internal
+models. [Conventions](docs/CONVENTIONS.md) and [ADR-0011](docs/adr/0011-repository-pattern.md)
+define the boundaries, including the merged #146 Expense aggregate extension.
+
+`AppConfiguration:ExpenseStore` selects one personal read/write authority: Sheets
+(default configuration) or Postgres via the existing Aurora Data API infrastructure.
+It works in every environment; there are no dual writes. `/Category` remains
+Sheets-backed with a seeded Postgres mirror. Dedicated smoke CRUD always uses Sheets.
+Routine staging Actions selects Postgres; production Actions omits the selector and
+preserves installed authority. A committed Sheets default is not deployed-state proof.
+
+The [dated cutover record](docs/expense-cutover.md) records José's #132 operational
+acceptance and its unperformed rehearsals, reconciled from newer #133 documentation.
+It is not a fresh live audit or permission to change authority. Reverify the served
+build/config before any operation; returning to stale Sheets after Postgres writes
+requires approved reconciliation, not a config rollback.
 
 ## Getting started
 
-Prerequisites: .NET 10 SDK, a Google service account key, and the Guito spreadsheet shared with that service account.
+Prerequisite: .NET 10 SDK. From an owned issue worktree:
 
 ```bash
-export PATH="$HOME/.dotnet:$PATH" DOTNET_ROOT="$HOME/.dotnet"   # if the SDK is not already on PATH
-dotnet restore
-dotnet run                       # Kestrel on the dev profile
+export PATH="$HOME/.dotnet:$PATH" DOTNET_ROOT="$HOME/.dotnet"   # if needed
+dotnet restore guito-api.slnx
+dotnet build guito-api.slnx
+dotnet test guito-api.slnx --filter "Category!=Integration"
+dotnet run --project src/guito-api   # local Kestrel, not Lambda emulation
 ```
 
-```bash
-dotnet test --filter "Category!=Integration"   # hermetic unit tests (CI gate)
-scripts/run-deployed-tests.sh                 # deployed-staging integration tests (reads secrets from AWS)
-```
+Build and hermetic tests require no secrets. Real local requests need owner-provided,
+gitignored local configuration/credential files and the appropriate dev spreadsheet
+shared with its service account. Relative file paths resolve from `src/guito-api`.
+Inspect committed appsettings and local overrides; never target production from local
+dev. Configuration uses AppConfiguration options, environment JSON and environment
+variables. Deployed application secrets use SSM SecureString; database credentials
+remain Secrets Manager secrets for Data API ([ADR-0008](docs/adr/0008-per-environment-secrets-payload.md)).
+Never print/commit credentials or modify `~/.aws`.
 
-Configuration comes from `appsettings.{Environment}.json` plus environment variables (Google service account credentials, Sheets ids, bank-provider credentials). Application secrets are stored as SSM Parameter Store SecureStrings in deployed environments; database credentials remain in Secrets Manager because RDS Data API requires it (ADR 0008) — never commit either. Base/`appsettings.json` targets the DEV spreadsheet; `appsettings.Production.json` targets prod.
+The solution includes `tst/` hermetic tests and `sit/` live suites: bare `dotnet test`
+is not safe shorthand for the unit gate. Separately approved
+`scripts/run-deployed-tests.sh staging` resolves AWS credentials and runs auth plus
+isolated Sheets smoke round-trips. It does not prove personal Postgres persistence.
+See [operations](docs/operations.md) for approval/provenance and test distinctions.
 
-## Sheets reporting refresh
+## Expense contracts and consumers
 
-The [private standalone Apps Script loader](docs/sheets-refresh.md) reads complete
-live Expense history into dedicated reporting tabs. It mints a short-lived Google
-OIDC identity for the reporting-only route; no Guito API key or refresh token is
-stored in the spreadsheet or script. Installation, consent and staging reopen
-acceptance require the owner's separate approval. Existing archive/formula tabs
-are never replaced. Hermetic checks: `node --check scripts/sheets-refresh/Code.js`
-and `node --test scripts/sheets-refresh/refresh.test.js` (Node 22; no packages).
+- [GLOSSARY](GLOSSARY.md) defines numeric Expense identity, exact amounts and Lisbon
+  occurrence/audit vocabulary. [ADR-0015](docs/adr/0015-postgres-expenses-and-lisbon-occurrence.md)
+  specifies create/latest: one `bookingDate`, exact-decimal amounts, immutable Int32
+  IDs and frozen date-only Sheets compatibility. Amount input must fit .NET decimal
+  exactly (96-bit coefficient, scale 0–28 after removing trailing zeros); no rounding,
+  underflow or overflow. Intraday creates against Sheets return 409.
+- [Detail/edit/delete](docs/expense-edit-delete-contract.md) uses ETag/If-Match revisions,
+  exact stored amount text and atomic personal mutations; [delete security](docs/expense-delete-security.md)
+  confines scope and uncertain-outcome recovery. `/Smoke/{id}` is unrelated Sheets cleanup.
+- [Category/month query](docs/expense-category-month.md) returns all exact-category
+  Expenses in a Lisbon booking month without silent partial success; Postgres only.
+- [History](docs/expense-history-export.md) is live paginated Postgres data, not a frozen
+  export. [Private Apps Script refresh](docs/sheets-refresh.md) reads complete history
+  into dedicated reporting tabs with a short-lived identity, no stored API key or
+  refresh token. Existing archive/formula tabs are not replaced; installation/reopen
+  and production reporting require separate approval.
 
-## Expense category/month query for agents
+`POST /AI/extract` is implemented through OpenRouter, not a universal 501 stub.
+Jev gates expense notes before a chat model extracts date/amount/merchant, then picks
+from real categories. Models are configuration-selected, not inferred deployed choices.
+Extraction normalizes a positive nonzero amount; this is distinct from create/update
+accepting exact positive, zero or negative values. Its `bookingDate` is day-precision
+midnight, not a known occurrence instant; submit the day as `yyyy-MM-dd`. Response
+amounts use exact decimal text; preserve them without JavaScript Number conversion.
 
-`GET /Expense?category=Startup&month=2026-10` returns every exact-category Expense
-in the requested Europe/Lisbon booking month, ordered by booking date then ID descending.
-Requires Postgres Expense authority; Sheets returns 409 and production cutover stays blocked.
-There is no pagination or record cap: Data API failures return an explicit error,
-never a partial success. Responses use ordinary MVC JSON serialization. See the [Paperclip consumer contract](docs/expense-category-month.md)
-for required query parameters, exact amount strings, deployed `Authorization` + `X-Api-Key`
-headers, response shape, errors and provider transport constraints.
+## Deployment and contributing
 
-## Expense contract and staged Postgres rollout
+GitHub Actions packages/deploys the API and authorizer through OIDC. Routine migrations
+are applied by that pipeline. Feature pushes can replace shared staging; master pushes
+can deploy production. No deployment is authorized by this documentation task. Review
+[operations](docs/operations.md) before release, IAM maintenance or live checks.
 
-`POST /Expense` binds one required `bookingDate` to a `DateTimeOffset`; its JSON value is
-a string: `yyyy-MM-dd` for legacy Lisbon midnight, or explicit-offset ISO8601 for a known occurrence instant. It also accepts
-exact-decimal `amount` (positive, zero or negative; a JSON number, including exponent notation, or an
-invariant decimal string), description and category. Amounts must be exactly
-representable by .NET decimal: a 96-bit coefficient and scale 0–28 after removing
-trailing zeros. Inputs requiring rounding, underflow or overflow return 400; equivalent
-trailing-zero representations are accepted. Latest and AI extraction responses expose
-one `amount` as invariant exact decimal text (null for an absent latest amount), avoiding
-JavaScript Number rounding; there is no duplicate amount field.
-Timestamp `bookingDate` accepts any explicit offset (including UTC `Z`); the server preserves
-the instant and derives its Europe/Lisbon calendar day. For example,
-`"bookingDate":"2026-07-01T23:30:00.123456Z"` becomes Lisbon July 2, 00:30, with all
-microseconds retained. Naive datetime strings (including unresolved DST gaps or
-repetitions), invalid/missing dates, and more than six fractional digits return 400,
-not rounding. The removed request properties `date` and `occurredAt` return 400 even if null (case-insensitive);
-other unknown request properties remain tolerated. Latest has one `bookingDate`
-occurrence instant: time-enabled clients resubmit it as POST `bookingDate`, not as a second
-field. AI extraction exposes `bookingDate` with its existing DateTime day precision
-(an offset-free midnight), not a known instant. Clients submit that calendar day as
-`yyyy-MM-dd`. Legacy/prod clients send only `yyyy-MM-dd`; intraday timestamps
-against frozen date-only Sheets return 409 rather than silently losing time. Currency defaults
-to EUR; non-EUR values are rejected. Create returns `{ "id": 123 }` (an Int32 JSON number).
+Each issue uses a dedicated worktree, branch and owner-reviewed PR. Root
+[AGENTS](AGENTS.md) owns safety/worktree/attribution rules; [tracker](docs/agents/issue-tracker.md)
+owns templates and cross-repo closure. #149 component PRs reference rather than
+close the cross-repo issue; no runtime version change is authorized for this docs work.
 
-`GET /Expense/latest/{count}` (1–100) returns `expenses` with numeric `id`,
-`bookingDate`, `currency`, `creationDate`, `updateDate`, amount, description, category
-and creatorEmail. Postgres stores generated integer IDs (returned as JSON numbers),
-`booking_date`, an exact numeric amount, `category_id` referencing the seeded categories
-mirror, `create_date`, and nullable `update_date`. No currency or test-scope column is
-stored. EUR remains a compatibility wire value. Latest orders booking date then integer
-ID descending; `updateDate` is null until an explicit update. Unknown category names
-not present in the mirror return 422; requests never seed categories.
-Latest has no `storedOrder`, `date` or `occurredAt` aliases; callers use `id`.
-`X-Sheet-Scope: smoke` explicitly selects the dedicated Sheets smoke tab for create/list,
-regardless of the normal Expense Store. `DELETE /Smoke/{id}` is Sheets-only cleanup;
-it never deletes Postgres expenses.
+## Documentation map
 
-`AppConfiguration:ExpenseStore` selects the normal adapter (default `Sheets`).
-GitHub Actions selects Postgres for staging and Sheets for production. Deployment and
-migration execution run only in the pipeline, not from an agent's local shell.
-
-The existing migration runner applies resumable `005_expenses.sql` before deployment.
-Omitting `EXPENSE_STORE` preserves any existing staging Lambda override. Production
-is pinned to Sheets and runtime rejects Postgres there until a later cutover approval.
-No import, export, matching or production migration is included in #128. Reverting
-to stale Sheets after Postgres writes is not a valid rollback without reconciliation.
-
-The deployed-test runner always exercises date-only Sheets CRUD in the dedicated
-smoke tab; cleanup uses the returned ID and runs even if the first list assertion fails.
-This runner revision requires the new `bookingDate`/integer-ID/exact-string-amount API
-contract. Use it against updated staging (or production only after approved cutover),
-not the unchanged pre-cutover production API; it does not negotiate legacy contracts.
-Normal redeploys apply pending migrations without resetting expense data.
-
-**Compatibility gate:** the frozen Sheets schema retains date-only precision and
-transient absolute row IDs; audit timestamps are null. Legacy creates still work.
-Intraday creates return 409 rather than silently losing time. Roll the time-enabled
-UI out only to Postgres-enabled staging, not production yet. Real persistence,
-constraints and resumable migration execution remain separate deployed acceptance;
-hermetic HTTP fakes cannot prove them. See [ADR-0015](docs/adr/0015-postgres-expenses-and-lisbon-occurrence.md).
-
-## Deployment
-
-Deployed by GitHub Actions to Lambda via OIDC role assumption (no long-lived AWS keys in GitHub). Two functions deploy independently from their own project folders: `src/guito-api` → `guito-api` (handler `guito-api::GuitoApi.LambdaEntryPoint::FunctionHandlerAsync`) and `src/guito-api-authorizer` → `guito-api-authorizer` (REQUEST authorizer for `guito-key-authorizer`, IAM-policy responses, TTL 0). Resources are prefixed `guito-` and tagged `Project=Guito`, account 497087877832, region eu-west-1. `deploy/deploy.sh` reproduces the stack locally (parameter preflight, IAM, functions, HTTP API, routes, access logs). Application parameters are already provisioned; deployment validates their existence and never creates replacement credentials. SSM is the only deployed application-secret backend; local JSON files remain supported. The authorizer requires `SECRETS_LOCATION=AwsSsm` and an explicit `SECRETS_SECRET_NAME` parameter path. See [ADR 0008](docs/adr/0008-per-environment-secrets-payload.md) for completed retirement and the retained database-secret exception.
-
-### Post-merge IAM reconciliation
-
-After this cleanup is merged, production deploy succeeds, and deployed suites pass
-in both environments, reconcile the shared Guito runtime and deployment-role
-inline policies:
-
-```bash
-python3 deploy/reconcile-iam.py                         # dry-run plan, no writes
-python3 deploy/reconcile-iam.py --apply --rollout-verified
-python3 deploy/reconcile-iam.py                         # expect zero changes
-```
-
-The script uses the `minerva-agent` profile and verifies the MinervaAIAgent role,
-SSM consumer configuration and policy read-back. `--rollout-verified` is an
-explicit attestation of the merge/deployment/SIT gate; it does not run those
-checks. Database, SSM and unrelated permissions are preserved. Changes are not
-transactional: an error aborts; inspect any partial changes before retrying.
-Never run `--apply` before production rollout, and never change Minerva policies.
-
-## Contributing
-
-Feature branches + pull requests; PRs are reviewed and merged by the owner. Commits by the AI agent are authored as `Meireles`. Decisions are recorded as ADRs in [`docs/adr/`](docs/adr) — read them before proposing architectural changes.
-
-## Docs
-
-- [Revival plan](docs/guito-revival.md) — phases and grill-session decisions
-- [ADRs](docs/adr/) — 0001–0006 (AWS target, Angular rewrite, dual auth, PSD2 provider, Sheets datastore, Figma tokens)
-- [CONTEXT.md](CONTEXT.md) — domain glossary (Expense, Transaction, Match, Extract, PSD2 provider)
-
-## Related repos
-
-- [`guito-ui`](https://github.com/JoseHRosario/guito-ui) — Angular UI (planned; replaces the archived Next.js `guito-web-app`)
+[Domain discovery](docs/agents/domain.md) routes relevant contracts/ADRs; read only the
+applicable decisions before architectural changes. [Revival plan](docs/guito-revival.md)
+retains the dated original MVP decisions, not an undated production status page.
+[Historical import](docs/historical-expense-import.md) retains accepted provenance;
+retired import tooling is not a new operational prerequisite.

@@ -1,7 +1,8 @@
 # Guito Code Conventions
 
-Rules that apply to every PR in this repo. AGENTS.md carries architecture and workflow;
-this file carries coding conventions. Agents must check this list before committing.
+Rules for C# implementation and review: read **before applicable source edits**,
+then check again before commit. [AGENTS](../AGENTS.md) owns operational boundaries;
+[tracker](agents/issue-tracker.md) owns branch/PR/template/closure procedures.
 
 ## Solution file (guito-api.slnx) membership
 
@@ -9,18 +10,6 @@ Keep the solution file a complete map of the repo:
 1. **When a DB migration is created** (`db/migrations/NNN_*.sql`), add it to the solution file inside a `/db/migrations/` folder block (like the `/docs/` folder below).
 2. **When an ADR is created** (`docs/adr/NNNN-*.md`), add it to the solution file's `/docs/` folder.
 3. The solution is the first place a reader sees the repo shape — a file missing from it is a review finding.
-
-## Branching
-
-One branch per issue, cut from `master`, named with the issue number first:
-
-- Features and new work: `feature/<issue#>-<slug>` (e.g. `feature/9-user-flow`)
-- Bugs — something that worked as intended is broken (code regression, wrong
-  behavior, broken config): `bug/<issue#>-<slug>` (e.g. `bug/40-token-crash`)
-- Environment/CI/docs work stays under the existing informal prefixes (`chore/`,
-  `docs/`) — not formalized further.
-
-The PR body must end with `Closes #N`. Never push directly to `master`.
 
 ## One class or interface per file
 
@@ -175,6 +164,8 @@ public void ApplyCoupon_ShouldDeductTenPercent_WhenCouponIsValid()
 ```
 
 ## 6. Verification checklist
+
+Every new source file ends with a trailing newline.
 
 Before committing any C# change, verify that:
 1. No variables or magic strings are cryptically named.

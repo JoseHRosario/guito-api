@@ -1,116 +1,98 @@
 # AGENTS.md
 
-Guidance for AI coding agents working in this repo. Keep it small and current — details live in the linked docs, not here.
-
-## Where the code lives
-
-**Canonical working tree on the host filesystem: `/d/srv/projects/guito-api`** — agents must use this path for all work (build, test, commit, push, pull). Don't clone elsewhere. For parallel sessions working separate issues, see the worktree rule under **Rules** — branch work happens in a `.worktrees/` worktree, not by switching the main tree's branch.
-
-## What this project is
-
-Guito: personal expense-tracking API (.NET 10, AWS Lambda + API Gateway HTTP API) doing CRUD on a Google Spreadsheet. Glossary in [CONTEXT.md](CONTEXT.md); decisions in [docs/adr/](docs/adr/); coding conventions in [docs/CONVENTIONS.md](docs/CONVENTIONS.md) (read before committing — its rules are enforced on every PR); current work plan in [docs/guito-revival.md](docs/guito-revival.md); active spec in [issue #1](https://github.com/JoseHRosario/guito-api/issues/1).
-
-## Layout
-
-- `src/guito-api/` — API source (one project, `src/guito-api/guito-api.csproj`)
-- `src/guito-api/Repositories/` — per-aggregate data-access INTERFACES only (`IExpenseRepository`, `ICategoryRepository`, `IExpenseExtractionRepository`)
-- `src/guito-api/Infrastructure/` — datastore/provider implementations behind those interfaces (`Sheets/`, `Secrets/`, `AI/`); Services never see a concrete datastore or provider type (ADR 0011)
-- `src/guito-api-authorizer/` — X-Api-Key Lambda authorizer (separate project/function)
-- `tst/guito-api.Tests` — API tests
-- `tst/guito-api-authorizer.Tests` — authorizer tests
-- `sit/guito-api.IntegrationTests` — business SIT: black-box tests against the DEPLOYED staging stack (NOT hermetic; requires AWS-resolved secrets — run via `scripts/run-deployed-tests.sh`, never plain `dotnet test`)
-- `sit/guito-api-auth.IntegrationTests` — auth-contract SIT (same runner; layer attribution from response bodies)
-- `sit/guito-api.IntegrationTests.Common` — shared SIT plumbing (staging fixture); not a test project
-- `docs/` — ADRs, revival plan
+See [README.md](README.md) for the overview and onboarding. Links below are conditional reads, not eager archive loading.
 
 ## Commands
 
+Run from the owned worktree with the .NET 10 SDK (`guito-api.slnx`, not `.sln`):
+
 ```bash
-export PATH="$HOME/.dotnet:$PATH" DOTNET_ROOT="$HOME/.dotnet"   # .NET SDK is NOT on PATH by default — prepend before ANY dotnet command
-dotnet build          # build
-dotnet run --project src/guito-api  # local dev server (Kestrel) — plain dotnet run, no Lambda emulation
-dotnet test --filter "Category!=Integration"   # hermetic unit tests (bare `dotnet test` FAILS without env vars — sit/ suites are not hermetic)
-scripts/run-deployed-tests.sh       # deployed-staging SIT suites (business + auth contract); resolves application secrets from SSM SecureString
-dotnet tool restore   # if Lambda tools are needed for packaging checks
-ENV=staging deploy/db-apply.sh   # apply pending DB migrations to an environment (called automatically by deploy/deploy.sh since issue #114 — never run prod manually unless CI is broken)
+export PATH="$HOME/.dotnet:$PATH" DOTNET_ROOT="$HOME/.dotnet"
+dotnet build guito-api.slnx
+dotnet test guito-api.slnx --filter "Category!=Integration"
+dotnet run --project src/guito-api   # Kestrel; local dev configuration only
 ```
 
-Lambda packaging happens in CI (Amazon.Lambda.Tools). Do not add local Lambda emulation tooling.
+Build/tests need no credentials. Local requests may need ignored files; relative
+paths resolve against `src/guito-api`. Never target production from local dev. Bare
+`dotnet test` includes live `sit/` suites. Separately approved live checks use
+`scripts/run-deployed-tests.sh staging` (AWS secret reads, isolated Sheets smoke CRUD).
+Packaging belongs to CI; no Lambda emulator.
 
-## Rules
+## Essential conventions
 
-- **Secrets never enter the repo.** Google service-account keys, bank-provider credentials, API keys — application secrets live in SSM Parameter Store SecureString; database credentials remain in Secrets Manager for RDS Data API (ADR 0008); local dev uses `appsettings.*.json` files that are gitignored. The Google service-account key is `src/guito-api/google-spreadsheets.json` (gitignored; relative paths in config resolve against the project directory, since `dotnet run` runs from there).
-- **Respect the ADRs.** Google Sheets stays the datastore; auth is dual (Google PKCE for humans, `X-Api-Key` for agents); bank sync goes through the provider interface — do not bypass these without a new ADR.
-- **Sheets schema is frozen.** Never change spreadsheet layout, column order, or header names — the UI and existing data depend on them.
-- **Auth paths are separate.** Human (Google ID token) and agent (`X-Api-Key`) authorization are distinct authorizers; never merge or weaken them.
-- **The extraction endpoint (`POST /AI/extract`) calls OpenRouter**: a chat model extracts date/amount/merchant, Jev gates the note and picks the category (PR #73).
-- **Workflow**: feature or bug branch → PR → reviewed and merged by José. One branch per issue, named `feature/<issue#>-<slug>` or `bug/<issue#>-<slug>` (issue number first); the PR body **must end with `Closes #N`** so GitHub closes the issue on merge into `master`. Feature issues use the Feature issue template; bug issues use the Bug issue template (bug = something that worked as intended is broken — code regression, wrong behavior, broken config; environment/CI/docs work stays under existing informal prefixes). **Version (ADR 0012)**: every feature/bug issue carries a mandatory *Proposed version*; the agent bumps the declared version (`<Version>` in `src/guito-api/guito-api.csproj`) on the branch as part of the work — no git tags, every build stamps `<version>+<UTCts>.<shortsha>`. Never push directly to `master`.
-- **Parallel sessions use git worktrees.** The main tree (`/d/srv/projects/guito-api`) stays on `master` and is shared (José's Windows sync + any agent session) — never check a feature branch out there. For work on a separate issue while another session works, create a worktree **inside the repo** under the gitignored `.worktrees/` dir: `git worktree add .worktrees/<issue#>-<slug> feature/<issue#>-<slug>`. Branches are exclusive per worktree, so sessions cannot collide. Note: gitignored secrets (`google-spreadsheets*.json`, `appsettings.*.json` locals) exist only in the main tree — copy them into the worktree or sourced commands will fail.
-- **Before any blanket `git add -A`, verify `.worktrees/` is ignored on the current branch** (`git check-ignore .worktrees/` — branch history may predate the ignore entry); otherwise prefer adding explicit paths. A branch without the ignore entry would stage an entire nested repo copy.
-- **Always run `git branch --show-current` before starting work** — the shared tree may have been switched by another session since you last looked.
-- Remove the worktree when its PR merges: `git worktree remove .worktrees/<name> && git worktree prune`.
-- **Commit attribution**: agent commits are authored as `Meireles <josehrosario@gmail.com>` (or amend with `--author`); José's commits stay under his name.
-- **AWS operations** assume the role `arn:aws:iam::497087877832:role/MinervaAIAgent` — never use the user identity directly.
+Before C# edits, read [conventions](docs/CONVENTIONS.md). One top-level type per
+file (including records); thin controllers, one service interface per operation,
+repository interfaces in `Repositories/`, technology adapters in `Infrastructure/`.
+`DataTransferObjects/` owns HTTP payloads; `Model/` owns internal values. Repository
+contracts never accept wire DTOs. Bind options in `Startup.cs`; no scattered
+service configuration reads or hardcoded sheet ranges.
+Use ProblemException/ProblemDetails for expected failures; preserve the Google
+OAuth `{error, error_description}` exception described in the auth reference.
 
-## Architecture patterns
+Tests in `tst/` stay hermetic: no network, credentials, live Sheets/Postgres or bank
+provider. Prefer HTTP/public seams and real application composition with fake
+external transports, rather than mocking internal layers. Secret-provider/key-loader
+contract seams are allowed. Green fakes prove neither
+live persistence/constraints nor visual approval or production acceptance.
 
-Request path: **Controller → Service → Data access**. Each layer has one job; follow it when adding endpoints.
+## Git and ownership
 
-### Controller (`src/guito-api/Controllers/`)
-- Thin: route + DTO in, DTO out, one line calling the service. No business logic, no Sheets calls, no mapping beyond what the DTO does.
-- `[ApiController]`, `[Route("[controller]")]` — URL is the lowercase controller name (`/expense`, `/category`, `/ai`, `/account`).
-- One operation per action; async all the way.
+- Canonical shared root: `/d/srv/projects/guito-api`. Every issue, even sequential
+  work, uses its own gitignored `.worktrees/<issue#>-<slug>` worktree. Verify branch,
+  status, staged/untracked ownership and `.worktrees/` ignore before work. Never
+  switch, pull over, stash, reset or clean another session's dirty root/worktree.
+  Refresh refs safely; start from the approved immutable master base.
+- One issue branch (`feature/<issue#>-<slug>` or `bug/<issue#>-<slug>`) → PR → José
+  reviews/merges. Stage explicit owned paths only; never push directly to `master`.
+  Remove worktrees after merge only if no pending work remains.
+- Agent commits: `Meireles (Hermes Agent) <332697001+xungameireles@users.noreply.github.com>`;
+  PRs use `xungameireles`, not José's account. Preserve José's attribution.
+- Follow [tracker rules](docs/agents/issue-tracker.md) for templates, closure and
+  cross-repo references. Cross-repo #149: reference, never auto-close from
+  a component PR; José owns final disposition.
+- Runtime feature/bug versions follow [ADR-0012](docs/adr/0012-version-declared-no-tags.md):
+  declared csproj version, stamped builds, no tags. #149 explicitly authorizes no
+  runtime version bump for this documentation-only work.
 
-### Service (`src/guito-api/Services/<Domain>/`)
-- **One interface per operation**: `I<Action>Service` + `<Action>Service` in the same folder (e.g. `Services/Expense/ICreateExpenseService.cs` + `CreateExpenseGoogleApisSheetsService.cs`). Never grow a god-interface; a new operation is a new pair.
-- Services own the business logic and produce/consume `DataTransferObjects/Output` and `Input` DTOs. `Input/` = request bodies, `Output/` = response payloads.
-- Data-access implementations live in `Infrastructure/` behind repository interfaces and are named by technology (`GoogleSheetsExpenseRepository`, `OpenRouterExpenseExtractionRepository`); the interface is the contract and the implementation is swappable (Nordigen ↔ dummy keeps PSD2 behind a seam, ADR-0004). The `Service` suffix stays reserved for application-layer collaborators.
-- Register the pair in `src/guito-api/Startup.cs` `ConfigureServices`. Environment-specific overrides are explicit `if (environment == ...)` blocks with a comment saying why.
+## Boundaries
 
-### Data access (`src/guito-api/Infrastructure/`)
-- `IGooglesheetsClientProvider.GetAsync()` returns an authenticated Google `SheetsService` — the credential/secrets concern is isolated here; everything else just calls it (interface lives in `Repositories/`, implementations in `Infrastructure/Sheets/`).
-- All ranges/spreadsheet ids come from `Configuration/` options (`AppConfigurationOptions`, populated from `appsettings*.json`); no hardcoded ids or ranges in services.
+**Always:** preserve exact IDs, decimals and Lisbon dates; respect applicable ADRs
+and frozen Sheets layout/headers/column order. Keep human and agent validators
+independent and fail-closed; one edge dispatcher is not permission to merge paths.
+Read both worktrees' root instructions for cross-repo work.
 
-### Errors
-- Services throw `Exceptions/ProblemException(statusCode, message)` for expected failures. `Exceptions/ExceptionToProblemDetailsHandler` converts them to RFC 7807 ProblemDetails — controllers never build error responses by hand. Deliberate exception (José-approved 2026-10-02): the `AuthController` Google actions (`/Auth/token`, `/Auth/logout`) map `GoogleTokenExchangeException` through a shared `CallGoogleAsync`/`GoogleError` helper to the verbatim RFC 6749 `{error, error_description}` body, because guito-ui's `tokenFailureMessage` parses THAT shape, not ProblemDetails; the status is Google's upstream status (or 502 on provider failure). Services classify the failure (throw the typed exception); the controller translates it to the wire contract — this translation is the only hand-built response in the codebase.
+**Ask first:** architecture/contract/authority changes, credential lifecycle, live
+checks, personal financial writes/deletes/imports/resets, production actions and
+staging replacement. Routine deployments and migrations go through GitHub Actions,
+not a local shell. Exceptional owner-approved operator configuration is allowed
+only within its explicit scope and read-back gates. Explicitly select **staging**
+for an approved review dispatch; shared staging is last-deployment-wins—verify exact
+ref/build/store and sibling deployment provenance before acceptance or replacement.
 
-### Auth (`src/guito-api/Middleware/`)
-- **Two independent paths — never merge or weaken them (ADR-0003):**
-  - **Agent path**: the API Gateway REQUEST authorizer (`guito-key-authorizer` → `src/guito-api-authorizer`) validates the agent key from the raw `Authorization` value at the edge and returns an IAM Allow/Deny policy, fail-closed, TTL 0. `ApiKeyMiddleware` (`src/guito-api/Middleware/`) repeats the check inside the API as defense-in-depth: valid key sets `HttpContext.Items[ApiKeyMiddleware.AgentAuthedKey]`, which makes `GoogleIdTokenMiddleware` skip only the Google-token check. Run order in `Startup`: `ApiKeyMiddleware` → `GoogleIdTokenMiddleware`.
-  - **Human path (issue #13)**: the gateway identity source is a single header, `Authorization`. The edge authorizer dispatches: `Authorization: Bearer <jwt>` → `GoogleTokenValidator` (`src/guito-api-authorizer/GoogleToken/`) verifies the RS256 signature against Google's JWKS, then checks issuer, audience (`GOOGLE_CLIENT_ID` env), expiry, and the allowed-email allowlist (`GOOGLE_ALLOWED_EMAILS` env). A raw `Authorization` value → agent-key path. `GoogleIdTokenMiddleware` (`src/guito-api/Middleware/`) repeats the token check inside the API as defense-in-depth, configured via `AppConfiguration:Authentication` (set in production through `AppConfiguration__Authentication__*` Lambda env vars). Both env sets come from `deploy/deploy.sh` section 3b; unset → human path is deny-closed, agent key path unaffected. **UI contract (issue #8): send the Google ID token as `Authorization: Bearer <idtoken>`.** Agents keep sending `X-Api-Key` and now also `Authorization: <key>` — API Gateway invokes a REQUEST authorizer only when ALL identity sources are present, so multiple source headers would 401 single-header requests (hit live, 2026-09-24).
-    - API Gateway allows one CUSTOM authorizer per route, so the edge is a single function with two independent validators dispatching on its sole identity source, `Authorization` (raw value → agent logic, `Bearer <jwt>` → Google logic, nothing → Deny). Other headers (`X-Api-Key`, `x-google-idtoken`) are never forwarded to REQUEST authorizers and must not be dispatched on at the edge. Independence is per-validator and per in-app middleware, not per function; never let one path fall back into the other.
-    - `/healthz` is public in both gates; its single definition is `ApiKeyMiddleware.PublicPathKey`.
-- Both paths read the same environment parameter (`/guito-api/prod` or `/guito-api/staging`). The contract between the sides is the secret's JSON shape (`ApiKeys` array, SA key object); the API binds it as `SecretsPayload` (`src/guito-api/Configuration/Secrets.cs`), the authorizer parses the raw `ApiKeys` property — no shared type. Changing the payload shape requires deploying both functions.
+**Never:** commit or print secrets; modify anything under `~/.aws` (José owns it);
+use José's AWS identity instead of the approved agent role
+`arn:aws:iam::497087877832:role/MinervaAIAgent`; run unapproved production or personal
+financial mutations. Do not copy ignored secrets just to build/test. Smoke cleanup
+is isolated Sheets-only, never personal/Postgres deletion. Never infer deployed
+authority/approval from code, old notes, `/healthz` or a green fake suite.
 
-### Authorizer (`src/guito-api-authorizer/`)
-- Separate Lambda project/function, invoked by API Gateway before any route. Deploys independently from `src/guito-api/` (separate GitHub Actions job/zip).
-- Two validator directories, mirroring each other: `AgentKey/` (agent key: `IKeysLoader`/`SsmParameterStoreKeysLoader` (explicit `AwsSsm` backend and parameter name required), `AgentKeyValidator` fixed-time compare, any load failure → Deny) and `GoogleToken/` (RS256/JWKS + iss/aud/exp/allowlist). `Function.cs` only dispatches on the `Authorization` header and turns validator results into IAM policies (`EnableSimpleResponses=false`).
-- Keep it small: no Sheets, no business logic, no API dependencies. Shared crypto/key logic between API and authorizer is duplicated on purpose (separate assemblies); note it if you change one.
+## Read before the relevant task
 
-### Testing (`tst/guito-api.Tests/`)
-- **Unit tests only — they run in CI.** No network, no credentials, no real Sheets access; the suite must pass on a machine with zero Google setup (verified by removing the key file). Anything needing the real spreadsheet or a bank provider is out of scope for this project.
-- External behavior only: HTTP boundary via `WebApplicationFactory<Program>` (`CustomWebApplicationFactory`), never internals. Explicit issue #95 exception (José-approved test seams): secret-provider contract tests may call `ISecretsProvider`, `IHumanAuthSecretProvider`, and `IEnableBankingCredentialsProvider` directly with hermetic AWS fakes to verify decryption, caching, cancellation, and backend selection. Authorizer key-loading tests likewise exercise `IKeysLoader`. Live auth and business behavior remains covered by the deployed SIT suites.
-- The Sheets seam is faked at the HTTP level: `FakeGooglesheetsService` builds a real Google client whose transport is `FakeSheetsHttpHandler` (canned Sheets JSON responses + recorded writes). Tests therefore cover controller → service → real Google-client serialization, without network or credentials.
-- Compositions get replaced via DI in the test factory (`IListTransactionsService` → dummy), mirroring the service-seam pattern.
+| Task | Required conditional references |
+| --- | --- |
+| C# implementation/review | [CONVENTIONS](docs/CONVENTIONS.md); [repository decision](docs/adr/0011-repository-pattern.md) for layering changes |
+| Domain/Expense contract | [GLOSSARY](GLOSSARY.md), [domain map](docs/agents/domain.md), [ADR-0015](docs/adr/0015-postgres-expenses-and-lisbon-occurrence.md) |
+| Expense edit/delete or reconciliation | [mutation contract](docs/expense-edit-delete-contract.md), [delete security](docs/expense-delete-security.md); recheck open #147 before assuming Bank-review behavior is merged |
+| Auth/secrets/public routes | [auth reference](docs/authentication.md), [ADR-0008](docs/adr/0008-per-environment-secrets-payload.md) |
+| Storage/migration/import/cutover | [ADR-0013](docs/adr/0013-postgres-aurora-data-api.md), [ADR-0014](docs/adr/0014-categories-mirror-postgres.md), [cutover](docs/expense-cutover.md); [import record](docs/historical-expense-import.md) only for historical provenance |
+| Reporting/query/history | [Sheets refresh](docs/sheets-refresh.md), [history contract](docs/expense-history-export.md), [category/month query](docs/expense-category-month.md) as applicable |
+| Release/deployment/live verification | [operations](docs/operations.md), [cutover evidence](docs/expense-cutover.md), [version decision](docs/adr/0012-version-declared-no-tags.md) |
+| Issues/PRs/triage | [tracker](docs/agents/issue-tracker.md); [labels](docs/agents/triage-labels.md) before triage |
+| Revival history/planning | [dated revival plan](docs/guito-revival.md); only relevant ADRs |
 
-### Configuration
-- All runtime knobs live in `Configuration/` options classes bound to the `AppConfiguration` section; environment files layer on top (`appsettings.Development.json` overrides locally, `appsettings.Production.json` for Lambda). No `IConfiguration` reads scattered in services.
+## Living doc
 
-## Style
-
-- Follow the existing code layout: controllers thin, one service interface per operation (`I<Action>Service` + `<Action>Service`), services as thin adapters over repository interfaces (ADR 0011), configuration via `Configuration/` options classes.
-- Keep the API surface backward-compatible with the existing spreadsheet data and the planned Angular UI.
-
-## Agent skills
-
-### Issue tracker
-
-Issues live in GitHub Issues on this repo (`gh` CLI); one branch per issue, PR closes #N. See `docs/agents/issue-tracker.md`.
-
-### Triage labels
-
-Five canonical roles used as-is: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-Single-context: `CONTEXT.md` + `docs/adr/` at repo root. See `docs/agents/domain.md`.
+Retain rules for recurring corrections; prune obsolete/duplicate rules in the
+change that invalidates them. Keep detail in task references, check routing links
+and size, and do not append incident logs or undated deployment claims here.

@@ -1,5 +1,9 @@
 # Expense detail, edit and permanent deletion (#146 / guito-ui#70)
 
+Merged #146 API contract at the #149 baseline (PR #148). Wire/safety rules below
+apply to code; original implementation/release evidence is historical and does not
+prove the currently served staging or production ref. Reverify deployment provenance.
+
 Pinned API/UI contract before implementation. Personal Postgres authority only;
 all three routes reject `X-Sheet-Scope: smoke` or Sheets authority with 409.
 Existing shared authorised humans and agents can use them irrespective of creator.
@@ -67,6 +71,10 @@ response acknowledges that operation. A fresh revision requires deliberate renew
 user intent; never silently overwrite another writer or label their work yours.
 
 ## Bank link handoff (#134/#135)
+
+The staging-schema observations below belong to #146 development, not a fresh live
+audit. PR #147 remains unmerged; its sibling deployment must be checked before any
+staging replacement. Preserve the compatibility handling without claiming feature parity.
 
 Master's legacy schema has nullable **text** bank_transactions.expense_id, no
 Expense FK or separate review-state column; Pending is expense_id IS NULL.

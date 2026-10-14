@@ -1,6 +1,10 @@
 # Google Sheets remains the data store
 
-> **Note (ADR 0011)**: the datastore access now sits behind per-aggregate repository interfaces (`IExpenseRepository`, `ICategoryRepository`) with a single Sheets implementation each; Postgres is the anticipated future store behind those interfaces. This ADR's "no migration" statement still governs: the migration itself remains undecided and out of scope.
+> **Historical decision, partially superseded:** ADR-0013 governs Bank Transactions;
+> ADR-0014 governs the Categories mirror; [ADR-0015](0015-postgres-expenses-and-lisbon-occurrence.md)
+> supersedes Expense-only Sheets/no-migration assumptions. Frozen Sheets compatibility
+> and smoke remain. The original rationale below is retained, not current authority.
+> See [cutover evidence](../expense-cutover.md) before operational decisions.
 
 The API performs CRUD on a Google Spreadsheet (via a service account) and this stays: no migration to DynamoDB. There is no data migration needed for the revival, Sheets costs nothing, and the dataset is personal-scale.
 

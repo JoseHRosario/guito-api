@@ -1,0 +1,2463 @@
+{
+  "units": "Unicode characters, UTF-8 bytes, splitlines line count, ceil(characters/4) per-file estimate; no validated Sol tokenizer or inference telemetry",
+  "bases": {
+    "guito-api": "49ffc0242fa5d6b138f8cb0a79060f13e84bd5a2",
+    "guito-ui": "744797e6335875850559eae2261d4dacd7fa4278"
+  },
+  "inventory": [
+    {
+      "repository": "guito-api",
+      "path": "AGENTS.md",
+      "characters": 15362,
+      "utf8_bytes": 15475,
+      "lines": 116,
+      "estimated_tokens_char4": 3841,
+      "sha256": "290d47cfc87cfc7ec80118342cfc9c9f1dbacc774e9738c1a4aec921127e6495",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "AGENT_TEST.md",
+      "characters": 38,
+      "utf8_bytes": 40,
+      "lines": 1,
+      "estimated_tokens_char4": 10,
+      "sha256": "f514a524c4b93efa57a1e431aa2ae6d1db504533e60c5ac6dd671a043a2c0143",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "GLOSSARY.md",
+      "characters": 7933,
+      "utf8_bytes": 8006,
+      "lines": 40,
+      "estimated_tokens_char4": 1984,
+      "sha256": "840d58cda6a4ef88f02fc09b7f52671b371e2c0590e02fb486a0b8885f840481",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "README.md",
+      "characters": 13565,
+      "utf8_bytes": 13963,
+      "lines": 169,
+      "estimated_tokens_char4": 3392,
+      "sha256": "9c1195acc1b10233b99341d4762aa972c5cd319321d01748ea49e5fdc47b3311",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "docs/CONVENTIONS.md",
+      "characters": 7447,
+      "utf8_bytes": 7483,
+      "lines": 184,
+      "estimated_tokens_char4": 1862,
+      "sha256": "0735ae121ae007b1bf3f6764314e051f073fd5c428eec3899347447dd5c51e28",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "docs/adr/0001-aws-serverless-deployment-target.md",
+      "characters": 598,
+      "utf8_bytes": 600,
+      "lines": 5,
+      "estimated_tokens_char4": 150,
+      "sha256": "21df825a45c1a4520fee86dec757b3f7380ace8e557ad0db012ed6a9ba189816",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "docs/adr/0002-angular-rewrite-new-repo.md",
+      "characters": 704,
+      "utf8_bytes": 708,
+      "lines": 7,
+      "estimated_tokens_char4": 176,
+      "sha256": "353cc96a073d10921abacc5e325f82e11b4ac9fb3baa7e7a487badcfe3a7ab70",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "docs/adr/0003-dual-auth-google-pkce-plus-api-key.md",
+      "characters": 861,
+      "utf8_bytes": 865,
+      "lines": 7,
+      "estimated_tokens_char4": 216,
+      "sha256": "5c9f1e1feb4616d253884299976f42a150f6a0e517f949dc156d1f97e2c47ff4",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "docs/adr/0004-psd2-provider-interface.md",
+      "characters": 4907,
+      "utf8_bytes": 4937,
+      "lines": 27,
+      "estimated_tokens_char4": 1227,
+      "sha256": "b9d16bcee3f6970a51aab4c95fcc5fe9ace7e3564d7fa73aee46a3a9738a7c26",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "docs/adr/0005-google-sheets-datastore.md",
+      "characters": 896,
+      "utf8_bytes": 896,
+      "lines": 7,
+      "estimated_tokens_char4": 224,
+      "sha256": "fc08fe3322d85e31b02626c6eb03156ce320edeeede71677cf3b78ca950dc496",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "docs/adr/0006-figma-design-tokens-ui.md",
+      "characters": 657,
+      "utf8_bytes": 663,
+      "lines": 7,
+      "estimated_tokens_char4": 165,
+      "sha256": "9af220798f369bdc315002e62b34ff37fdbe66ba2d87e9274fc125981761ec1b",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "docs/adr/0007-staging-environment.md",
+      "characters": 3675,
+      "utf8_bytes": 3699,
+      "lines": 11,
+      "estimated_tokens_char4": 919,
+      "sha256": "7b605952cf14818e5057a114ccbbf28d48ecd9d5b3b704ac4648294f1296b055",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "docs/adr/0008-per-environment-secrets-payload.md",
+      "characters": 5516,
+      "utf8_bytes": 5539,
+      "lines": 98,
+      "estimated_tokens_char4": 1379,
+      "sha256": "e2f225104ba99b88dbec95400994cf7dbc450c1572ee35dabda1414d4439ff67",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "docs/adr/0009-smoke-scope-quarantine-tab.md",
+      "characters": 4294,
+      "utf8_bytes": 4316,
+      "lines": 17,
+      "estimated_tokens_char4": 1074,
+      "sha256": "cebbd42be76e2abf6e3a2facc0624b3d596d94a967b001e176495a1616dfc3ca",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "docs/adr/0010-amounts-stored-positive.md",
+      "characters": 1466,
+      "utf8_bytes": 1470,
+      "lines": 16,
+      "estimated_tokens_char4": 367,
+      "sha256": "d11f40beb18cf27fd32250130360bad3a5d7c794aacb4f289111666af0f79a4e",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "docs/adr/0011-repository-pattern.md",
+      "characters": 4454,
+      "utf8_bytes": 4480,
+      "lines": 26,
+      "estimated_tokens_char4": 1114,
+      "sha256": "cf3c54b617878523690e7348618ec23aa07be75977b1e3695a69a76bf3df0fa9",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "docs/adr/0012-version-declared-no-tags.md",
+      "characters": 2405,
+      "utf8_bytes": 2422,
+      "lines": 13,
+      "estimated_tokens_char4": 602,
+      "sha256": "ff42ea56458aa7b1319ab98aedb861b68373212587511f57ed3a81713949c4a7",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "docs/adr/0013-postgres-aurora-data-api.md",
+      "characters": 4542,
+      "utf8_bytes": 4574,
+      "lines": 43,
+      "estimated_tokens_char4": 1136,
+      "sha256": "9864f70062cf173f14135aaf317c3f21ce95db8d49ee4a618aefc8a499469eed",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "docs/adr/0014-categories-mirror-postgres.md",
+      "characters": 3637,
+      "utf8_bytes": 3647,
+      "lines": 62,
+      "estimated_tokens_char4": 910,
+      "sha256": "19329e7107d870921c65122e7feda337b7c4ba868bc3b44c55d28487ce6ce8ae",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "docs/adr/0015-postgres-expenses-and-lisbon-occurrence.md",
+      "characters": 9436,
+      "utf8_bytes": 9439,
+      "lines": 129,
+      "estimated_tokens_char4": 2359,
+      "sha256": "2235ea0c69182d5322c3ac9337c52a713ee4e64f83ea7f70a44d05e6c5e5d934",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "docs/adr/0016-frozen-history-import-provenance.md",
+      "characters": 3938,
+      "utf8_bytes": 3949,
+      "lines": 59,
+      "estimated_tokens_char4": 985,
+      "sha256": "ce41279e18d5aaa899f977257b6ae20eca1eeb0804216b4d5f29a15eb2091502",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "docs/adr/0017-secretless-sheets-reporting-identity.md",
+      "characters": 5913,
+      "utf8_bytes": 5914,
+      "lines": 97,
+      "estimated_tokens_char4": 1479,
+      "sha256": "6dd58ff9d0f2305b9456b22e2690c57322710502298f405a25fe3b299a970f1e",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "docs/agents/domain.md",
+      "characters": 1934,
+      "utf8_bytes": 2032,
+      "lines": 51,
+      "estimated_tokens_char4": 484,
+      "sha256": "834053eb5b34d6cd5cddf7bae53431b7258967e39041600592f3e26a90473086",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "docs/agents/issue-tracker.md",
+      "characters": 5584,
+      "utf8_bytes": 5596,
+      "lines": 101,
+      "estimated_tokens_char4": 1396,
+      "sha256": "9cc963073c40e347c57e1406983527416fcd20b9fd610f8e7ae9769063977a91",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "docs/agents/triage-labels.md",
+      "characters": 1087,
+      "utf8_bytes": 1087,
+      "lines": 15,
+      "estimated_tokens_char4": 272,
+      "sha256": "30d85a947ba78c542fab2721c3e34ea21c62978fed678da626351d0d4cb92e04",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "docs/expense-category-month.md",
+      "characters": 6370,
+      "utf8_bytes": 6380,
+      "lines": 124,
+      "estimated_tokens_char4": 1593,
+      "sha256": "9c87a4bb050c773dc3cd058465fbad61c36f5b1b01d29feb5cccf0e945ad653d",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "docs/expense-cutover.md",
+      "characters": 7816,
+      "utf8_bytes": 7825,
+      "lines": 117,
+      "estimated_tokens_char4": 1954,
+      "sha256": "836a296d085024802867a8bd9ec2b78f03d6728b5f0ea3ba02f5115bc2f05011",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "docs/expense-delete-security.md",
+      "characters": 9750,
+      "utf8_bytes": 9783,
+      "lines": 133,
+      "estimated_tokens_char4": 2438,
+      "sha256": "333671aad09869b7fb2f4d63e5be85feb0bdf01f768306ddc099e67e8ab26142",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "docs/expense-edit-delete-contract.md",
+      "characters": 13251,
+      "utf8_bytes": 13253,
+      "lines": 206,
+      "estimated_tokens_char4": 3313,
+      "sha256": "993a776bb0a9c478dfd7a1f702f339c4d1905d3df708f4e4b3a35ab91ae9fed1",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "docs/expense-history-export.md",
+      "characters": 2435,
+      "utf8_bytes": 2437,
+      "lines": 42,
+      "estimated_tokens_char4": 609,
+      "sha256": "69767bd94e9ec5ef930bbaf1d656ae9d3a4025f5e791b83218748dd120b7f6e5",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "docs/guito-revival.md",
+      "characters": 7042,
+      "utf8_bytes": 7070,
+      "lines": 74,
+      "estimated_tokens_char4": 1761,
+      "sha256": "892a47d9ada161c92c3affa0ce6d4576c19e762a8cbc7037e26e03cd91a816f3",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "docs/historical-expense-import.md",
+      "characters": 2572,
+      "utf8_bytes": 2575,
+      "lines": 45,
+      "estimated_tokens_char4": 643,
+      "sha256": "c86b66267b70d98259ccc97e95203ac9c69ea2be50269bf3c07be1a6d78bddaf",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-api",
+      "path": "docs/sheets-refresh.md",
+      "characters": 22960,
+      "utf8_bytes": 22976,
+      "lines": 348,
+      "estimated_tokens_char4": 5740,
+      "sha256": "15c28a68fdf3d5777950cc7f0ba21e8f4bc76099334089475ce75b76173c703b",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-ui",
+      "path": "AGENTS.md",
+      "characters": 7580,
+      "utf8_bytes": 7650,
+      "lines": 74,
+      "estimated_tokens_char4": 1895,
+      "sha256": "94ae8039493f774176995e7d5f877d3b947e0b78289cfaa4dadfa9b8ea0532e9",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-ui",
+      "path": "GLOSSARY.md",
+      "characters": 2812,
+      "utf8_bytes": 2848,
+      "lines": 13,
+      "estimated_tokens_char4": 703,
+      "sha256": "562322eabe6f161e1b75c7d0cc491ff69dacd878956d1de444ff64abee62ae7e",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-ui",
+      "path": "README.md",
+      "characters": 4291,
+      "utf8_bytes": 4333,
+      "lines": 67,
+      "estimated_tokens_char4": 1073,
+      "sha256": "8f720f574d776d2fb0e4eafd8c6d8df12e6940d5c212ac9c75ba88761cc2abe0",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-ui",
+      "path": "docs/CONVENTIONS.md",
+      "characters": 3595,
+      "utf8_bytes": 3621,
+      "lines": 38,
+      "estimated_tokens_char4": 899,
+      "sha256": "55c9b55d538219d1be77d526b18e390473b2ecb1132f7cd7483ff8587f94b382",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-ui",
+      "path": "docs/adr/0010-figma-token-source-mcp-sync.md",
+      "characters": 2084,
+      "utf8_bytes": 2102,
+      "lines": 18,
+      "estimated_tokens_char4": 521,
+      "sha256": "c5b074c7acf74b25c5b7bd0c3eb0006b24d477b2789f21a021ce6a8f943569b7",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-ui",
+      "path": "docs/adr/0011-auth-gate-all-routes-google-only.md",
+      "characters": 2495,
+      "utf8_bytes": 2507,
+      "lines": 21,
+      "estimated_tokens_char4": 624,
+      "sha256": "80cae868ab5279cbe12f3b60741d9576108ea751ab40d0d2847fbb43e4998b01",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-ui",
+      "path": "docs/adr/0013-build-version-declared-no-tags.md",
+      "characters": 2319,
+      "utf8_bytes": 2332,
+      "lines": 11,
+      "estimated_tokens_char4": 580,
+      "sha256": "507e9ba42d2c895e08d1c96bdd1ed9ecaf5a3b13944e96501ba93eb4cee0e671",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-ui",
+      "path": "docs/adr/0014-expense-occurrence-lisbon.md",
+      "characters": 9782,
+      "utf8_bytes": 9782,
+      "lines": 151,
+      "estimated_tokens_char4": 2446,
+      "sha256": "e8cf03952208e4ed046fb70db0460b30ea0664efd74e2306444589e0d2a4b4c1",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-ui",
+      "path": "docs/agents/domain.md",
+      "characters": 1934,
+      "utf8_bytes": 2032,
+      "lines": 51,
+      "estimated_tokens_char4": 484,
+      "sha256": "834053eb5b34d6cd5cddf7bae53431b7258967e39041600592f3e26a90473086",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-ui",
+      "path": "docs/agents/issue-tracker.md",
+      "characters": 5584,
+      "utf8_bytes": 5596,
+      "lines": 101,
+      "estimated_tokens_char4": 1396,
+      "sha256": "9cc963073c40e347c57e1406983527416fcd20b9fd610f8e7ae9769063977a91",
+      "condition": "baseline"
+    },
+    {
+      "repository": "guito-ui",
+      "path": "docs/agents/triage-labels.md",
+      "characters": 1087,
+      "utf8_bytes": 1087,
+      "lines": 15,
+      "estimated_tokens_char4": 272,
+      "sha256": "30d85a947ba78c542fab2721c3e34ea21c62978fed678da626351d0d4cb92e04",
+      "condition": "baseline"
+    },
+    {
+      "path": "AGENTS.md",
+      "characters": 6373,
+      "utf8_bytes": 6385,
+      "lines": 98,
+      "estimated_tokens_char4": 1594,
+      "sha256": "3555347f414e061047568b9964a675823a169603f3ff2ab9f90c42e512081288",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "AGENT_TEST.md",
+      "characters": 38,
+      "utf8_bytes": 40,
+      "lines": 1,
+      "estimated_tokens_char4": 10,
+      "sha256": "f514a524c4b93efa57a1e431aa2ae6d1db504533e60c5ac6dd671a043a2c0143",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "GLOSSARY.md",
+      "characters": 7554,
+      "utf8_bytes": 7623,
+      "lines": 40,
+      "estimated_tokens_char4": 1889,
+      "sha256": "930b003d4fcb7d502a3651f33fa7da660800c23660363612923247e14c162e65",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "README.md",
+      "characters": 6783,
+      "utf8_bytes": 6786,
+      "lines": 108,
+      "estimated_tokens_char4": 1696,
+      "sha256": "cf43fb95e53fd6e4bd9ff60fbb0b4704a8952e72a612e5c3bcdde51a4ec84d04",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/CONVENTIONS.md",
+      "characters": 7053,
+      "utf8_bytes": 7085,
+      "lines": 175,
+      "estimated_tokens_char4": 1764,
+      "sha256": "393aa1ef245a9e60e03eca956f636aee11d827e62c03588f68334bf9d06b4a71",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/adr/0001-aws-serverless-deployment-target.md",
+      "characters": 598,
+      "utf8_bytes": 600,
+      "lines": 5,
+      "estimated_tokens_char4": 150,
+      "sha256": "21df825a45c1a4520fee86dec757b3f7380ace8e557ad0db012ed6a9ba189816",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/adr/0002-angular-rewrite-new-repo.md",
+      "characters": 704,
+      "utf8_bytes": 708,
+      "lines": 7,
+      "estimated_tokens_char4": 176,
+      "sha256": "353cc96a073d10921abacc5e325f82e11b4ac9fb3baa7e7a487badcfe3a7ab70",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/adr/0003-dual-auth-google-pkce-plus-api-key.md",
+      "characters": 861,
+      "utf8_bytes": 865,
+      "lines": 7,
+      "estimated_tokens_char4": 216,
+      "sha256": "5c9f1e1feb4616d253884299976f42a150f6a0e517f949dc156d1f97e2c47ff4",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/adr/0004-psd2-provider-interface.md",
+      "characters": 4907,
+      "utf8_bytes": 4937,
+      "lines": 27,
+      "estimated_tokens_char4": 1227,
+      "sha256": "b9d16bcee3f6970a51aab4c95fcc5fe9ace7e3564d7fa73aee46a3a9738a7c26",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/adr/0005-google-sheets-datastore.md",
+      "characters": 975,
+      "utf8_bytes": 975,
+      "lines": 11,
+      "estimated_tokens_char4": 244,
+      "sha256": "130e78c1b2cd594d8a2ea69a94497cdb79c53ae3c06e38945a08cae4829c9f89",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/adr/0006-figma-design-tokens-ui.md",
+      "characters": 657,
+      "utf8_bytes": 663,
+      "lines": 7,
+      "estimated_tokens_char4": 165,
+      "sha256": "9af220798f369bdc315002e62b34ff37fdbe66ba2d87e9274fc125981761ec1b",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/adr/0007-staging-environment.md",
+      "characters": 3675,
+      "utf8_bytes": 3699,
+      "lines": 11,
+      "estimated_tokens_char4": 919,
+      "sha256": "7b605952cf14818e5057a114ccbbf28d48ecd9d5b3b704ac4648294f1296b055",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/adr/0008-per-environment-secrets-payload.md",
+      "characters": 5516,
+      "utf8_bytes": 5539,
+      "lines": 98,
+      "estimated_tokens_char4": 1379,
+      "sha256": "e2f225104ba99b88dbec95400994cf7dbc450c1572ee35dabda1414d4439ff67",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/adr/0009-smoke-scope-quarantine-tab.md",
+      "characters": 4619,
+      "utf8_bytes": 4641,
+      "lines": 21,
+      "estimated_tokens_char4": 1155,
+      "sha256": "f8726ab3fc327fc8ac279e9d747702d08d19e936e9dd64fcb6893fb7af549984",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/adr/0010-amounts-stored-positive.md",
+      "characters": 1466,
+      "utf8_bytes": 1470,
+      "lines": 16,
+      "estimated_tokens_char4": 367,
+      "sha256": "d11f40beb18cf27fd32250130360bad3a5d7c794aacb4f289111666af0f79a4e",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/adr/0011-repository-pattern.md",
+      "characters": 4945,
+      "utf8_bytes": 4971,
+      "lines": 32,
+      "estimated_tokens_char4": 1237,
+      "sha256": "eedbde2ee7393a2e62b22d72e3ff3877e14a0e7352a80dbc2aeceeb4c1034347",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/adr/0012-version-declared-no-tags.md",
+      "characters": 2405,
+      "utf8_bytes": 2422,
+      "lines": 13,
+      "estimated_tokens_char4": 602,
+      "sha256": "ff42ea56458aa7b1319ab98aedb861b68373212587511f57ed3a81713949c4a7",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/adr/0013-postgres-aurora-data-api.md",
+      "characters": 4542,
+      "utf8_bytes": 4574,
+      "lines": 43,
+      "estimated_tokens_char4": 1136,
+      "sha256": "9864f70062cf173f14135aaf317c3f21ce95db8d49ee4a618aefc8a499469eed",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/adr/0014-categories-mirror-postgres.md",
+      "characters": 3637,
+      "utf8_bytes": 3647,
+      "lines": 62,
+      "estimated_tokens_char4": 910,
+      "sha256": "19329e7107d870921c65122e7feda337b7c4ba868bc3b44c55d28487ce6ce8ae",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/adr/0015-postgres-expenses-and-lisbon-occurrence.md",
+      "characters": 9770,
+      "utf8_bytes": 9773,
+      "lines": 134,
+      "estimated_tokens_char4": 2443,
+      "sha256": "0f1238c8c4e1fda650e0d0486b0033839781d04b80a47aa2b39c6f28ea45c815",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/adr/0016-frozen-history-import-provenance.md",
+      "characters": 3938,
+      "utf8_bytes": 3949,
+      "lines": 59,
+      "estimated_tokens_char4": 985,
+      "sha256": "ce41279e18d5aaa899f977257b6ae20eca1eeb0804216b4d5f29a15eb2091502",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/adr/0017-secretless-sheets-reporting-identity.md",
+      "characters": 5913,
+      "utf8_bytes": 5914,
+      "lines": 97,
+      "estimated_tokens_char4": 1479,
+      "sha256": "6dd58ff9d0f2305b9456b22e2690c57322710502298f405a25fe3b299a970f1e",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/agents/domain.md",
+      "characters": 1520,
+      "utf8_bytes": 1520,
+      "lines": 23,
+      "estimated_tokens_char4": 380,
+      "sha256": "19025b76fe03375566f350cfb1380f2bfb8acd103b59a35254e6c5f51fa858a8",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/agents/issue-tracker.md",
+      "characters": 4101,
+      "utf8_bytes": 4102,
+      "lines": 68,
+      "estimated_tokens_char4": 1026,
+      "sha256": "b97cf1b29f00aeec31e319fcc4c6ef2f65e5a64beb6a6067cad38618dba9dbec",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/agents/triage-labels.md",
+      "characters": 1251,
+      "utf8_bytes": 1251,
+      "lines": 18,
+      "estimated_tokens_char4": 313,
+      "sha256": "c3b66323b455c6679fa4a5565fb56e8521745797f279639c6f6b4ae58bc3f56b",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/authentication.md",
+      "characters": 3646,
+      "utf8_bytes": 3648,
+      "lines": 59,
+      "estimated_tokens_char4": 912,
+      "sha256": "79f5f2a2533aca9ffafbbeeed7b3dce165f89fae741e66fe07796254a79ab551",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/expense-category-month.md",
+      "characters": 6468,
+      "utf8_bytes": 6478,
+      "lines": 125,
+      "estimated_tokens_char4": 1617,
+      "sha256": "84a03577e8bacfc2919cffa9f0fdaf5bb4e1a0f5ef1b31af81c6eaf4a7a82906",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/expense-cutover.md",
+      "characters": 9534,
+      "utf8_bytes": 9544,
+      "lines": 144,
+      "estimated_tokens_char4": 2384,
+      "sha256": "1955dddf30113f5bca057ad06c49bcef6c00d1988747c97e3727dfd387b60b12",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/expense-delete-security.md",
+      "characters": 9750,
+      "utf8_bytes": 9783,
+      "lines": 133,
+      "estimated_tokens_char4": 2438,
+      "sha256": "333671aad09869b7fb2f4d63e5be85feb0bdf01f768306ddc099e67e8ab26142",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/expense-edit-delete-contract.md",
+      "characters": 13759,
+      "utf8_bytes": 13761,
+      "lines": 214,
+      "estimated_tokens_char4": 3440,
+      "sha256": "9f633e95d5b7aa12bce9771b2803e059dd48d04e32047264507d4e5a890adc33",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/expense-history-export.md",
+      "characters": 2435,
+      "utf8_bytes": 2437,
+      "lines": 42,
+      "estimated_tokens_char4": 609,
+      "sha256": "69767bd94e9ec5ef930bbaf1d656ae9d3a4025f5e791b83218748dd120b7f6e5",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/guito-revival.md",
+      "characters": 7428,
+      "utf8_bytes": 7456,
+      "lines": 82,
+      "estimated_tokens_char4": 1857,
+      "sha256": "e227357c49003821e29f62a23bebb22fd00d19b72df723fe8a4d082ee656770e",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/historical-expense-import.md",
+      "characters": 2572,
+      "utf8_bytes": 2575,
+      "lines": 45,
+      "estimated_tokens_char4": 643,
+      "sha256": "c86b66267b70d98259ccc97e95203ac9c69ea2be50269bf3c07be1a6d78bddaf",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/operations.md",
+      "characters": 4668,
+      "utf8_bytes": 4673,
+      "lines": 71,
+      "estimated_tokens_char4": 1167,
+      "sha256": "9f640c0ae1b94af6e59d0024228f27f0b843ef86d9ba422d67d44acad8ba74f0",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/sheets-refresh.md",
+      "characters": 22960,
+      "utf8_bytes": 22976,
+      "lines": 348,
+      "estimated_tokens_char4": 5740,
+      "sha256": "15c28a68fdf3d5777950cc7f0ba21e8f4bc76099334089475ce75b76173c703b",
+      "repository": "guito-api",
+      "condition": "revised"
+    },
+    {
+      "path": "AGENTS.md",
+      "characters": 5492,
+      "utf8_bytes": 5517,
+      "lines": 53,
+      "estimated_tokens_char4": 1373,
+      "sha256": "d5c80471bad4960664707dfc9334f23870cacb1c312dd4d82ee87c504295bfa0",
+      "repository": "guito-ui",
+      "condition": "revised"
+    },
+    {
+      "path": "GLOSSARY.md",
+      "characters": 3284,
+      "utf8_bytes": 3312,
+      "lines": 13,
+      "estimated_tokens_char4": 821,
+      "sha256": "80cd2ea9057b1f3b56afbeb0fff3b5ac91e6cbbc349a2edc5c2c0bf9d7abc28f",
+      "repository": "guito-ui",
+      "condition": "revised"
+    },
+    {
+      "path": "README.md",
+      "characters": 5200,
+      "utf8_bytes": 5207,
+      "lines": 76,
+      "estimated_tokens_char4": 1300,
+      "sha256": "c5c7f36ce867c07264136b1d307b732872ba57bbbcf1901bc7f16e1e8246d8f8",
+      "repository": "guito-ui",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/CONVENTIONS.md",
+      "characters": 3883,
+      "utf8_bytes": 3905,
+      "lines": 27,
+      "estimated_tokens_char4": 971,
+      "sha256": "a20c7d19d0bc38b05e5b5ba98dcfa0a7fffc114d3d07396c2891058d9cd66064",
+      "repository": "guito-ui",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/adr/0010-figma-token-source-mcp-sync.md",
+      "characters": 2084,
+      "utf8_bytes": 2102,
+      "lines": 18,
+      "estimated_tokens_char4": 521,
+      "sha256": "c5b074c7acf74b25c5b7bd0c3eb0006b24d477b2789f21a021ce6a8f943569b7",
+      "repository": "guito-ui",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/adr/0011-auth-gate-all-routes-google-only.md",
+      "characters": 3034,
+      "utf8_bytes": 3046,
+      "lines": 23,
+      "estimated_tokens_char4": 759,
+      "sha256": "dc6a8c34fb1bef5bf8436f8df9b96c15c49ee1a44d6afffca2d1a6f644c61dec",
+      "repository": "guito-ui",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/adr/0013-build-version-declared-no-tags.md",
+      "characters": 2319,
+      "utf8_bytes": 2332,
+      "lines": 11,
+      "estimated_tokens_char4": 580,
+      "sha256": "507e9ba42d2c895e08d1c96bdd1ed9ecaf5a3b13944e96501ba93eb4cee0e671",
+      "repository": "guito-ui",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/adr/0014-expense-occurrence-lisbon.md",
+      "characters": 10237,
+      "utf8_bytes": 10237,
+      "lines": 153,
+      "estimated_tokens_char4": 2560,
+      "sha256": "2822cc0236457ad11a470e8cfd81aaa02e6acc20806c21759f456e051e0ee258",
+      "repository": "guito-ui",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/agents/design.md",
+      "characters": 3211,
+      "utf8_bytes": 3219,
+      "lines": 18,
+      "estimated_tokens_char4": 803,
+      "sha256": "5df31012e6a3df973d3fbf3d40389538e59f393996207e07c586deb466731025",
+      "repository": "guito-ui",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/agents/domain.md",
+      "characters": 4234,
+      "utf8_bytes": 4240,
+      "lines": 25,
+      "estimated_tokens_char4": 1059,
+      "sha256": "555826d9054a621683a511ea8110884e1b514999b2505e949a4136c87dd5b6cf",
+      "repository": "guito-ui",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/agents/issue-tracker.md",
+      "characters": 5089,
+      "utf8_bytes": 5092,
+      "lines": 55,
+      "estimated_tokens_char4": 1273,
+      "sha256": "2fa41dcd4599a47bc6fcff73174496759d75aa82023c7858f948efdcdcce2036",
+      "repository": "guito-ui",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/agents/operations.md",
+      "characters": 4448,
+      "utf8_bytes": 4449,
+      "lines": 28,
+      "estimated_tokens_char4": 1112,
+      "sha256": "6e7cd32f79f319b5e38f3f5802edf448ad3e268233e55fbf4a4457a91e3ffc0e",
+      "repository": "guito-ui",
+      "condition": "revised"
+    },
+    {
+      "path": "docs/agents/triage-labels.md",
+      "characters": 1371,
+      "utf8_bytes": 1372,
+      "lines": 15,
+      "estimated_tokens_char4": 343,
+      "sha256": "c165094e92168261a87081a4c62e05c261642a9e553068dbb4faa6a4dd2f9713",
+      "repository": "guito-ui",
+      "condition": "revised"
+    }
+  ],
+  "changes": {
+    "guito-api": [
+      "AGENTS.md",
+      "GLOSSARY.md",
+      "README.md",
+      "docs/149-docs-inventory.json",
+      "docs/149-docs-restructuring-verification.md",
+      "docs/CONVENTIONS.md",
+      "docs/adr/0005-google-sheets-datastore.md",
+      "docs/adr/0009-smoke-scope-quarantine-tab.md",
+      "docs/adr/0011-repository-pattern.md",
+      "docs/adr/0015-postgres-expenses-and-lisbon-occurrence.md",
+      "docs/agents/domain.md",
+      "docs/agents/issue-tracker.md",
+      "docs/agents/triage-labels.md",
+      "docs/authentication.md",
+      "docs/expense-category-month.md",
+      "docs/expense-cutover.md",
+      "docs/expense-edit-delete-contract.md",
+      "docs/guito-revival.md",
+      "docs/operations.md"
+    ],
+    "guito-ui": [
+      "AGENTS.md",
+      "GLOSSARY.md",
+      "README.md",
+      "docs/149-ui-docs-verification.json",
+      "docs/CONVENTIONS.md",
+      "docs/adr/0011-auth-gate-all-routes-google-only.md",
+      "docs/adr/0014-expense-occurrence-lisbon.md",
+      "docs/agents/design.md",
+      "docs/agents/domain.md",
+      "docs/agents/issue-tracker.md",
+      "docs/agents/operations.md",
+      "docs/agents/triage-labels.md"
+    ]
+  },
+  "links": [
+    {
+      "repository": "guito-api",
+      "source": "AGENTS.md",
+      "target": "README.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "AGENTS.md",
+      "target": "docs/CONVENTIONS.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "AGENTS.md",
+      "target": "docs/agents/issue-tracker.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "AGENTS.md",
+      "target": "docs/adr/0012-version-declared-no-tags.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "AGENTS.md",
+      "target": "docs/CONVENTIONS.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "AGENTS.md",
+      "target": "docs/adr/0011-repository-pattern.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "AGENTS.md",
+      "target": "GLOSSARY.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "AGENTS.md",
+      "target": "docs/agents/domain.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "AGENTS.md",
+      "target": "docs/adr/0015-postgres-expenses-and-lisbon-occurrence.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "AGENTS.md",
+      "target": "docs/expense-edit-delete-contract.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "AGENTS.md",
+      "target": "docs/expense-delete-security.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "AGENTS.md",
+      "target": "docs/authentication.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "AGENTS.md",
+      "target": "docs/adr/0008-per-environment-secrets-payload.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "AGENTS.md",
+      "target": "docs/adr/0013-postgres-aurora-data-api.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "AGENTS.md",
+      "target": "docs/adr/0014-categories-mirror-postgres.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "AGENTS.md",
+      "target": "docs/expense-cutover.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "AGENTS.md",
+      "target": "docs/historical-expense-import.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "AGENTS.md",
+      "target": "docs/sheets-refresh.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "AGENTS.md",
+      "target": "docs/expense-history-export.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "AGENTS.md",
+      "target": "docs/expense-category-month.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "AGENTS.md",
+      "target": "docs/operations.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "AGENTS.md",
+      "target": "docs/expense-cutover.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "AGENTS.md",
+      "target": "docs/adr/0012-version-declared-no-tags.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "AGENTS.md",
+      "target": "docs/agents/issue-tracker.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "AGENTS.md",
+      "target": "docs/agents/triage-labels.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "AGENTS.md",
+      "target": "docs/guito-revival.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "GLOSSARY.md",
+      "target": "docs/historical-expense-import.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "GLOSSARY.md",
+      "target": "docs/expense-cutover.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "GLOSSARY.md",
+      "target": "docs/operations.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "GLOSSARY.md",
+      "target": "docs/expense-cutover.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "README.md",
+      "target": "https://github.com/JoseHRosario/guito-ui",
+      "status": "external-not-fetched",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "README.md",
+      "target": "docs/authentication.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "README.md",
+      "target": "docs/CONVENTIONS.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "README.md",
+      "target": "docs/adr/0011-repository-pattern.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "README.md",
+      "target": "docs/expense-cutover.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "README.md",
+      "target": "docs/adr/0008-per-environment-secrets-payload.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "README.md",
+      "target": "docs/operations.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "README.md",
+      "target": "GLOSSARY.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "README.md",
+      "target": "docs/adr/0015-postgres-expenses-and-lisbon-occurrence.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "README.md",
+      "target": "docs/expense-edit-delete-contract.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "README.md",
+      "target": "docs/expense-delete-security.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "README.md",
+      "target": "docs/expense-category-month.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "README.md",
+      "target": "docs/expense-history-export.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "README.md",
+      "target": "docs/sheets-refresh.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "README.md",
+      "target": "docs/operations.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "README.md",
+      "target": "AGENTS.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "README.md",
+      "target": "docs/agents/issue-tracker.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "README.md",
+      "target": "docs/agents/domain.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "README.md",
+      "target": "docs/guito-revival.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "README.md",
+      "target": "docs/historical-expense-import.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/CONVENTIONS.md",
+      "target": "../AGENTS.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/CONVENTIONS.md",
+      "target": "agents/issue-tracker.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/adr/0005-google-sheets-datastore.md",
+      "target": "0015-postgres-expenses-and-lisbon-occurrence.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/adr/0005-google-sheets-datastore.md",
+      "target": "../expense-cutover.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/adr/0008-per-environment-secrets-payload.md",
+      "target": "https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/data-api.access.html",
+      "status": "external-not-fetched",
+      "source_changed": false
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/adr/0008-per-environment-secrets-payload.md",
+      "target": "https://github.com/JoseHRosario/guito-api/issues/95#issuecomment-6100301274",
+      "status": "external-not-fetched",
+      "source_changed": false
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/adr/0009-smoke-scope-quarantine-tab.md",
+      "target": "../expense-edit-delete-contract.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/adr/0009-smoke-scope-quarantine-tab.md",
+      "target": "../../GLOSSARY.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/adr/0011-repository-pattern.md",
+      "target": "0015-postgres-expenses-and-lisbon-occurrence.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/adr/0011-repository-pattern.md",
+      "target": "../../GLOSSARY.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/adr/0015-postgres-expenses-and-lisbon-occurrence.md",
+      "target": "../expense-cutover.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/adr/0015-postgres-expenses-and-lisbon-occurrence.md",
+      "target": "0011-repository-pattern.md#expense-aggregate-extension-146",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/adr/0015-postgres-expenses-and-lisbon-occurrence.md",
+      "target": "../expense-edit-delete-contract.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/adr/0015-postgres-expenses-and-lisbon-occurrence.md",
+      "target": "../expense-cutover.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/agents/domain.md",
+      "target": "../../GLOSSARY.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/agents/domain.md",
+      "target": "../adr/",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/agents/domain.md",
+      "target": "../adr/0015-postgres-expenses-and-lisbon-occurrence.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/agents/domain.md",
+      "target": "../expense-edit-delete-contract.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/agents/domain.md",
+      "target": "../expense-delete-security.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/agents/domain.md",
+      "target": "../authentication.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/agents/domain.md",
+      "target": "../historical-expense-import.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/agents/issue-tracker.md",
+      "target": "../../AGENTS.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/agents/triage-labels.md",
+      "target": "issue-tracker.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/authentication.md",
+      "target": "adr/0003-dual-auth-google-pkce-plus-api-key.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/authentication.md",
+      "target": "adr/0017-secretless-sheets-reporting-identity.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/authentication.md",
+      "target": "sheets-refresh.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/expense-category-month.md",
+      "target": "expense-cutover.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/expense-category-month.md",
+      "target": "https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/data-api.limitations.html",
+      "status": "external-not-fetched",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/expense-cutover.md",
+      "target": "https://github.com/JoseHRosario/guito-api/issues/132#issuecomment-6135613997",
+      "status": "external-not-fetched",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/expense-cutover.md",
+      "target": "https://github.com/JoseHRosario/guito-ui/actions/runs/38328944997",
+      "status": "external-not-fetched",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/expense-cutover.md",
+      "target": "https://github.com/JoseHRosario/guito-api/issues/133#issuecomment-6157279425",
+      "status": "external-not-fetched",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/expense-cutover.md",
+      "target": "https://github.com/JoseHRosario/guito-api/issues/132#issuecomment-6134696570",
+      "status": "external-not-fetched",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/expense-cutover.md",
+      "target": "sheets-refresh.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/expense-delete-security.md",
+      "target": "https://www.rfc-editor.org/rfc/rfc9110.html#section-9.2.1",
+      "status": "external-not-fetched",
+      "source_changed": false
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/expense-delete-security.md",
+      "target": "https://www.rfc-editor.org/rfc/rfc9110.html#section-9.3.5",
+      "status": "external-not-fetched",
+      "source_changed": false
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/expense-delete-security.md",
+      "target": "expense-edit-delete-contract.md#uncertain-outcome-recovery",
+      "status": "exists",
+      "source_changed": false
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/expense-delete-security.md",
+      "target": "https://www.rfc-editor.org/rfc/rfc9110.html#section-9.2.2",
+      "status": "external-not-fetched",
+      "source_changed": false
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/expense-delete-security.md",
+      "target": "https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html#restrict-http-methods",
+      "status": "external-not-fetched",
+      "source_changed": false
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/expense-delete-security.md",
+      "target": "https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html#https",
+      "status": "external-not-fetched",
+      "source_changed": false
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/expense-delete-security.md",
+      "target": "https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html#access-control",
+      "status": "external-not-fetched",
+      "source_changed": false
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/expense-delete-security.md",
+      "target": "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/02-Configuration_and_Deployment_Management_Testing/06-Test_HTTP_Methods",
+      "status": "external-not-fetched",
+      "source_changed": false
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/expense-delete-security.md",
+      "target": "https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html",
+      "status": "external-not-fetched",
+      "source_changed": false
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/expense-delete-security.md",
+      "target": "https://learn.microsoft.com/en-us/aspnet/core/security/anti-request-forgery?view=aspnetcore-10.0",
+      "status": "external-not-fetched",
+      "source_changed": false
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/expense-delete-security.md",
+      "target": "https://learn.microsoft.com/en-us/aspnet/core/security/cors?view=aspnetcore-10.0",
+      "status": "external-not-fetched",
+      "source_changed": false
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/expense-delete-security.md",
+      "target": "https://www.rfc-editor.org/rfc/rfc9110.html#section-13.1.1",
+      "status": "external-not-fetched",
+      "source_changed": false
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/expense-delete-security.md",
+      "target": "expense-edit-delete-contract.md",
+      "status": "exists",
+      "source_changed": false
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/expense-delete-security.md",
+      "target": "expense-edit-delete-contract.md#aggregate-repository-consolidation",
+      "status": "exists",
+      "source_changed": false
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/guito-revival.md",
+      "target": "historical-expense-import.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/guito-revival.md",
+      "target": "expense-cutover.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/guito-revival.md",
+      "target": "expense-edit-delete-contract.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/operations.md",
+      "target": "expense-cutover.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/operations.md",
+      "target": "adr/0007-staging-environment.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/operations.md",
+      "target": "adr/0012-version-declared-no-tags.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/sheets-refresh.md",
+      "target": "expense-history-export.md",
+      "status": "exists",
+      "source_changed": false
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/sheets-refresh.md",
+      "target": "https://developers.google.com/apps-script/reference/script/script-app",
+      "status": "external-not-fetched",
+      "source_changed": false
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/sheets-refresh.md",
+      "target": "https://developers.google.com/apps-script/guides/triggers/installable",
+      "status": "external-not-fetched",
+      "source_changed": false
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/sheets-refresh.md",
+      "target": "https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/batchUpdate",
+      "status": "external-not-fetched",
+      "source_changed": false
+    },
+    {
+      "repository": "guito-api",
+      "source": "docs/sheets-refresh.md",
+      "target": "https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request#UpdateCellsRequest",
+      "status": "external-not-fetched",
+      "source_changed": false
+    },
+    {
+      "repository": "guito-ui",
+      "source": "AGENTS.md",
+      "target": "README.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "AGENTS.md",
+      "target": "docs/CONVENTIONS.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "AGENTS.md",
+      "target": "GLOSSARY.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "AGENTS.md",
+      "target": "docs/agents/domain.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "AGENTS.md",
+      "target": "docs/adr/0014-expense-occurrence-lisbon.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "AGENTS.md",
+      "target": "docs/agents/design.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "AGENTS.md",
+      "target": "docs/adr/0010-figma-token-source-mcp-sync.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "AGENTS.md",
+      "target": "docs/adr/0011-auth-gate-all-routes-google-only.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "AGENTS.md",
+      "target": "docs/agents/domain.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "AGENTS.md",
+      "target": "docs/adr/0011-auth-gate-all-routes-google-only.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "AGENTS.md",
+      "target": "docs/agents/domain.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "AGENTS.md",
+      "target": "docs/agents/operations.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "AGENTS.md",
+      "target": "docs/adr/0013-build-version-declared-no-tags.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "AGENTS.md",
+      "target": "docs/agents/issue-tracker.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "AGENTS.md",
+      "target": "docs/agents/triage-labels.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "GLOSSARY.md",
+      "target": "docs/agents/domain.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "GLOSSARY.md",
+      "target": "docs/adr/0014-expense-occurrence-lisbon.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "GLOSSARY.md",
+      "target": "docs/agents/domain.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "GLOSSARY.md",
+      "target": "docs/adr/0010-figma-token-source-mcp-sync.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "GLOSSARY.md",
+      "target": "https://www.figma.com/board/TulG8ptcGlLxQI78GciXr3",
+      "status": "external-not-fetched",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "GLOSSARY.md",
+      "target": "docs/agents/design.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "README.md",
+      "target": "https://github.com/JoseHRosario/guito-api",
+      "status": "external-not-fetched",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "README.md",
+      "target": "docs/agents/domain.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "README.md",
+      "target": "docs/CONVENTIONS.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "README.md",
+      "target": "docs/agents/design.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "README.md",
+      "target": "docs/agents/operations.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "README.md",
+      "target": "AGENTS.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "README.md",
+      "target": "GLOSSARY.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "README.md",
+      "target": "docs/CONVENTIONS.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "README.md",
+      "target": "docs/agents/domain.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "README.md",
+      "target": "docs/agents/issue-tracker.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "README.md",
+      "target": "docs/adr/",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "docs/CONVENTIONS.md",
+      "target": "../AGENTS.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "docs/CONVENTIONS.md",
+      "target": "../README.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "docs/CONVENTIONS.md",
+      "target": "agents/issue-tracker.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "docs/adr/0011-auth-gate-all-routes-google-only.md",
+      "target": "../agents/domain.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "docs/adr/0011-auth-gate-all-routes-google-only.md",
+      "target": "../agents/design.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "docs/adr/0011-auth-gate-all-routes-google-only.md",
+      "target": "https://www.figma.com/board/TulG8ptcGlLxQI78GciXr3",
+      "status": "external-not-fetched",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "docs/adr/0014-expense-occurrence-lisbon.md",
+      "target": "../agents/domain.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "docs/adr/0014-expense-occurrence-lisbon.md",
+      "target": "../agents/operations.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "docs/adr/0014-expense-occurrence-lisbon.md",
+      "target": "https://www.figma.com/design/UoIK5MnIqDrgfHqMmBZoYk/Guito?node-id=3094-35",
+      "status": "external-not-fetched",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "docs/adr/0014-expense-occurrence-lisbon.md",
+      "target": "https://www.figma.com/design/UoIK5MnIqDrgfHqMmBZoYk/Guito?node-id=3094-9704",
+      "status": "external-not-fetched",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "docs/adr/0014-expense-occurrence-lisbon.md",
+      "target": "https://www.figma.com/design/UoIK5MnIqDrgfHqMmBZoYk/Guito?node-id=3094-9937",
+      "status": "external-not-fetched",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "docs/adr/0014-expense-occurrence-lisbon.md",
+      "target": "https://www.figma.com/design/UoIK5MnIqDrgfHqMmBZoYk/Guito?node-id=3094-10011",
+      "status": "external-not-fetched",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "docs/adr/0014-expense-occurrence-lisbon.md",
+      "target": "https://www.figma.com/design/UoIK5MnIqDrgfHqMmBZoYk/Guito?node-id=3134-10053",
+      "status": "external-not-fetched",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "docs/agents/design.md",
+      "target": "../adr/0011-auth-gate-all-routes-google-only.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "docs/agents/design.md",
+      "target": "https://www.figma.com/board/TulG8ptcGlLxQI78GciXr3",
+      "status": "external-not-fetched",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "docs/agents/design.md",
+      "target": "../adr/0010-figma-token-source-mcp-sync.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "docs/agents/design.md",
+      "target": "../CONVENTIONS.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "docs/agents/design.md",
+      "target": "../adr/0014-expense-occurrence-lisbon.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "docs/agents/design.md",
+      "target": "domain.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "docs/agents/domain.md",
+      "target": "../../GLOSSARY.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "docs/agents/domain.md",
+      "target": "../adr/0014-expense-occurrence-lisbon.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "docs/agents/domain.md",
+      "target": "../adr/0011-auth-gate-all-routes-google-only.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "docs/agents/domain.md",
+      "target": "https://github.com/JoseHRosario/guito-ui/pull/71",
+      "status": "external-not-fetched",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "docs/agents/domain.md",
+      "target": "https://github.com/JoseHRosario/guito-ui/pull/72",
+      "status": "external-not-fetched",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "docs/agents/domain.md",
+      "target": "https://github.com/JoseHRosario/guito-api/pull/148",
+      "status": "external-not-fetched",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "docs/agents/domain.md",
+      "target": "operations.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "docs/agents/issue-tracker.md",
+      "target": "triage-labels.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "docs/agents/issue-tracker.md",
+      "target": "../../AGENTS.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "docs/agents/operations.md",
+      "target": "../adr/0013-build-version-declared-no-tags.md",
+      "status": "exists",
+      "source_changed": true
+    },
+    {
+      "repository": "guito-ui",
+      "source": "docs/agents/triage-labels.md",
+      "target": "issue-tracker.md",
+      "status": "exists",
+      "source_changed": true
+    }
+  ],
+  "static_revised_chains": [
+    {
+      "scenario": "api-contract",
+      "interpretation": "Explicit static revised prerequisite chain; not actual model reads, not all archive material and not a full task token budget. Additional conditional tasks may add files.",
+      "documents": [
+        {
+          "source": "guito-api",
+          "path": "AGENTS.md",
+          "characters": 6373,
+          "utf8_bytes": 6385,
+          "lines": 98,
+          "estimated_tokens_char4": 1594,
+          "sha256": "3555347f414e061047568b9964a675823a169603f3ff2ab9f90c42e512081288"
+        },
+        {
+          "source": "guito-api",
+          "path": "docs/CONVENTIONS.md",
+          "characters": 7053,
+          "utf8_bytes": 7085,
+          "lines": 175,
+          "estimated_tokens_char4": 1764,
+          "sha256": "393aa1ef245a9e60e03eca956f636aee11d827e62c03588f68334bf9d06b4a71"
+        },
+        {
+          "source": "guito-api",
+          "path": "GLOSSARY.md",
+          "characters": 7554,
+          "utf8_bytes": 7623,
+          "lines": 40,
+          "estimated_tokens_char4": 1889,
+          "sha256": "930b003d4fcb7d502a3651f33fa7da660800c23660363612923247e14c162e65"
+        },
+        {
+          "source": "guito-api",
+          "path": "docs/agents/domain.md",
+          "characters": 1520,
+          "utf8_bytes": 1520,
+          "lines": 23,
+          "estimated_tokens_char4": 380,
+          "sha256": "19025b76fe03375566f350cfb1380f2bfb8acd103b59a35254e6c5f51fa858a8"
+        },
+        {
+          "source": "guito-api",
+          "path": "docs/adr/0015-postgres-expenses-and-lisbon-occurrence.md",
+          "characters": 9770,
+          "utf8_bytes": 9773,
+          "lines": 134,
+          "estimated_tokens_char4": 2443,
+          "sha256": "0f1238c8c4e1fda650e0d0486b0033839781d04b80a47aa2b39c6f28ea45c815"
+        },
+        {
+          "source": "guito-api",
+          "path": "docs/expense-edit-delete-contract.md",
+          "characters": 13759,
+          "utf8_bytes": 13761,
+          "lines": 214,
+          "estimated_tokens_char4": 3440,
+          "sha256": "9f633e95d5b7aa12bce9771b2803e059dd48d04e32047264507d4e5a890adc33"
+        },
+        {
+          "source": "guito-api-skill",
+          "path": "SKILL.md",
+          "characters": 6734,
+          "utf8_bytes": 6740,
+          "lines": 44,
+          "estimated_tokens_char4": 1684,
+          "sha256": "5b855a91c17c230fabbc582236a63d7606088647102efa611b23d878baef320a"
+        },
+        {
+          "source": "guito-api-skill",
+          "path": "references/engineering-tests.md",
+          "characters": 6165,
+          "utf8_bytes": 6165,
+          "lines": 29,
+          "estimated_tokens_char4": 1542,
+          "sha256": "307315d9cbbe3e507b841be931d0eae60fe6d79a0d9b90ffc40698da3dd3060b"
+        },
+        {
+          "source": "guito-api-skill",
+          "path": "references/expense-schema-cascade.md",
+          "characters": 2327,
+          "utf8_bytes": 2327,
+          "lines": 10,
+          "estimated_tokens_char4": 582,
+          "sha256": "12dc8f5e15400f35b6265681b010135a65a154e5dbc638266ab6eb2cae278fa5"
+        }
+      ],
+      "characters": 61255,
+      "estimated_tokens_char4": 15318
+    },
+    {
+      "scenario": "ui-visual",
+      "interpretation": "Explicit static revised prerequisite chain; not actual model reads, not all archive material and not a full task token budget. Additional conditional tasks may add files.",
+      "documents": [
+        {
+          "source": "guito-ui",
+          "path": "AGENTS.md",
+          "characters": 5492,
+          "utf8_bytes": 5517,
+          "lines": 53,
+          "estimated_tokens_char4": 1373,
+          "sha256": "d5c80471bad4960664707dfc9334f23870cacb1c312dd4d82ee87c504295bfa0"
+        },
+        {
+          "source": "guito-ui",
+          "path": "docs/CONVENTIONS.md",
+          "characters": 3883,
+          "utf8_bytes": 3905,
+          "lines": 27,
+          "estimated_tokens_char4": 971,
+          "sha256": "a20c7d19d0bc38b05e5b5ba98dcfa0a7fffc114d3d07396c2891058d9cd66064"
+        },
+        {
+          "source": "guito-ui",
+          "path": "GLOSSARY.md",
+          "characters": 3284,
+          "utf8_bytes": 3312,
+          "lines": 13,
+          "estimated_tokens_char4": 821,
+          "sha256": "80cd2ea9057b1f3b56afbeb0fff3b5ac91e6cbbc349a2edc5c2c0bf9d7abc28f"
+        },
+        {
+          "source": "guito-ui",
+          "path": "docs/agents/design.md",
+          "characters": 3211,
+          "utf8_bytes": 3219,
+          "lines": 18,
+          "estimated_tokens_char4": 803,
+          "sha256": "5df31012e6a3df973d3fbf3d40389538e59f393996207e07c586deb466731025"
+        },
+        {
+          "source": "guito-ui",
+          "path": "docs/adr/0010-figma-token-source-mcp-sync.md",
+          "characters": 2084,
+          "utf8_bytes": 2102,
+          "lines": 18,
+          "estimated_tokens_char4": 521,
+          "sha256": "c5b074c7acf74b25c5b7bd0c3eb0006b24d477b2789f21a021ce6a8f943569b7"
+        },
+        {
+          "source": "guito-ui",
+          "path": "docs/adr/0014-expense-occurrence-lisbon.md",
+          "characters": 10237,
+          "utf8_bytes": 10237,
+          "lines": 153,
+          "estimated_tokens_char4": 2560,
+          "sha256": "2822cc0236457ad11a470e8cfd81aaa02e6acc20806c21759f456e051e0ee258"
+        },
+        {
+          "source": "guito-ui-skill",
+          "path": "SKILL.md",
+          "characters": 5642,
+          "utf8_bytes": 5662,
+          "lines": 40,
+          "estimated_tokens_char4": 1411,
+          "sha256": "ad51ff343000ee806d867967b431b552931f68e22476b9d2f265a11e4c7e8162"
+        },
+        {
+          "source": "guito-ui-skill",
+          "path": "references/figma-design.md",
+          "characters": 5851,
+          "utf8_bytes": 5852,
+          "lines": 27,
+          "estimated_tokens_char4": 1463,
+          "sha256": "8c2b4da45224e120f9801c02279237dd0e75f564407cd9b40d177cfa133877ef"
+        },
+        {
+          "source": "guito-ui-skill",
+          "path": "references/figma-tokens.md",
+          "characters": 3751,
+          "utf8_bytes": 3752,
+          "lines": 23,
+          "estimated_tokens_char4": 938,
+          "sha256": "95095eeaac34af96ab755ab919390d934c08cd3f486bb1fb06dba44f1822c7ad"
+        },
+        {
+          "source": "guito-ui-skill",
+          "path": "references/browser-verification.md",
+          "characters": 5927,
+          "utf8_bytes": 5933,
+          "lines": 27,
+          "estimated_tokens_char4": 1482,
+          "sha256": "f95ca08a5177cf6a5f95573ad3923d9ef681e23e46e1f102a38f746fc7a0c287"
+        }
+      ],
+      "characters": 49362,
+      "estimated_tokens_char4": 12343
+    },
+    {
+      "scenario": "deployment-financial",
+      "interpretation": "Explicit static revised prerequisite chain; not actual model reads, not all archive material and not a full task token budget. Additional conditional tasks may add files.",
+      "documents": [
+        {
+          "source": "guito-api",
+          "path": "AGENTS.md",
+          "characters": 6373,
+          "utf8_bytes": 6385,
+          "lines": 98,
+          "estimated_tokens_char4": 1594,
+          "sha256": "3555347f414e061047568b9964a675823a169603f3ff2ab9f90c42e512081288"
+        },
+        {
+          "source": "guito-api",
+          "path": "docs/operations.md",
+          "characters": 4668,
+          "utf8_bytes": 4673,
+          "lines": 71,
+          "estimated_tokens_char4": 1167,
+          "sha256": "9f640c0ae1b94af6e59d0024228f27f0b843ef86d9ba422d67d44acad8ba74f0"
+        },
+        {
+          "source": "guito-api",
+          "path": "docs/expense-cutover.md",
+          "characters": 9534,
+          "utf8_bytes": 9544,
+          "lines": 144,
+          "estimated_tokens_char4": 2384,
+          "sha256": "1955dddf30113f5bca057ad06c49bcef6c00d1988747c97e3727dfd387b60b12"
+        },
+        {
+          "source": "guito-ui",
+          "path": "AGENTS.md",
+          "characters": 5492,
+          "utf8_bytes": 5517,
+          "lines": 53,
+          "estimated_tokens_char4": 1373,
+          "sha256": "d5c80471bad4960664707dfc9334f23870cacb1c312dd4d82ee87c504295bfa0"
+        },
+        {
+          "source": "guito-ui",
+          "path": "docs/agents/operations.md",
+          "characters": 4448,
+          "utf8_bytes": 4449,
+          "lines": 28,
+          "estimated_tokens_char4": 1112,
+          "sha256": "6e7cd32f79f319b5e38f3f5802edf448ad3e268233e55fbf4a4457a91e3ffc0e"
+        },
+        {
+          "source": "guito-api-skill",
+          "path": "SKILL.md",
+          "characters": 6734,
+          "utf8_bytes": 6740,
+          "lines": 44,
+          "estimated_tokens_char4": 1684,
+          "sha256": "5b855a91c17c230fabbc582236a63d7606088647102efa611b23d878baef320a"
+        },
+        {
+          "source": "guito-ui-skill",
+          "path": "SKILL.md",
+          "characters": 5642,
+          "utf8_bytes": 5662,
+          "lines": 40,
+          "estimated_tokens_char4": 1411,
+          "sha256": "ad51ff343000ee806d867967b431b552931f68e22476b9d2f265a11e4c7e8162"
+        },
+        {
+          "source": "guito-api-skill",
+          "path": "references/staging-tests.md",
+          "characters": 6000,
+          "utf8_bytes": 6007,
+          "lines": 35,
+          "estimated_tokens_char4": 1500,
+          "sha256": "6b782ac9400d306d18e76dbe95c4d00fcda8d5a1596f55d36656f500bf179a9e"
+        },
+        {
+          "source": "guito-api-skill",
+          "path": "references/live-smoke-checklist.md",
+          "characters": 2584,
+          "utf8_bytes": 2600,
+          "lines": 21,
+          "estimated_tokens_char4": 646,
+          "sha256": "922bfe7e5b1f7008c5b5b00690d991dc07057bb83a9263502c8c4f01283de378"
+        },
+        {
+          "source": "guito-ui-skill",
+          "path": "references/staging-provenance.md",
+          "characters": 2918,
+          "utf8_bytes": 2918,
+          "lines": 42,
+          "estimated_tokens_char4": 730,
+          "sha256": "3e5aa2bbab6aea9561c9565d0275af23a920eb130be398e9888b681aa9b4c49e"
+        }
+      ],
+      "characters": 54393,
+      "estimated_tokens_char4": 13601
+    }
+  ],
+  "shared_roots": {
+    "guito-api": {
+      "head_unchanged": true,
+      "status_unchanged": true
+    },
+    "guito-ui": {
+      "head_unchanged": true,
+      "status_unchanged": true
+    }
+  },
+  "trial_status": {
+    "baseline_executed": 0,
+    "baseline_required": 4,
+    "revised_executed": 0,
+    "revised_required": 4,
+    "status": "BLOCKED",
+    "reason": "No verified enforced read-only local file+skill launcher retaining tested profile context; unrestricted trials were not run."
+  }
+}
