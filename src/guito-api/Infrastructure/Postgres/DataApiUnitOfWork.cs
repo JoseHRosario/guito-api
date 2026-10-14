@@ -7,7 +7,7 @@ namespace GuitoApi.Infrastructure.Postgres;
 /// PostgresTransactionContext. Disposing an open unit rolls it back — a statement
 /// sequence that never commits changes nothing (the all-or-nothing guarantee).
 /// </summary>
-public class DataApiUnitOfWork : IUnitOfWork
+public class DataApiUnitOfWork : IUnitOfWork, IDisposable
 {
     private readonly IPostgresDataApiClient _client;
     private readonly PostgresTransactionContext _transactionContext;
@@ -45,24 +45,30 @@ public class DataApiUnitOfWork : IUnitOfWork
         await _client.RollbackAsync(transactionId, cancellationToken);
     }
 
+    /// <summary>Lambda disposes request scopes synchronously; complete rollback before returning.</summary>
+    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
+
     /// <summary>Rolls the unit back if abandoned open — un-committed work leaves no trace.</summary>
     public async ValueTask DisposeAsync()
     {
         if (_transactionContext.IsOpen)
-        {
-            var transactionId = _transactionContext.CurrentTransactionId!;
-            _transactionContext.CurrentTransactionId = null;
-            try
-            {
-                await _client.RollbackAsync(transactionId);
-            }
-            catch (Exception exception)
-            {
-                _logger?.LogWarning(exception, "Rollback-on-dispose failed for transaction {TransactionId}", transactionId);
-            }
-        }
-
+            await RollbackOnDisposeAsync().ConfigureAwait(false);
         GC.SuppressFinalize(this);
+    }
+
+    private async Task RollbackOnDisposeAsync()
+    {
+        var transactionId = _transactionContext.CurrentTransactionId!;
+        try
+        {
+            await _client.RollbackAsync(transactionId).ConfigureAwait(false);
+            _transactionContext.CurrentTransactionId = null;
+        }
+        catch (Exception exception)
+        {
+            _logger?.LogWarning(exception, "Rollback-on-dispose failed for transaction {TransactionId}", transactionId);
+            throw;
+        }
     }
 
     private string RequireOpenTransaction() =>

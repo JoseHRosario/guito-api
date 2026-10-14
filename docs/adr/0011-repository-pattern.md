@@ -6,8 +6,21 @@ The six per-operation service classes made direct Google Sheets calls (Google cl
 
 **Storage specifics live inside the implementations and never cross the interface**: spreadsheet id, resolved ranges, the Smoke-scope header resolution (ADR 0009's `ISheetScopeResolver` stays a Sheets-era concern injected into the Sheets implementation only), the row-index↔Expense-Id mapping (the Id remains the opaque row index at the interface, per CONTEXT.md), and the Year/Month formula backfill on create (a Sheets-presentation behavior — a Postgres implementation derives those values itself). The Sheets client provider (`IGooglesheetsClientProvider`, formerly `IGooglesheetsService` — renamed so the layering reads honestly: it is a credential→client factory, not a data service) also lives in `Infrastructure/Sheets/`; the secret providers moved to `Infrastructure/Secrets/`. A future Postgres backend adds `Infrastructure/Postgres/` and deletes `Infrastructure/Sheets/`; nothing outside those folders notices.
 
-**Not-found is a repository-level contract**: `DeleteAsync` throws `ExpenseNotFoundException` (translated to HTTP 404 by the exception handler); list operations return empty collections. ADR 0005's "Sheets remains the data store" still holds today — this ADR names Postgres as the *anticipated* future store without committing to a migration.
+**Not-found is a repository-level contract**: the original smoke delete (now `DeleteSmokeAsync`) throws `ExpenseNotFoundException` (translated to HTTP 404 by the exception handler); list operations return empty collections. ADR 0005's "Sheets remains the data store" still holds today — this ADR names Postgres as the *anticipated* future store without committing to a migration.
 
 **Exception**: `ListTransactionsDummyService` (canned bank transactions, issue #5 ADR-0004) keeps its data inline — it has no datastore access at all. The former Nordigen exception was deleted with the service (GoCardless is wind-down; Enable Banking is the PSD2 provider and follows the standard Infrastructure shape when it lands). Considered: speculative `GetAsync`/`UpdateAsync` interface methods (rejected — YAGNI, designed against a Sheets reality that will not match Postgres); `ISheetScopeResolver` as an interface parameter (rejected — leaks a Sheets concern onto non-Sheets implementations); converting Nordigen in the same pass (rejected — separate aggregate, own issue).
 
 **Consequences**: Sheets wire behavior is still exercised hermetically — the transport-level fakes run through the new implementations, and new direct unit tests target the repository classes; a service needing repository-level faking gets it when its behavior changes, not in this refactor.
+
+## Expense aggregate extension (#146)
+
+ADR-0015 supersedes the original Expense storage assumptions. Personal detail,
+update and revision-aware delete now share `IExpenseRepository` with create/latest
+and category-month reads; `DataApiPostgresExpenseRepository` implements that
+aggregate without a second detail port or adapter. Services remain per-operation
+and translate Model values to wire DTOs. Sheets compatibility is retained for now:
+it rejects unsupported personal operations with 409 before transport, and its
+`DeleteSmokeAsync` cleanup is explicitly separate from `DeleteAsync(id, revision)`.
+Personal route availability is checked on invocation, never while constructing the
+shared controller. HTTP tests cover the real repository composition over fake
+transports; live PostgreSQL verification remains separate.

@@ -36,7 +36,7 @@ namespace GuitoApi
                 .ReadFrom.Configuration(Configuration)
                 .CreateLogger();
 
-            services.AddControllers(options => options.Filters.Add<ExpenseCreateValidationFilter>());
+            services.AddControllers(options => options.Filters.Add<ExpenseWriteValidationFilter>());
             services.AddProblemDetails();
             services.AddEndpointsApiExplorer();
             services.AddSwaggerGen();
@@ -48,7 +48,7 @@ namespace GuitoApi
                     builder.AllowAnyOrigin()
                            .AllowAnyMethod()
                            .AllowAnyHeader()
-                           .WithExposedHeaders(VersionHeaderMiddleware.HeaderName);
+                           .WithExposedHeaders(VersionHeaderMiddleware.HeaderName, "ETag");
                 });
                 o.AddPolicy("AllowOnlyWebApp", builder =>
                 {
@@ -58,9 +58,11 @@ namespace GuitoApi
                     builder.WithOrigins(allowedOrigins)
                            .AllowAnyMethod()
                            .AllowAnyHeader()
-                           .WithExposedHeaders(VersionHeaderMiddleware.HeaderName);
+                           .WithExposedHeaders(VersionHeaderMiddleware.HeaderName, "ETag");
                 });
             });
+            // Defaults retain the Google SDK's production validation and certificate transport.
+            services.AddSingleton(new Google.Apis.Auth.GoogleJsonWebSignature.ValidationSettings());
             services.AddHttpClient("SheetsReportingJwks");
             services.AddSingleton<GuitoApi.Infrastructure.Reporting.IJwksClient>(sp =>
                 new GuitoApi.Infrastructure.Reporting.HttpJwksClient(sp.GetRequiredService<IHttpClientFactory>().CreateClient("SheetsReportingJwks")));
@@ -112,12 +114,17 @@ namespace GuitoApi
                 return ActivatorUtilities.CreateInstance<DataApiPostgresExpenseHistoryRepository>(sp);
             });
             services.AddScoped<IReadExpenseHistoryService, ReadExpenseHistoryService>();
+            services.AddScoped<PersonalExpenseOperationFilter>();
+            services.AddScoped<IReadExpenseDetailService, ReadExpenseDetailService>();
+            services.AddScoped<IUpdateExpenseService, UpdateExpenseService>();
+            services.AddScoped<IDeleteExpenseService, DeleteExpenseService>();
+            services.AddScoped<IExpenseRevisionResolver, HttpExpenseRevisionResolver>();
 
             services.AddScoped<ICreateExpenseService, CreateExpenseService>();
             services.AddScoped<IMatchExpensesService, MatchExpensesService>();
             services.AddScoped<IListLatestExpensesService, ListLatestExpensesService>();
             services.AddScoped<IListExpensesService, ListExpensesService>();
-            services.AddScoped<IDeleteExpenseRowService, DeleteExpenseService>();
+            services.AddScoped<IDeleteExpenseRowService, DeleteExpenseRowService>();
             services.AddScoped<ISheetScopeResolver, SheetScopeResolver>();
             services.AddScoped<IListCategoryService, ListCategoryGoogleApisSheetsService>();
             // Bank transaction provider selected by configuration (ADR-0004): EnableBanking is

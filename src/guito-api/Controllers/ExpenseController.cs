@@ -1,6 +1,7 @@
 using GuitoApi.DataTransferObjects.Input;
 using GuitoApi.DataTransferObjects.Output;
 using GuitoApi.Services.Expense;
+using GuitoApi.Infrastructure.Validation;
 using Microsoft.AspNetCore.Mvc;
 
 namespace GuitoApi.Controllers
@@ -15,13 +16,18 @@ namespace GuitoApi.Controllers
         private readonly IMatchExpensesService _matchExpensesService;
         private readonly IDeleteExpenseRowService _deleteExpenseRowService;
         private readonly IReadExpenseHistoryService _readExpenseHistoryService;
+        private readonly IReadExpenseDetailService _readExpenseDetailService;
+        private readonly IUpdateExpenseService _updateExpenseService;
+        private readonly IDeleteExpenseService _deleteExpenseService;
 
         public ExpenseController(ICreateExpenseService createExpenseService, 
             IListLatestExpensesService listLatestExpensesService, 
             IMatchExpensesService matchExpensesService,
             IDeleteExpenseRowService deleteExpenseRowService,
             IListExpensesService listExpensesService,
-            IReadExpenseHistoryService readExpenseHistoryService)
+            IReadExpenseHistoryService readExpenseHistoryService,
+            IReadExpenseDetailService readExpenseDetailService, IUpdateExpenseService updateExpenseService,
+            IDeleteExpenseService deleteExpenseService)
         {
             _listExpensesService = listExpensesService;
             _createExpenseService = createExpenseService;
@@ -29,6 +35,9 @@ namespace GuitoApi.Controllers
             _matchExpensesService = matchExpensesService;
             _deleteExpenseRowService = deleteExpenseRowService;
             _readExpenseHistoryService = readExpenseHistoryService;
+            _readExpenseDetailService = readExpenseDetailService;
+            _updateExpenseService = updateExpenseService;
+            _deleteExpenseService = deleteExpenseService;
         }
 
         [HttpGet]
@@ -53,6 +62,34 @@ namespace GuitoApi.Controllers
             [FromQuery] int pageSize = 100, [FromQuery] int pageIndex = 0)
         {
             return await _readExpenseHistoryService.ReadAsync(pageSize, pageIndex, cancellationToken);
+        }
+
+        [HttpGet("{id}")]
+        [ServiceFilter(typeof(PersonalExpenseOperationFilter))]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public async Task<ExpenseDetailResponse> DetailAsync(int id, CancellationToken cancellationToken)
+        {
+            var detail = await _readExpenseDetailService.ReadAsync(id, cancellationToken);
+            Response.Headers.ETag = $"\"{detail.Revision}\"";
+            return detail;
+        }
+
+        [HttpPut("{id}")]
+        [ServiceFilter(typeof(PersonalExpenseOperationFilter))]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public async Task<ExpenseDetailResponse> UpdateAsync(int id, [FromBody] ExpenseUpdate value, CancellationToken cancellationToken)
+        {
+            var detail = await _updateExpenseService.UpdateAsync(id, value, cancellationToken);
+            Response.Headers.ETag = $"\"{detail.Revision}\"";
+            return detail;
+        }
+
+        [HttpDelete("{id}")]
+        [ServiceFilter(typeof(PersonalExpenseOperationFilter))]
+        public async Task<IActionResult> DeleteAsync(int id, CancellationToken cancellationToken)
+        {
+            await _deleteExpenseService.DeleteAsync(id, cancellationToken);
+            return NoContent();
         }
 
         [HttpGet("match")]

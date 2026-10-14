@@ -6,7 +6,7 @@ namespace GuitoApi.Infrastructure.Postgres;
 /// IPostgresDataApiClient without naming a transaction — statements run while a unit of
 /// work is open join it automatically.
 /// </summary>
-public interface IUnitOfWork
+public interface IUnitOfWork : IAsyncDisposable
 {
     /// <summary>Opens the transaction all subsequent statements (until Commit/Rollback) join.</summary>
     Task BeginAsync(CancellationToken cancellationToken = default);

@@ -53,6 +53,9 @@ public class SheetsReportingAuthenticationTests
     [InlineData("GET", "/Expense/latest/5")]
     [InlineData("GET", "/Expense/history/child")]
     [InlineData("DELETE", "/Smoke/1")]
+    [InlineData("GET", "/Expense/7")]
+    [InlineData("PUT", "/Expense/7")]
+    [InlineData("DELETE", "/Expense/7")]
     public async Task Reporting_ShouldDenyOtherOperations_WhenOnlyBearerIsPresentedAsync(string method, string route)
     {
         // Arrange
@@ -124,6 +127,9 @@ public class SheetsReportingAuthenticationTests
     [InlineData("GET", "/Expense/history-more", 403)]
     [InlineData("POST", "/Auth/logout", 403)]
     [InlineData("DELETE", "/Smoke/1", 403)]
+    [InlineData("GET", "/Expense/7", 403)]
+    [InlineData("PUT", "/Expense/7", 403)]
+    [InlineData("DELETE", "/Expense/7", 403)]
     public async Task Reporting_ShouldAuthorizeOnlyExactHistoryGet_WhenRequestRouteVariesAsync(string method, string route, int status)
     {
         // Arrange
