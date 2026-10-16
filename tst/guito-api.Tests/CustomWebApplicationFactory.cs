@@ -41,6 +41,7 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
     /// transport); the default keeps the Dummy provider, mirroring the default config.
     /// </summary>
     public bool UseEnableBankingProvider { get; set; }
+    public bool UseRealBankTransactionRepository { get; set; }
     public string Environment { get; set; } = "Development";
 
     /// <summary>UI origin for the consent-callback 302 (issue #116) — lands in the test config as Cors:AllowedOrigins[0].</summary>
@@ -79,7 +80,8 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
             {
                 Replace<IEnableBankingTransport>(services, _ => EnableBankingTransport);
                 Replace<IBankAccountRepository>(services, _ => BankAccounts);
-                Replace<IBankTransactionRepository>(services, _ => BankTransactions);
+                if (!UseRealBankTransactionRepository)
+                    Replace<IBankTransactionRepository>(services, _ => BankTransactions);
                 Replace<ICategoriesRepository>(services, _ => Categories);
             }
         });

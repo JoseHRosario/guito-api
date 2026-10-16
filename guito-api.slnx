@@ -7,6 +7,7 @@
     <File Path="db/migrations/005_expenses.sql" />
     <File Path="db/migrations/006_remove_integration_tests_category.sql" />
     <File Path="db/migrations/008_historical_expense_categories.sql" />
+    <File Path="db/migrations/009_bank_review.sql" />
     <File Path="db/migrations/010_expense_revision.sql" />
   </Folder>
   <Folder Name="/docs/" Id="4a5e54fd-a648-58af-ffbf-706d32b5cdde">
@@ -24,6 +25,7 @@
     <File Path="docs/adr/0015-postgres-expenses-and-lisbon-occurrence.md" />
     <File Path="docs/adr/0016-frozen-history-import-provenance.md" />
     <File Path="docs/adr/0017-secretless-sheets-reporting-identity.md" />
+    <File Path="docs/adr/0018-bank-transaction-review.md" />
     <File Path="docs/historical-expense-import.md" />
     <File Path="docs/expense-cutover.md" />
     <File Path="docs/expense-edit-delete-contract.md" />

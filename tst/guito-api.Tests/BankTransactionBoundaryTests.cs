@@ -2,25 +2,37 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using GuitoApi.Model;
+using GuitoApi.Infrastructure.Postgres;
 
 namespace GuitoApi.Tests;
 
 /// <summary>
-/// External behavior of GET /BankTransaction (issue #91): returns the pending
-/// (unmatched) rows exactly as the repository orders them, empty when none —
-/// the matching screen's (#83) candidate feed. Hermetic over the fake
-/// IBankTransactionRepository.
+/// Preserved Bank wire fields through the real service/repository composition
+/// with scripted Data API responses. Stateful filters/order/actions are covered
+/// by BankTransactionReviewBoundaryTests.
 /// </summary>
-public class BankTransactionPendingBoundaryTests
+public class BankTransactionBoundaryTests
 {
-    private static CustomWebApplicationFactory FactoryWithPending(params BankTransactionPendingDetail[] pending)
+    private static CustomWebApplicationFactory FactoryWithPending(params BankTransactionDetail[] pending)
     {
-        var factory = new CustomWebApplicationFactory { UseEnableBankingProvider = true };
-        factory.BankTransactions.Pending.AddRange(pending);
+        var factory = new CustomWebApplicationFactory { UseEnableBankingProvider = true, UseRealBankTransactionRepository = true };
+        var rows = pending.Select(row => (IReadOnlyList<PostgresValue>)new PostgresValue[]
+        {
+            PostgresValue.FromLong(row.Id), PostgresValue.FromString(row.AccountUid),
+            PostgresValue.FromString(row.BookingDate.ToString("yyyy-MM-dd")),
+            PostgresValue.FromString(row.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            PostgresValue.FromString(row.Currency), row.RemittanceInformation is { } description
+                ? PostgresValue.FromString(description) : PostgresValue.Null(),
+            row.SuggestedCategory is { } category ? PostgresValue.FromLong(category.Id) : PostgresValue.Null(),
+            row.SuggestedCategory is { } suggestion ? PostgresValue.FromString(suggestion.Name) : PostgresValue.Null(),
+            PostgresValue.FromString("BOOK"), PostgresValue.FromString("needsReview"),
+            PostgresValue.Null(), PostgresValue.Null(), PostgresValue.Null(), PostgresValue.Null(), PostgresValue.Null()
+        }).ToList();
+        factory.Postgres.NextResults.Enqueue(new PostgresResult([], rows, 0));
         return factory;
     }
 
-    private static BankTransactionPendingDetail PendingRow(
+    private static BankTransactionDetail PendingRow(
         long id = 7,
         string accountUid = "eb-account-1",
         string bookingDate = "2026-10-05",
@@ -48,16 +60,16 @@ public class BankTransactionPendingBoundaryTests
         // Assert — the repository orders rows (newest bookings first); the
         // endpoint must pass them through untouched, one wire DTO per row.
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var rows = await response.Content.ReadFromJsonAsync<JsonElement[]>();
+        var rows = (await response.Content.ReadFromJsonAsync<JsonElement[]>())!;
         Assert.Equal(2, rows.Length);
         Assert.Equal(9, rows[0].GetProperty("id").GetInt64());
         Assert.Equal("eb-account-1", rows[0].GetProperty("accountUid").GetString());
         Assert.Equal("2026-10-05", rows[0].GetProperty("bookingDate").GetString());
-        Assert.Equal(12.50m, rows[0].GetProperty("amount").GetDecimal());
+        Assert.Equal(12.50m, decimal.Parse(rows[0].GetProperty("amount").GetString()!, System.Globalization.CultureInfo.InvariantCulture));
         Assert.Equal("EUR", rows[0].GetProperty("currency").GetString());
         Assert.Equal("PINGO DOCE", rows[0].GetProperty("remittanceInformation").GetString());
         Assert.Equal(4, rows[1].GetProperty("id").GetInt64());
-        Assert.Equal(77.93m, rows[1].GetProperty("amount").GetDecimal());
+        Assert.Equal(77.93m, decimal.Parse(rows[1].GetProperty("amount").GetString()!, System.Globalization.CultureInfo.InvariantCulture));
     }
 
     [Fact]
@@ -72,7 +84,7 @@ public class BankTransactionPendingBoundaryTests
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var rows = await response.Content.ReadFromJsonAsync<JsonElement[]>();
+        var rows = (await response.Content.ReadFromJsonAsync<JsonElement[]>())!;
         Assert.Empty(rows);
     }
 
@@ -88,7 +100,7 @@ public class BankTransactionPendingBoundaryTests
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var rows = await response.Content.ReadFromJsonAsync<JsonElement[]>();
+        var rows = (await response.Content.ReadFromJsonAsync<JsonElement[]>())!;
         var row = Assert.Single(rows);
         Assert.Equal(JsonValueKind.Null, row.GetProperty("remittanceInformation").ValueKind);
     }
@@ -108,7 +120,7 @@ public class BankTransactionPendingBoundaryTests
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var row = Assert.Single(await response.Content.ReadFromJsonAsync<JsonElement[]>());
+        var row = Assert.Single((await response.Content.ReadFromJsonAsync<JsonElement[]>())!);
         var suggestion = row.GetProperty("suggestedCategory");
         Assert.Equal(3, suggestion.GetProperty("id").GetInt64());
         Assert.Equal("Restaurants", suggestion.GetProperty("name").GetString());
@@ -126,7 +138,7 @@ public class BankTransactionPendingBoundaryTests
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var row = Assert.Single(await response.Content.ReadFromJsonAsync<JsonElement[]>());
+        var row = Assert.Single((await response.Content.ReadFromJsonAsync<JsonElement[]>())!);
         Assert.Equal(JsonValueKind.Null, row.GetProperty("suggestedCategory").ValueKind);
     }
 }

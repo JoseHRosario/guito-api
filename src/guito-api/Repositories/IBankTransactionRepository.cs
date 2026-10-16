@@ -19,11 +19,13 @@ public interface IBankTransactionRepository
     Task<bool> InsertOrSkipAsync(BankTransactionInsert transaction, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Lists the pending (unmatched, expense_id IS NULL) transactions, newest
-    /// bookings first — the matching screen's (#83) candidate order. Empty when
-    /// none are unmatched.
+    /// Lists all stored transactions, optionally filtered by review status,
+    /// ordered by booking day descending then numeric ID descending.
     /// </summary>
-    Task<IReadOnlyList<BankTransactionPendingDetail>> ListPendingAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<BankTransactionDetail>> ListAsync(string reviewStatus = "all", CancellationToken cancellationToken = default);
+
+    /// <summary>Atomically changes an unlinked row to Needs review or Ignored; rejects missing/matched rows.</summary>
+    Task<BankTransactionDetail> ChangeReviewStatusAsync(long id, MatchStatus matchStatus, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Stores the Jev-suggested category (issue #112) on the transaction with the

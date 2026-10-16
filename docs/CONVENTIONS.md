@@ -45,7 +45,7 @@ model; nothing crosses a boundary in a foreign layer's type):
   controller, it does not belong here.
 - `Model/` — internal domain/application payloads: the vocabulary services and
   repositories exchange (`UserIdentity`, `BankTransactionInsert`,
-  `BankTransactionPendingDetail`). Never a request body, never SQL or wire-shaped.
+  `BankTransactionDetail`). Never a request body, never SQL or wire-shaped.
 - `Repositories/` — repository INTERFACES the services define (ADR-0011).
 - `Infrastructure/` — technology adapters implementing repository interfaces; SQL,
   ranges, HTTP transports, mappers live only here.

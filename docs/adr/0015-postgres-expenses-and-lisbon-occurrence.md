@@ -3,6 +3,7 @@
 > **Status amendment — #150:** Amended by issue #150: Postgres is the only Expense persistence implementation in every environment. ExpenseStore/EXPENSE_STORE, Sheets compatibility adapters and legacy smoke are retired; the legacy X-Sheet-Scope header is ignored. ADR-0014 is amended for sole-Postgres categories. Exact amounts, occurrence/identity, revision and transaction contracts remain supported. Original staged-selector/Sheets-smoke rollout text below is historical, not an operational recipe. Deployment, live acceptance and credential destruction remain separate approval/evidence gates. See [the approval-gated retirement/live-acceptance runbook](../sheets-persistence-retirement.md).
 
 Status: Accepted; sole-Postgres persistence amended by #150 as noted above. The staged selector/production-enable procedure below is historical; #150 deployment/live acceptance is separately approval-gated.
+Later owner-accepted #132 production cutover and #133 start-gate disposition are recorded in [expense-cutover.md](../expense-cutover.md) and ADR-0018. Unperformed rehearsal statements remain historical evidence, not fabricated completion.
 Issue: #128 (first implementation slice of #126).
 Supersedes: the Expense-only storage assumptions of ADR-0005, ADR-0011 and ADR-0013.
 Categories follow ADR-0014 as amended by #150: authoritative Postgres, unchanged name-only API.

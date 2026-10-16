@@ -2,7 +2,28 @@
 
 > **Superseded operational procedure — #150:** the selector switch and Sheets/category/smoke assumptions below are retired. Do not execute this archived checklist or infer current production state from its recorded status. Postgres is the sole supported Expense/Category authority, with no Sheets rollback. Current approval-gated acceptance and credential retirement are in [the retirement runbook](sheets-persistence-retirement.md). Original hold/abort/recovery rationale and unperformed gates are preserved as historical evidence; completed imports remain retired.
 
-## Status and evidence boundary
+## Current owner disposition
+
+[#132 was closed with José's operational acceptance](https://github.com/JoseHRosario/guito-api/issues/132#issuecomment-6135613997):
+production Postgres authority, working saves, private reporting installation and
+owner-confirmed editor reopen/UI reads. This is owner acceptance, not evidence
+that every original rehearsal checkbox was exercised. The distinct live
+pre-switch abort/post-switch recovery rehearsal was **not performed**; agent
+verification of the latest new Expense appearing in Sheets remains unestablished.
+Original source-sheet edits do not resume as authoritative Expense edits.
+
+[José subsequently approved #133 design/development](https://github.com/JoseHRosario/guito-api/issues/133#issuecomment-6157279425),
+disposing its start checkpoint without retroactively claiming those rehearsals.
+Initial Bank is fully collapsed with All selected. See ADR-0018. New Bank-review
+staging persistence/constraint acceptance remains separate from this approval.
+
+## Historical #132 preparation record (retained unchanged below)
+
+The following readiness/approval and nonperformed statements describe the
+pre-execution preparation record, superseded operationally by the owner decisions
+above. They are not current production authority or permission instructions.
+
+### Status and evidence boundary
 
 **Staging readiness: BLOCKED. Production execution: NOT APPROVED / NOT RUN.**
 Code and hermetic tests are not a source freeze, live rehearsal or cutover. Keep

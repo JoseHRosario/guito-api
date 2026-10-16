@@ -14,8 +14,8 @@ public class FakeBankTransactionRepository : IBankTransactionRepository
 
     public List<BankTransactionInsert> Inserts { get; } = [];
 
-    /// <summary>Scripted pending rows returned by ListPendingAsync (issue #91 GET test).</summary>
-    public List<BankTransactionPendingDetail> Pending { get; } = [];
+    /// <summary>Scripted pending rows returned by ListAsync (issue #91 GET test).</summary>
+    public List<BankTransactionDetail> Pending { get; } = [];
 
     public Task<bool> InsertOrSkipAsync(BankTransactionInsert transaction, CancellationToken cancellationToken = default)
     {
@@ -23,11 +23,14 @@ public class FakeBankTransactionRepository : IBankTransactionRepository
         return Task.FromResult(ExistingSyncKeys.Add(transaction.SyncKey));
     }
 
-    public Task<IReadOnlyList<BankTransactionPendingDetail>> ListPendingAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult<IReadOnlyList<BankTransactionPendingDetail>>([.. Pending]);
+    public Task<IReadOnlyList<BankTransactionDetail>> ListAsync(string reviewStatus = "all", CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<BankTransactionDetail>>([.. Pending]);
 
     /// <summary>Suggestion updates recorded as (sync_key, category id), in call order (issue #112).</summary>
     public List<(string SyncKey, long? CategoryId)> SuggestionUpdates { get; } = [];
+
+    public Task<BankTransactionDetail> ChangeReviewStatusAsync(long id, MatchStatus matchStatus, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Use the real repository and fake Data API for review tests.");
 
     public Task UpdateSuggestedCategoryAsync(string syncKey, long? categoryId, CancellationToken cancellationToken = default)
     {

@@ -68,11 +68,12 @@ user intent; never silently overwrite another writer or label their work yours.
 
 ## Bank link handoff (#134/#135)
 
-Master's legacy schema has nullable **text** bank_transactions.expense_id, no
-Expense FK or separate review-state column; Pending is expense_id IS NULL.
-Independently deployed #133 (migration `009_bank_review.sql`, version 0.20.0)
-converts the link to **integer**, adds an Expense FK/unique link and a review-state
-constraint. Staging has that schema already. Deletion inspects only column metadata
+#133's combined tree includes migration `009_bank_review.sql`, converting legacy
+nullable text bank_transactions.expense_id to **integer**, with an Expense FK,
+unique link and coherent review-state constraint. The all-status inbox and
+operation-specific Ignore/Return services coexist with revision-aware Expense
+operations; API version is 0.23.0 after master's 0.22.0. See ADR-0018.
+Deletion inspects only column metadata
 inside the transaction: legacy text links are cleared using canonical ID text;
 integer links are bound as typed Int64 and atomically set to NULL with
 review_status = 'needsReview'. Unknown/partial schema returns 409 and rolls back.
@@ -87,9 +88,8 @@ matches when matching ships. No matching capability is added.
 Hermetic HTTP -> real repositories -> fake Data API tests are default. Predicate
 sensitivity and races in a fake do **not** prove PostgreSQL locking, DDL/privileges,
 foreign keys or persistence. Separately approved isolated staging acceptance is
-required before production approval: pipeline applies migration 010 (009 is reserved
-by #133); select Postgres
-Expense authority and verify categories, authorised human/agent credentials and
+required before production approval: pipeline applies migrations 009 and 010;
+verify sole-Postgres Expense authority, categories, authorised human/agent credentials and
 reporting confinement. Do not run against personal production data, copy secrets,
 or reset existing tables. Seed only uniquely marked disposable staging Expenses;
 GET exact text/audit/ETag; PUT and read after reconnect; race same-revision PUT/PUT
@@ -101,7 +101,13 @@ revisions. Ambiguous cleanup follows the recovery procedure, not blind retry.
 Routine pipeline deployment and production enablement require owner approval;
 local hermetic evidence does not claim deployed/live acceptance.
 
-Release version is 0.21.0: master declares 0.19.0 and #133 reserves 0.20.0.
+### Historical #146 deployment sequencing
+
+The following records #146 before #133's reconciliation, not the combined tree's
+version or route availability. Replacement write acceptance under #150 remains
+deferred; this historical rehearsal does not authorise new financial writes.
+
+Release version was 0.21.0: master declared 0.19.0 and #133 reserved 0.20.0.
 This branch does not include #133's review routes or migration. José explicitly
 approved temporarily replacing its staging deployment with this master-based build
 and intends to merge #146 before Bank Review (#147). Schema compatibility does not

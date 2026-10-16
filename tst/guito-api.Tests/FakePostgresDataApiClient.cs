@@ -10,6 +10,7 @@ namespace GuitoApi.Tests;
 public class FakePostgresDataApiClient : IPostgresDataApiClient
 {
     public Queue<PostgresResult> NextResults { get; } = new();
+    public Func<string, IReadOnlyList<PostgresParameter>?, PostgresResult>? ExecuteBank { get; set; }
     public bool PersistExpenses { get; set; }
     public List<(long Id, string Name, string? Description)> CategoryRows { get; } =
         [(2, "Restaurants", null), (3, "Groceries", null), (2147483648L, "Test", null), (4, "Original category", null)];
@@ -166,6 +167,7 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
         ExecutedCancellationTokens.Add(cancellationToken);
         if (ExecuteException is not null && ExecutedSql.Count >= ExecuteExceptionAtCall)
             throw ExecuteException;
+
         if (NextResults.Count == 0 && sql.StartsWith("SELECT id, name, description FROM categories", StringComparison.Ordinal))
         {
             var categories = sql.Contains("ORDER BY name", StringComparison.Ordinal)
@@ -176,12 +178,54 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
         }
         if (PersistExpenses && sql.Contains("information_schema.columns", StringComparison.Ordinal))
             return Task.FromResult(ReadLinkSchema(sql));
+        if (ExecuteBank is not null && sql.Contains("bank_transactions", StringComparison.Ordinal))
+            return Task.FromResult(ExecuteBank(sql, parameters));
+        if (HasBankReviewSchema && (sql.StartsWith("SELECT bt.id", StringComparison.Ordinal)
+            || sql.StartsWith("WITH updated AS", StringComparison.Ordinal)))
+            return Task.FromResult(ExecuteBankReview(sql, parameters!));
         if (PersistExpenses && NextResults.Count == 0 && (sql.Contains("expenses", StringComparison.Ordinal) || sql.StartsWith("UPDATE bank_transactions", StringComparison.Ordinal)
             || sql == "SELECT id FROM categories WHERE name = :name"))
             return Task.FromResult(ExecuteExpense(sql, parameters));
         return Task.FromResult(NextResults.Count > 0
             ? NextResults.Dequeue()
             : new PostgresResult([], [], 0));
+    }
+
+    private PostgresResult ExecuteBankReview(string sql, IReadOnlyList<PostgresParameter> parameters)
+    {
+        var values = parameters.ToDictionary(parameter => parameter.Name, parameter => parameter.Value);
+        var rows = LinkedTransactions.AsEnumerable();
+        if (sql.Contains("WHERE bt.id = :id", StringComparison.Ordinal) || sql.Contains("WHERE id = :id", StringComparison.Ordinal))
+            rows = rows.Where(row => row.Key == values["id"].LongValue);
+        if (sql.StartsWith("WITH updated AS", StringComparison.Ordinal))
+            rows = ChangeBankReview(rows, sql, values["review_status"].StringValue!);
+        if (sql.Contains("WHERE bt.review_status = :review_status", StringComparison.Ordinal))
+            rows = rows.Where(row => row.Value.Status == values["review_status"].StringValue);
+        if (sql.Contains("ORDER BY bt.booking_date DESC, bt.id DESC", StringComparison.Ordinal))
+            rows = rows.OrderByDescending(row => row.Key);
+        return new PostgresResult([], rows.Select(row => BankReviewRow(row.Key, row.Value)).ToList(), 0);
+    }
+
+    private IEnumerable<KeyValuePair<long, (int? ExpenseId, string Status)>> ChangeBankReview(
+        IEnumerable<KeyValuePair<long, (int? ExpenseId, string Status)>> rows, string sql, string target)
+    {
+        var eligible = rows.Where(row => (!sql.Contains("expense_id IS NULL", StringComparison.Ordinal) || row.Value.ExpenseId is null)
+            && (!sql.Contains("review_status IN ('needsReview', 'ignored')", StringComparison.Ordinal)
+                || row.Value.Status is "needsReview" or "ignored")).ToArray();
+        foreach (var row in eligible) LinkedTransactions[row.Key] = (row.Value.ExpenseId, target);
+        return eligible.Select(row => new KeyValuePair<long, (int?, string)>(row.Key, LinkedTransactions[row.Key]));
+    }
+
+    private IReadOnlyList<PostgresValue> BankReviewRow(long id, (int? ExpenseId, string Status) link)
+    {
+        var expense = _expenses.SingleOrDefault(row => int.Parse(row[0].StringValue!) == link.ExpenseId);
+        return [PostgresValue.FromLong(id), PostgresValue.FromString("eb-account"),
+            PostgresValue.FromString("2026-07-01"), PostgresValue.FromString("12.34"),
+            PostgresValue.FromString("EUR"), PostgresValue.Null(), PostgresValue.Null(), PostgresValue.Null(),
+            PostgresValue.FromString("BOOK"), PostgresValue.FromString(link.Status),
+            link.ExpenseId is { } expenseId ? PostgresValue.FromLong(expenseId) : PostgresValue.Null(),
+            expense?[1] ?? PostgresValue.Null(), expense?[2] ?? PostgresValue.Null(),
+            expense?[3] ?? PostgresValue.Null(), expense?[4] ?? PostgresValue.Null()];
     }
 
     private PostgresResult ReadLinkSchema(string sql)
