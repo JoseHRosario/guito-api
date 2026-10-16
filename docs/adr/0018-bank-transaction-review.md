@@ -1,7 +1,19 @@
 # ADR-0018: Bank Transaction review inbox
 
-Status: Accepted for implementation under #133, within #126.
-Extends ADR-0013 and ADR-0015; matching operations remain later slices.
+Status: Accepted for implementation under #133 and extended by #134, within #126.
+Extends ADR-0013 and ADR-0015; atomic create-and-match remains #135.
+
+## Existing-Expense matching amendment (#134)
+
+API 0.24.0 adds complete-history suggestions, suggestedExpenseCount and explicit
+Match/expected-link Unmatch, reusing migration 009 and the existing unit of work.
+See [the current wire, eligibility and ranking contract](../bank-manual-matching-contract.md).
+This amendment supersedes later-slice statements below for existing-Expense matching
+only; the original #133 delivery record is retained. Expense-before-Bank lock order,
+guarded state/link predicates and the restrictive FK/unique/CHECK remain.
+José deferred dedicated real concurrency acceptance and expanded orchestration
+for this one-person-at-a-time application. Real SQL concurrency is unverified and
+deferred, not an acceptance pass; no live financial fixtures are authorised here.
 
 ## Start checkpoint disposition
 
