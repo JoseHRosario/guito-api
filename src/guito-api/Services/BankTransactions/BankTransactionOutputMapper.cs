@@ -19,5 +19,6 @@ public static class BankTransactionOutputMapper
         ReviewStatus: transaction.ReviewStatus,
         LinkedExpense: transaction.LinkedExpense is { } expense
             ? new BankTransactionLinkedExpense(expense.Id, expense.BookingDate, expense.Amount,
-                expense.Currency, expense.Description, expense.Category) : null);
+                expense.Currency, expense.Description, expense.Category) : null,
+        SuggestedExpenseCount: transaction.SuggestedExpenseCount);
 }

@@ -26,7 +26,8 @@ public class BankTransactionBoundaryTests
             row.SuggestedCategory is { } category ? PostgresValue.FromLong(category.Id) : PostgresValue.Null(),
             row.SuggestedCategory is { } suggestion ? PostgresValue.FromString(suggestion.Name) : PostgresValue.Null(),
             PostgresValue.FromString("BOOK"), PostgresValue.FromString("needsReview"),
-            PostgresValue.Null(), PostgresValue.Null(), PostgresValue.Null(), PostgresValue.Null(), PostgresValue.Null()
+            PostgresValue.Null(), PostgresValue.Null(), PostgresValue.Null(), PostgresValue.Null(), PostgresValue.Null(),
+            PostgresValue.FromLong(row.SuggestedExpenseCount)
         }).ToList();
         factory.Postgres.NextResults.Enqueue(new PostgresResult([], rows, 0));
         return factory;

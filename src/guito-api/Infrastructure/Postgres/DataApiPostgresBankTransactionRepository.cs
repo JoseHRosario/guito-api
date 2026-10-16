@@ -13,7 +13,7 @@ namespace GuitoApi.Infrastructure.Postgres;
 /// IPostgresDataApiClient (a statement inside an open unit of work joins its
 /// transaction automatically — the repository never names a transaction id).
 /// </summary>
-public class DataApiPostgresBankTransactionRepository(IPostgresDataApiClient client) : IBankTransactionRepository
+public class DataApiPostgresBankTransactionRepository(IPostgresDataApiClient client, IUnitOfWork unitOfWork) : IBankTransactionRepository
 {
     private const string InsertSql = """
         INSERT INTO bank_transactions
@@ -24,10 +24,11 @@ public class DataApiPostgresBankTransactionRepository(IPostgresDataApiClient cli
         RETURNING id
         """;
 
-    private const string ProjectionSql = """
+    private const string ProjectionSql = $"""
         SELECT bt.id, bt.account_uid, bt.booking_date, CAST(bt.amount AS text), bt.currency,
                bt.remittance_information, c.id, c.name, bt.status, bt.review_status,
-               e.id, CAST(e.booking_date AS text), CAST(e.amount AS text), e.description, ec.name
+               e.id, CAST(e.booking_date AS text), CAST(e.amount AS text), e.description, ec.name,
+               (SELECT COUNT(*) FROM expenses candidate WHERE {EligibilitySql})
         """;
     private const string JoinsSql = """
         LEFT JOIN categories c ON c.id = bt.suggested_category_id
@@ -89,6 +90,104 @@ public class DataApiPostgresBankTransactionRepository(IPostgresDataApiClient cli
         throw existing.Rows.Count == 0
             ? new ProblemException(404, "Bank Transaction was not found.")
             : new ProblemException(409, "Bank Transaction is matched or no longer eligible for this review action.");
+    }
+
+    private const string MatchSql = $"""
+        UPDATE bank_transactions bt SET expense_id = :expense_id, review_status = 'matched'
+        WHERE bt.id = :id AND EXISTS (
+            SELECT 1 FROM expenses candidate WHERE candidate.id = :expense_id AND {EligibilitySql})
+        RETURNING bt.id
+        """;
+    private const string UnmatchSql = """
+        UPDATE bank_transactions bt SET expense_id = NULL, review_status = 'needsReview'
+        WHERE bt.id = :id AND bt.expense_id = :expense_id AND bt.review_status = 'matched'
+        RETURNING bt.id
+        """;
+
+    public Task<BankTransactionDetail> MatchAsync(long id, int expenseId, CancellationToken cancellationToken = default) =>
+        ChangeLinkAsync(id, expenseId, MatchSql, cancellationToken);
+
+    public Task<BankTransactionDetail> UnmatchAsync(long id, int expenseId, CancellationToken cancellationToken = default) =>
+        ChangeLinkAsync(id, expenseId, UnmatchSql, cancellationToken);
+
+    private async Task<BankTransactionDetail> ChangeLinkAsync(long id, int expenseId, string sql, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await CommitLinkAsync(id, expenseId, sql, cancellationToken);
+        }
+        catch (Amazon.RDSDataService.AmazonRDSDataServiceException)
+        {
+            throw new ProblemException(502, "The Data API could not complete the Match operation. Read current state before retrying; a failed commit response may be outcome-unknown.");
+        }
+    }
+
+    private async Task<BankTransactionDetail> CommitLinkAsync(long id, int expenseId, string sql, CancellationToken cancellationToken)
+    {
+        await using var transaction = unitOfWork;
+        await transaction.BeginAsync(cancellationToken);
+        await LockMatchTargetsAsync(id, expenseId, cancellationToken);
+        var updated = await ExecuteReviewAsync(sql, LinkParameters(id, expenseId), cancellationToken);
+        if (updated.Rows.Count != 1) throw new ProblemException(409, "Transaction or Expense is no longer eligible for this link action.");
+        var result = await ReadAsync(id, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return result;
+    }
+
+    private async Task LockMatchTargetsAsync(long id, int expenseId, CancellationToken cancellationToken)
+    {
+        // Expense deletion takes the same Expense-before-Bank lock order.
+        var expense = await ExecuteReviewAsync("SELECT id FROM expenses WHERE id = :id FOR UPDATE",
+            [new("id", PostgresValue.FromLong(expenseId))], cancellationToken);
+        if (expense.Rows.Count == 0) throw new ProblemException(404, "Expense was not found.");
+        var bank = await ExecuteReviewAsync("SELECT id FROM bank_transactions WHERE id = :id FOR UPDATE",
+            [new("id", PostgresValue.FromLong(id))], cancellationToken);
+        if (bank.Rows.Count == 0) throw new ProblemException(404, "Bank Transaction was not found.");
+    }
+
+    private static IReadOnlyList<PostgresParameter> LinkParameters(long id, int expenseId) =>
+        [new("id", PostgresValue.FromLong(id)), new("expense_id", PostgresValue.FromLong(expenseId))];
+
+    private const string EligibilitySql = """
+        bt.review_status = 'needsReview' AND bt.expense_id IS NULL
+        AND bt.currency = 'EUR' AND candidate.amount = bt.amount
+        AND (candidate.booking_date AT TIME ZONE 'Europe/Lisbon')::date
+            BETWEEN bt.booking_date - 3 AND bt.booking_date + 3
+        AND NOT EXISTS (SELECT 1 FROM bank_transactions linked WHERE linked.expense_id = candidate.id)
+        """;
+
+    public async Task<IReadOnlyList<BankLinkedExpense>> ListSuggestionsAsync(long id, CancellationToken cancellationToken = default)
+    {
+        var transaction = await ReadAsync(id, cancellationToken);
+        var result = await ExecuteReviewAsync($"""
+            SELECT candidate.id, CAST(candidate.booking_date AS text), CAST(candidate.amount AS text),
+                   candidate.description, category.name
+            FROM bank_transactions bt CROSS JOIN expenses candidate
+            JOIN categories category ON category.id = candidate.category_id
+            WHERE bt.id = :id AND {EligibilitySql}
+            """, [new("id", PostgresValue.FromLong(id))], cancellationToken);
+        return Services.BankTransactions.BankExpenseSuggestionRanking.Rank(transaction, result.Rows.Select(ToCandidate));
+    }
+
+    private async Task<BankTransactionDetail> ReadAsync(long id, CancellationToken cancellationToken)
+    {
+        var result = await ExecuteReviewAsync($"{SelectSql}\nWHERE bt.id = :id",
+            [new("id", PostgresValue.FromLong(id))], cancellationToken);
+        if (result.Rows.Count == 0) throw new ProblemException(404, "Bank Transaction was not found.");
+        return ToDetail(result.Rows.Single());
+    }
+
+    private static BankLinkedExpense ToCandidate(IReadOnlyList<PostgresValue> row)
+    {
+        try
+        {
+            return new(checked((int)Id(row)), TimeService.InLisbon(DateTimeOffset.Parse(row[1].StringValue!, CultureInfo.InvariantCulture)),
+                ExactDecimalJsonConverter.ParseExact(row[2].StringValue!), "EUR", row[3].StringValue!, row[4].StringValue!);
+        }
+        catch (Exception exception) when (exception is System.Text.Json.JsonException or FormatException or OverflowException)
+        {
+            throw new ProblemException(502, "Expense suggestions contain invalid exact data; no partial result was returned.");
+        }
     }
 
     private static string ToReviewTarget(MatchStatus matchStatus) => matchStatus switch
@@ -168,7 +267,8 @@ public class DataApiPostgresBankTransactionRepository(IPostgresDataApiClient cli
         LinkedExpense: row[10].IsNull ? null : new BankLinkedExpense(
             checked((int)Id(row, 10)),
             TimeService.InLisbon(DateTimeOffset.Parse(row[11].StringValue!, CultureInfo.InvariantCulture)),
-            ExactDecimalJsonConverter.ParseExact(row[12].StringValue!), "EUR", row[13].StringValue!, row[14].StringValue!));
+            ExactDecimalJsonConverter.ParseExact(row[12].StringValue!), "EUR", row[13].StringValue!, row[14].StringValue!),
+        SuggestedExpenseCount: checked((int)Id(row, 15)));
 
     // The Data API returns bigint/numeric columns as string fields (observed live in
     // staging, issue #91) — accept either encoding, never assume one.

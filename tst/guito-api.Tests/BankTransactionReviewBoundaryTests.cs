@@ -404,7 +404,7 @@ public class BankTransactionReviewBoundaryTests
             reviewStatus == "matched" ? PostgresValue.FromLong(int.MaxValue) : PostgresValue.Null(),
             PostgresValue.FromString("2026-07-01T12:34:56.123456Z"),
             PostgresValue.FromString("12345678901234567890.12345678"),
-            PostgresValue.FromString("Lunch"), PostgresValue.FromString("Restaurants")]);
+            PostgresValue.FromString("Lunch"), PostgresValue.FromString("Restaurants"), PostgresValue.FromLong(0)]);
 
         public PostgresResult Execute(string sql, IReadOnlyList<PostgresParameter>? parameters)
         {
@@ -478,7 +478,6 @@ public class BankTransactionReviewBoundaryTests
         {
             if (sql.Contains("bt.id = :id"))
                 rows = rows.Where(row => long.Parse(row[IdColumn].StringValue!) == values["id"].LongValue);
-            if (sql.Contains("bt.expense_id IS NULL")) rows = rows.Where(row => row[LinkedExpenseIdColumn].IsNull);
             if (sql.Contains("bt.review_status = :review_status"))
                 rows = rows.Where(row => row[ReviewStatusColumn].StringValue == values["review_status"].StringValue);
             return rows;
