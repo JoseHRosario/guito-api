@@ -25,6 +25,7 @@ public interface IBankTransactionRepository
     Task<IReadOnlyList<BankTransactionDetail>> ListAsync(string reviewStatus = "all", CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<BankLinkedExpense>> ListSuggestionsAsync(long id, CancellationToken cancellationToken = default);
+    Task<BankTransactionDetail> ReadAsync(long id, CancellationToken cancellationToken = default);
     Task<BankTransactionDetail> MatchAsync(long id, int expenseId, CancellationToken cancellationToken = default);
     Task<BankTransactionDetail> UnmatchAsync(long id, int expenseId, CancellationToken cancellationToken = default);
 

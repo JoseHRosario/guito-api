@@ -1,4 +1,5 @@
 <Solution>
+  <Folder Name="/db/" />
   <Folder Name="/db/migrations/" Id="6b1f9a2c-4d3e-4f8a-9c1d-2e5b7a8c9d0e">
     <File Path="db/migrations/001_init.sql" />
     <File Path="db/migrations/002_bank_transactions.sql" />
@@ -30,6 +31,7 @@
     <File Path="docs/expense-cutover.md" />
     <File Path="docs/expense-edit-delete-contract.md" />
     <File Path="docs/bank-manual-matching-contract.md" />
+    <File Path="docs/bank-create-and-match-contract.md" />
     <File Path="docs/sheets-persistence-retirement.md" />
     <File Path="docs/adr/0010-amounts-stored-positive.md" />
   </Folder>

@@ -165,6 +165,8 @@ namespace GuitoApi
             services.AddScoped<IListBankTransactionsService, ListBankTransactionsService>();
             services.AddScoped<IListBankExpenseSuggestionsService, ListBankExpenseSuggestionsService>();
             services.AddScoped<IMatchBankTransactionService, MatchBankTransactionService>();
+            services.AddScoped<IBankExpenseCreationRepository, DataApiPostgresBankExpenseCreationRepository>();
+            services.AddScoped<ICreateAndMatchBankTransactionService, CreateAndMatchBankTransactionService>();
             services.AddScoped<IUnmatchBankTransactionService, UnmatchBankTransactionService>();
             services.AddScoped<IIgnoreBankTransactionService, IgnoreBankTransactionService>();
             services.AddScoped<IReturnBankTransactionToReviewService, ReturnBankTransactionToReviewService>();

@@ -169,7 +169,7 @@ public class DataApiPostgresBankTransactionRepository(IPostgresDataApiClient cli
         return Services.BankTransactions.BankExpenseSuggestionRanking.Rank(transaction, result.Rows.Select(ToCandidate));
     }
 
-    private async Task<BankTransactionDetail> ReadAsync(long id, CancellationToken cancellationToken)
+    public async Task<BankTransactionDetail> ReadAsync(long id, CancellationToken cancellationToken = default)
     {
         var result = await ExecuteReviewAsync($"{SelectSql}\nWHERE bt.id = :id",
             [new("id", PostgresValue.FromLong(id))], cancellationToken);

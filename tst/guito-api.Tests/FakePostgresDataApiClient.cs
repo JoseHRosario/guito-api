@@ -25,6 +25,7 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
     public Dictionary<string, string>? LinkSchemaColumns { get; set; }
     public Dictionary<long, (int? ExpenseId, string Status)> LinkedTransactions { get; } = [];
     public Dictionary<long, (string Day, string Amount, string Currency, string? Description)> BankDetails { get; } = [];
+    public Dictionary<long, (string Status, string Direction)> BankMovementStates { get; } = [];
     private Dictionary<long, (int? ExpenseId, string Status)>? _linksSnapshot;
 
 
@@ -149,6 +150,7 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
 
     public Exception? ExecuteException { get; set; }
     public int ExecuteExceptionAtCall { get; set; } = 1;
+    public string? ExecuteExceptionSqlPrefix { get; set; }
     public string? NextTransactionId { get; set; }
 
     public List<string> ExecutedSql { get; } = [];
@@ -166,7 +168,8 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
         ExecutedParameters.Add(parameters);
         ExecutedTransactionIds.Add(transactionId);
         ExecutedCancellationTokens.Add(cancellationToken);
-        if (ExecuteException is not null && ExecutedSql.Count >= ExecuteExceptionAtCall)
+        if (ExecuteException is not null && (ExecuteExceptionSqlPrefix is { } prefix
+            ? sql.StartsWith(prefix, StringComparison.Ordinal) : ExecutedSql.Count >= ExecuteExceptionAtCall))
             throw ExecuteException;
 
         if (NextResults.Count == 0 && sql.StartsWith("SELECT id, name, description FROM categories", StringComparison.Ordinal))
@@ -184,7 +187,9 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
         if (HasBankReviewSchema && sql.StartsWith("SELECT id FROM bank_transactions", StringComparison.Ordinal))
         {
             var id = parameters!.Single(parameter => parameter.Name == "id").Value.LongValue!.Value;
-            return Task.FromResult(new PostgresResult([], LinkedTransactions.ContainsKey(id) ? [[PostgresValue.FromLong(id)]] : [], 0));
+            var rows = LinkedTransactions.Keys.Where(key => !sql.Contains("WHERE id = :id", StringComparison.Ordinal) || key == id)
+                .Select(key => (IReadOnlyList<PostgresValue>)new[] { PostgresValue.FromLong(key) }).ToList();
+            return Task.FromResult(new PostgresResult([], rows, 0));
         }
         if (HasBankReviewSchema && sql.StartsWith("UPDATE bank_transactions bt", StringComparison.Ordinal))
             return Task.FromResult(ChangeBankLink(sql, parameters!));
@@ -234,6 +239,8 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
         }
         if (!EligibleExpenses(sql, parameters).Any(row => !sql.Contains("candidate.id = :expense_id") || int.Parse(row[0].StringValue!) == expenseId))
             return new([], [], 0);
+        if (sql.Contains("linked.expense_id = :expense_id") && LinkedTransactions.Values.Any(link => link.ExpenseId == expenseId))
+            return new([], [], 0);
         LinkedTransactions[id] = (expenseId, "matched");
         return new([], [[PostgresValue.FromLong(id)]], 1);
     }
@@ -247,6 +254,13 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
         if (sql.Contains("bt.review_status = 'needsReview'") && link.Status != "needsReview") return [];
         if (sql.Contains("bt.expense_id IS NULL") && link.ExpenseId is not null) return [];
         if (sql.Contains("bt.currency = 'EUR'") && bank.Item3 != "EUR") return [];
+        var movement = BankMovementStates.GetValueOrDefault(id, ("BOOK", "DBIT"));
+        if (sql.Contains("bt.status = 'BOOK'") && movement.Item1 != "BOOK") return [];
+        if (sql.Contains("bt.direction = 'DBIT'") && movement.Item2 != "DBIT") return [];
+        if (sql.Contains("bt.amount::text NOT IN ('NaN', 'Infinity', '-Infinity')") && bank.Item2 is "NaN" or "Infinity" or "-Infinity") return [];
+        if (sql.Contains("bt.amount > 0") && decimal.Parse(bank.Item2, System.Globalization.CultureInfo.InvariantCulture) <= 0) return [];
+        if (sql.Contains("bt.booking_date BETWEEN DATE '0001-01-01' AND DATE '9999-12-31'")
+            && !DateOnly.TryParse(bank.Item1, System.Globalization.CultureInfo.InvariantCulture, out _)) return [];
         IEnumerable<IReadOnlyList<PostgresValue>> rows = _expenses;
         if (sql.Contains("candidate.amount = bt.amount"))
             rows = rows.Where(row => decimal.Parse(row[2].StringValue!, System.Globalization.CultureInfo.InvariantCulture) == decimal.Parse(bank.Item2, System.Globalization.CultureInfo.InvariantCulture));
@@ -318,12 +332,14 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
         Commits++;
         _snapshot = null;
         _transactionGate.Release();
+        if (CommitAppliedThenThrow is not null) throw CommitAppliedThenThrow;
         return Task.CompletedTask;
     }
 
     public Exception? RollbackException { get; set; }
     public Exception? BeginException { get; set; }
     public Exception? CommitException { get; set; }
+    public Exception? CommitAppliedThenThrow { get; set; }
     public Task RollbackCompletion { get; set; } = Task.CompletedTask;
     public TaskCompletionSource RollbackStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 

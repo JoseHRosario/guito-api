@@ -1,7 +1,20 @@
 # ADR-0018: Bank Transaction review inbox
 
 Status: Accepted for implementation under #133 and extended by #134, within #126.
-Extends ADR-0013 and ADR-0015; atomic create-and-match remains #135.
+Extends ADR-0013 and ADR-0015; create-and-match is extended by #135.
+
+## Atomic creation amendment (#135)
+
+API 0.25.0 creates a new editable Expense and guarded Bank link atomically in
+one existing ambient Data API transaction. José explicitly removed the prior
+receipt/replay requirement as overengineering: no operation ID, receipt API,
+historical evidence or automatic retry/replay guarantee remains accepted.
+The response is the same current-state Bank review DTO as manual Match;
+uncertain Save recovery uses the existing Bank read. See [the current contract](../bank-create-and-match-contract.md).
+Migration 011 already deployed to shared staging and remains immutable history;
+forward migration 012 drops only its receipt table, without CASCADE. Neither
+migration is run manually here. Live SQL acceptance remains unverified and
+owner-deferred; no new concurrency, dependency or deployment gates are added.
 
 ## Existing-Expense matching amendment (#134)
 

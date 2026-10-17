@@ -56,6 +56,8 @@ public class SheetsReportingAuthenticationTests
     [InlineData("GET", "/Expense/7")]
     [InlineData("PUT", "/Expense/7")]
     [InlineData("DELETE", "/Expense/7")]
+    [InlineData("POST", "/BankTransaction/1/create-and-match")]
+    [InlineData("GET", "/BankTransaction/1/create-and-match/11111111-2222-3333-4444-555555555555")]
     public async Task Reporting_ShouldDenyOtherOperations_WhenOnlyBearerIsPresentedAsync(string method, string route)
     {
         // Arrange
@@ -130,6 +132,8 @@ public class SheetsReportingAuthenticationTests
     [InlineData("GET", "/Expense/7", 403)]
     [InlineData("PUT", "/Expense/7", 403)]
     [InlineData("DELETE", "/Expense/7", 403)]
+    [InlineData("POST", "/BankTransaction/1/create-and-match", 403)]
+    [InlineData("GET", "/BankTransaction/1/create-and-match/11111111-2222-3333-4444-555555555555", 403)]
     public async Task Reporting_ShouldAuthorizeOnlyExactHistoryGet_WhenRequestRouteVariesAsync(string method, string route, int status)
     {
         // Arrange

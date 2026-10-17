@@ -1,8 +1,8 @@
 # Manual existing-Expense matching (#134)
 
 API **0.24.0** extends [ADR-0018](adr/0018-bank-transaction-review.md).
-Only existing Expense Match/Unmatch is included; atomic create-and-match remains
-#135. Approved desktop/mobile designs remove visible rule/reason commentary,
+This contract covers existing Expense Match/Unmatch. Atomic new Expense creation
+and Match is specified in [the #135 contract](bank-create-and-match-contract.md). Approved desktop/mobile designs remove visible rule/reason commentary,
 not eligibility or the explicit Match decision.
 
 ## HTTP contract
