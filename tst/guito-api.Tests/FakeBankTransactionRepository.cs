@@ -32,6 +32,9 @@ public class FakeBankTransactionRepository : IBankTransactionRepository
     public Task<IReadOnlyList<BankLinkedExpense>> ListSuggestionsAsync(long id, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException("Use the real repository and fake Data API for matching tests.");
 
+    public Task<BankTransactionDetail> ReadAsync(long id, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Pending.Single(transaction => transaction.Id == id));
+
     public Task<BankTransactionDetail> MatchAsync(long id, int expenseId, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException("Use the real repository and fake Data API for matching tests.");
 

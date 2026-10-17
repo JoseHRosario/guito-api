@@ -18,7 +18,6 @@ namespace GuitoApi.Controllers
         private readonly IMatchBankTransactionService _matchBankTransactionService;
         private readonly IUnmatchBankTransactionService _unmatchBankTransactionService;
         private readonly ICreateAndMatchBankTransactionService _createAndMatchBankTransactionService;
-        private readonly IReadBankCreationReceiptService _readBankCreationReceiptService;
 
         public BankTransactionController(
             ISyncBankTransactionsService syncBankTransactionsService,
@@ -28,8 +27,7 @@ namespace GuitoApi.Controllers
             IListBankExpenseSuggestionsService listBankExpenseSuggestionsService,
             IMatchBankTransactionService matchBankTransactionService,
             IUnmatchBankTransactionService unmatchBankTransactionService,
-            ICreateAndMatchBankTransactionService createAndMatchBankTransactionService,
-            IReadBankCreationReceiptService readBankCreationReceiptService)
+            ICreateAndMatchBankTransactionService createAndMatchBankTransactionService)
         {
             _syncBankTransactionsService = syncBankTransactionsService;
             _listBankTransactionsService = listBankTransactionsService;
@@ -39,7 +37,6 @@ namespace GuitoApi.Controllers
             _matchBankTransactionService = matchBankTransactionService;
             _unmatchBankTransactionService = unmatchBankTransactionService;
             _createAndMatchBankTransactionService = createAndMatchBankTransactionService;
-            _readBankCreationReceiptService = readBankCreationReceiptService;
         }
 
         /// <summary>All stored rows or the selected review filter, newest bookings first (#133).</summary>
@@ -64,16 +61,9 @@ namespace GuitoApi.Controllers
             await _matchBankTransactionService.MatchAsync(id, request.ExpenseId, cancellationToken);
 
         [HttpPost("{id}/create-and-match")]
-        public async Task<BankExpenseCreated> CreateAndMatchAsync(long id, BankExpenseCreate request, CancellationToken cancellationToken)
+        public async Task<BankTransaction> CreateAndMatchAsync(long id, ExpenseCreate request, CancellationToken cancellationToken)
         {
             return await _createAndMatchBankTransactionService.CreateAsync(id, request, cancellationToken);
-        }
-
-        [HttpGet("{id}/create-and-match/{operationId}")]
-        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
-        public async Task<BankExpenseCreated> CreationReceiptAsync(long id, Guid operationId, CancellationToken cancellationToken)
-        {
-            return await _readBankCreationReceiptService.ReadAsync(id, operationId, cancellationToken);
         }
 
         [HttpPost("{id}/unmatch")]

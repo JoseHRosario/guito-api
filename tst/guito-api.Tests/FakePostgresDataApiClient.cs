@@ -19,8 +19,6 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
     private readonly SemaphoreSlim _transactionGate = new(1);
     private List<IReadOnlyList<PostgresValue>>? _snapshot;
     private Dictionary<int, long>? _revisionSnapshot;
-    private Dictionary<string, IReadOnlyList<PostgresValue>> _receipts = [];
-    private Dictionary<string, IReadOnlyList<PostgresValue>>? _receiptSnapshot;
     public int Commits { get; private set; }
     public int Rollbacks { get; private set; }
     public bool HasBankReviewSchema { get; set; }
@@ -153,8 +151,6 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
     public Exception? ExecuteException { get; set; }
     public int ExecuteExceptionAtCall { get; set; } = 1;
     public string? ExecuteExceptionSqlPrefix { get; set; }
-    public Exception? ReceiptInsertedThenThrow { get; set; }
-    public (long TransactionId, int ExpenseId, bool DifferentIntent)? CompetingReceipt { get; set; }
     public string? NextTransactionId { get; set; }
 
     public List<string> ExecutedSql { get; } = [];
@@ -176,8 +172,6 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
             ? sql.StartsWith(prefix, StringComparison.Ordinal) : ExecutedSql.Count >= ExecuteExceptionAtCall))
             throw ExecuteException;
 
-        if (sql.Contains("bank_expense_creation_receipts", StringComparison.Ordinal))
-            return Task.FromResult(ExecuteReceipt(sql, parameters!));
         if (NextResults.Count == 0 && sql.StartsWith("SELECT id, name, description FROM categories", StringComparison.Ordinal))
         {
             var categories = sql.Contains("ORDER BY name", StringComparison.Ordinal)
@@ -211,34 +205,6 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
         return Task.FromResult(NextResults.Count > 0
             ? NextResults.Dequeue()
             : new PostgresResult([], [], 0));
-    }
-
-    private PostgresResult ExecuteReceipt(string sql, IReadOnlyList<PostgresParameter> parameters)
-    {
-        var values = parameters.ToDictionary(parameter => parameter.Name, parameter => parameter.Value);
-        var operationId = values["operation_id"].StringValue!;
-        if (sql.StartsWith("INSERT", StringComparison.Ordinal))
-        {
-            InsertCompetingReceipt(operationId, values["intent"].StringValue!);
-            if (_receipts.ContainsKey(operationId)) return new([], [], 0);
-            _receipts.Add(operationId, [PostgresValue.FromString(values["id"].LongValue!.Value.ToString()),
-                PostgresValue.FromString(values["expense_id"].LongValue!.Value.ToString()), values["intent"]]);
-            if (ReceiptInsertedThenThrow is not null) throw ReceiptInsertedThenThrow;
-            return new([], [[PostgresValue.FromString(operationId)]], 1);
-        }
-        var rows = _receipts.Where(receipt => !sql.Contains("WHERE operation_id = CAST(:operation_id AS uuid)", StringComparison.Ordinal)
-            || receipt.Key == operationId).Select(receipt => receipt.Value).ToList();
-        return new([], rows, 0);
-    }
-
-    private void InsertCompetingReceipt(string operationId, string intent)
-    {
-        if (CompetingReceipt is not { } winner) return;
-        IReadOnlyList<PostgresValue> committed = [PostgresValue.FromString(winner.TransactionId.ToString()),
-            PostgresValue.FromString(winner.ExpenseId.ToString()), PostgresValue.FromString(intent + (winner.DifferentIntent ? "changed" : ""))];
-        _receipts[operationId] = committed;
-        _receiptSnapshot![operationId] = committed;
-        CompetingReceipt = null;
     }
 
     private PostgresResult ExecuteBankReview(string sql, IReadOnlyList<PostgresParameter> parameters)
@@ -354,7 +320,6 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
         if (BeginException is not null) throw BeginException;
         var id = NextTransactionId ?? throw new InvalidOperationException("No transaction id scripted.");
         await _transactionGate.WaitAsync(cancellationToken);
-        _receiptSnapshot = new(_receipts);
         _snapshot = _expenses.ToList();
         _revisionSnapshot = new(_revisions);
         _linksSnapshot = new(LinkedTransactions);
@@ -384,7 +349,6 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
         await RollbackCompletion.ConfigureAwait(false);
         if (RollbackException is not null) throw RollbackException;
         Rollbacks++;
-        _receipts = new(_receiptSnapshot!);
         _expenses.Clear();
         _expenses.AddRange(_snapshot!);
         _revisions.Clear();

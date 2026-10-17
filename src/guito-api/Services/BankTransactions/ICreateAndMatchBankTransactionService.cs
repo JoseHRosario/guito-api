@@ -5,5 +5,5 @@ namespace GuitoApi.Services.BankTransactions;
 
 public interface ICreateAndMatchBankTransactionService
 {
-    Task<BankExpenseCreated> CreateAsync(long id, BankExpenseCreate request, CancellationToken cancellationToken);
+    Task<BankTransaction> CreateAsync(long id, ExpenseCreate request, CancellationToken cancellationToken);
 }

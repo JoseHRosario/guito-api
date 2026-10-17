@@ -13,11 +13,10 @@ namespace GuitoApi.Tests;
 public class BankCreateAndMatchAuthenticationTests
 {
     private const string Path = "/BankTransaction/9223372036854775807/create-and-match";
-    private const string OperationId = "11111111-2222-3333-4444-555555555555";
 
     private static object Request() => new
     {
-        operationId = OperationId, bookingDate = "2026-07-01", amount = "0", category = "Groceries",
+        bookingDate = "2026-07-01", amount = "0", category = "Groceries",
         description = "Authenticated purchase", currency = "EUR", creatorEmail = "forged@example.com"
     };
 
@@ -50,7 +49,7 @@ public class BankCreateAndMatchAuthenticationTests
     [Theory]
     [InlineData(null, 401)]
     [InlineData("wrong-key", 403)]
-    public async Task CreateAndMatch_ShouldDenyBothRoutes_WhenAgentCredentialsAreAbsentOrInvalidAsync(string? key, int status)
+    public async Task CreateAndMatch_ShouldDenyCreation_WhenAgentCredentialsAreAbsentOrInvalidAsync(string? key, int status)
     {
         // Arrange
         using var factory = Factory();
@@ -60,11 +59,9 @@ public class BankCreateAndMatchAuthenticationTests
 
         // Act
         using var post = await client.PostAsJsonAsync(Path, Request());
-        using var get = await client.GetAsync($"{Path}/{OperationId}");
 
         // Assert
         Assert.Equal((HttpStatusCode)status, post.StatusCode);
-        Assert.Equal((HttpStatusCode)status, get.StatusCode);
         Assert.Empty(factory.Postgres.ExecutedSql);
     }
 
@@ -84,8 +81,6 @@ public class BankCreateAndMatchAuthenticationTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var expense = await client.GetFromJsonAsync<JsonElement>("/Expense/1");
         Assert.Equal("xunga.meireles@gmail.com", expense.GetProperty("creatorEmail").GetString());
-        using var get = await client.GetAsync($"{Path}/{OperationId}");
-        Assert.Equal(await response.Content.ReadAsStringAsync(), await get.Content.ReadAsStringAsync());
     }
 
     [Fact]
@@ -105,29 +100,6 @@ public class BankCreateAndMatchAuthenticationTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var expense = await client.GetFromJsonAsync<JsonElement>("/Expense/1");
         Assert.Equal("editor@example.com", expense.GetProperty("creatorEmail").GetString());
-    }
-
-    [Fact]
-    public async Task CreateAndMatch_ShouldAllowSharedRecovery_WhenAgentRetriesHumanOperationAsync()
-    {
-        // Arrange
-        using var transport = new ReportingTokenFixture();
-        using var factory = Factory();
-        using var host = Authenticated(factory, transport);
-        using var client = host.CreateClient();
-        SetHumanCredentials(client, transport);
-        using var first = await client.PostAsJsonAsync(Path, Request());
-        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
-        client.DefaultRequestHeaders.Authorization = null;
-        client.DefaultRequestHeaders.Remove("x-google-idtoken");
-        client.DefaultRequestHeaders.Add("X-Api-Key", "test-agent-key");
-
-        // Act
-        using var retry = await client.PostAsJsonAsync(Path, Request());
-
-        // Assert
-        Assert.Equal(HttpStatusCode.OK, retry.StatusCode);
-        Assert.Equal(await first.Content.ReadAsStringAsync(), await retry.Content.ReadAsStringAsync());
     }
 
     private static void SetHumanCredentials(HttpClient client, ReportingTokenFixture transport)
@@ -161,7 +133,5 @@ public class BankCreateAndMatchAuthenticationTests
         Assert.Equal("-10.123456789", expense.GetProperty("amount").GetString());
         var bank = Assert.Single((await client.GetFromJsonAsync<JsonElement[]>("/BankTransaction"))!);
         Assert.Equal("needsReview", bank.GetProperty("reviewStatus").GetString());
-        using var receipt = await client.GetAsync($"{Path}/{OperationId}");
-        Assert.Equal(HttpStatusCode.NotFound, receipt.StatusCode);
     }
 }
