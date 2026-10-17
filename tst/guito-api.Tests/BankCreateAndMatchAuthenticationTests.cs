@@ -60,7 +60,7 @@ public class BankCreateAndMatchAuthenticationTests
 
         // Act
         using var post = await client.PostAsJsonAsync(Path, Request());
-        using var get = await client.GetAsync(Path + "/" + OperationId);
+        using var get = await client.GetAsync($"{Path}/{OperationId}");
 
         // Assert
         Assert.Equal((HttpStatusCode)status, post.StatusCode);
@@ -84,7 +84,7 @@ public class BankCreateAndMatchAuthenticationTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var expense = await client.GetFromJsonAsync<JsonElement>("/Expense/1");
         Assert.Equal("xunga.meireles@gmail.com", expense.GetProperty("creatorEmail").GetString());
-        using var get = await client.GetAsync(Path + "/" + OperationId);
+        using var get = await client.GetAsync($"{Path}/{OperationId}");
         Assert.Equal(await response.Content.ReadAsStringAsync(), await get.Content.ReadAsStringAsync());
     }
 
@@ -161,7 +161,7 @@ public class BankCreateAndMatchAuthenticationTests
         Assert.Equal("-10.123456789", expense.GetProperty("amount").GetString());
         var bank = Assert.Single((await client.GetFromJsonAsync<JsonElement[]>("/BankTransaction"))!);
         Assert.Equal("needsReview", bank.GetProperty("reviewStatus").GetString());
-        using var receipt = await client.GetAsync(Path + "/" + OperationId);
+        using var receipt = await client.GetAsync($"{Path}/{OperationId}");
         Assert.Equal(HttpStatusCode.NotFound, receipt.StatusCode);
     }
 }

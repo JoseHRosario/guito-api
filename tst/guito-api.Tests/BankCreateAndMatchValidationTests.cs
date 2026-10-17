@@ -75,7 +75,7 @@ public class BankCreateAndMatchValidationTests
 
         // Act
         using var post = await client.PostAsJsonAsync(path, Request());
-        using var get = await client.GetAsync(path + "/" + OperationId);
+        using var get = await client.GetAsync($"{path}/{OperationId}");
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, post.StatusCode);
@@ -92,7 +92,7 @@ public class BankCreateAndMatchValidationTests
         using var client = factory.CreateClient();
 
         // Act
-        using var response = await client.GetAsync(Path() + "/" + operationId);
+        using var response = await client.GetAsync($"{Path()}/{operationId}");
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -163,8 +163,8 @@ public class BankCreateAndMatchValidationTests
 
         // Act
         using var otherBank = await client.PostAsJsonAsync(Path(8), Request());
-        using var wrongPair = await client.GetAsync(Path(8) + "/" + OperationId);
-        using var unknown = await client.GetAsync(Path() + "/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        using var wrongPair = await client.GetAsync($"{Path(8)}/{OperationId}");
+        using var unknown = await client.GetAsync($"{Path()}/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
 
         // Assert
         Assert.Equal(HttpStatusCode.Conflict, otherBank.StatusCode);
