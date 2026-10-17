@@ -14,4 +14,5 @@ public sealed record BankTransaction(
     SuggestedCategory? SuggestedCategory,
     string Status,
     string ReviewStatus,
-    BankTransactionLinkedExpense? LinkedExpense);
+    BankTransactionLinkedExpense? LinkedExpense,
+    int SuggestedExpenseCount = 0);

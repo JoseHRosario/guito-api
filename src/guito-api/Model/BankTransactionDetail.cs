@@ -11,4 +11,5 @@ public sealed record BankTransactionDetail(
     BankSuggestedCategory? SuggestedCategory = null,
     string Status = "BOOK",
     string ReviewStatus = "needsReview",
-    BankLinkedExpense? LinkedExpense = null);
+    BankLinkedExpense? LinkedExpense = null,
+    int SuggestedExpenseCount = 0);

@@ -163,6 +163,9 @@ namespace GuitoApi
             // Bank sync (issue #90): fetch from EB + idempotent store, per-request.
             services.AddScoped<ISyncBankTransactionsService, SyncBankTransactionsService>();
             services.AddScoped<IListBankTransactionsService, ListBankTransactionsService>();
+            services.AddScoped<IListBankExpenseSuggestionsService, ListBankExpenseSuggestionsService>();
+            services.AddScoped<IMatchBankTransactionService, MatchBankTransactionService>();
+            services.AddScoped<IUnmatchBankTransactionService, UnmatchBankTransactionService>();
             services.AddScoped<IIgnoreBankTransactionService, IgnoreBankTransactionService>();
             services.AddScoped<IReturnBankTransactionToReviewService, ReturnBankTransactionToReviewService>();
         }

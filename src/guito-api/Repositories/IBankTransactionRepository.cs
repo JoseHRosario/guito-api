@@ -24,6 +24,10 @@ public interface IBankTransactionRepository
     /// </summary>
     Task<IReadOnlyList<BankTransactionDetail>> ListAsync(string reviewStatus = "all", CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<BankLinkedExpense>> ListSuggestionsAsync(long id, CancellationToken cancellationToken = default);
+    Task<BankTransactionDetail> MatchAsync(long id, int expenseId, CancellationToken cancellationToken = default);
+    Task<BankTransactionDetail> UnmatchAsync(long id, int expenseId, CancellationToken cancellationToken = default);
+
     /// <summary>Atomically changes an unlinked row to Needs review or Ignored; rejects missing/matched rows.</summary>
     Task<BankTransactionDetail> ChangeReviewStatusAsync(long id, MatchStatus matchStatus, CancellationToken cancellationToken = default);
 

@@ -83,6 +83,16 @@ deleting the Expense, never a Transaction. Future matching writers must also loc
 Expense before bank rows. UI warns before amount/date/time edits on confirmed
 matches when matching ships. No matching capability is added.
 
+### Existing-Expense matching now implemented (#134)
+
+API 0.24.0 adds the explicit [Match/expected-link Unmatch contract](bank-manual-matching-contract.md).
+It follows the Expense-before-Bank lock order above and retains confirmed links
+on Expense edits. Expense deletion clears these newly created links using the
+existing atomic unlink operation. The preceding "future matching"/"no matching"
+statements describe #133's delivery, not current #134 availability. No new schema
+or Expense revision behavior is introduced. José deferred dedicated real SQL
+concurrency acceptance; hermetic stale/conflict checks are not real lock evidence.
+
 ## Verification and rollout
 
 Hermetic HTTP -> real repositories -> fake Data API tests are default. Predicate

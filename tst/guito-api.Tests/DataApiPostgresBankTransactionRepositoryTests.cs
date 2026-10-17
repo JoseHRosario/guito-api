@@ -29,7 +29,7 @@ public class DataApiPostgresBankTransactionRepositoryTests
         var client = new FakePostgresDataApiClient();
         client.NextResults.Enqueue(
             new PostgresResult(["id"], [[PostgresValue.FromLong(1)]], 1));
-        var repository = new DataApiPostgresBankTransactionRepository(client);
+        var repository = new DataApiPostgresBankTransactionRepository(client, new DataApiUnitOfWork(client, new PostgresTransactionContext()));
 
         var isNew = await repository.InsertOrSkipAsync(BuildInsert());
 
@@ -45,7 +45,7 @@ public class DataApiPostgresBankTransactionRepositoryTests
     {
         var client = new FakePostgresDataApiClient();
         client.NextResults.Enqueue(new PostgresResult([], [], 0));
-        var repository = new DataApiPostgresBankTransactionRepository(client);
+        var repository = new DataApiPostgresBankTransactionRepository(client, new DataApiUnitOfWork(client, new PostgresTransactionContext()));
 
         var isNew = await repository.InsertOrSkipAsync(BuildInsert());
 
@@ -57,7 +57,7 @@ public class DataApiPostgresBankTransactionRepositoryTests
     {
         var client = new FakePostgresDataApiClient();
         client.NextResults.Enqueue(new PostgresResult([], [], 0));
-        var repository = new DataApiPostgresBankTransactionRepository(client);
+        var repository = new DataApiPostgresBankTransactionRepository(client, new DataApiUnitOfWork(client, new PostgresTransactionContext()));
 
         await repository.InsertOrSkipAsync(BuildInsert());
 
@@ -79,7 +79,7 @@ public class DataApiPostgresBankTransactionRepositoryTests
     {
         var client = new FakePostgresDataApiClient();
         client.NextResults.Enqueue(new PostgresResult([], [], 0));
-        var repository = new DataApiPostgresBankTransactionRepository(client);
+        var repository = new DataApiPostgresBankTransactionRepository(client, new DataApiUnitOfWork(client, new PostgresTransactionContext()));
 
         await repository.InsertOrSkipAsync(BuildInsert(remittanceInformation: null));
 
@@ -92,7 +92,7 @@ public class DataApiPostgresBankTransactionRepositoryTests
     {
         var client = new FakePostgresDataApiClient();
         client.NextResults.Enqueue(new PostgresResult([], [], 0));
-        var repository = new DataApiPostgresBankTransactionRepository(client);
+        var repository = new DataApiPostgresBankTransactionRepository(client, new DataApiUnitOfWork(client, new PostgresTransactionContext()));
         using var cancellationSource = new CancellationTokenSource();
 
         await repository.InsertOrSkipAsync(BuildInsert(), cancellationSource.Token);
@@ -104,7 +104,7 @@ public class DataApiPostgresBankTransactionRepositoryTests
     public async Task UpdateSuggestedCategoryAsync_ShouldBindSyncKeyAndCategory_AsNamedParameters()
     {
         var client = new FakePostgresDataApiClient();
-        var repository = new DataApiPostgresBankTransactionRepository(client);
+        var repository = new DataApiPostgresBankTransactionRepository(client, new DataApiUnitOfWork(client, new PostgresTransactionContext()));
 
         await repository.UpdateSuggestedCategoryAsync("sync-key-1", 42);
 
@@ -123,7 +123,7 @@ public class DataApiPostgresBankTransactionRepositoryTests
     public async Task UpdateSuggestedCategoryAsync_ShouldBindNullCategory_WhenNoSuggestion()
     {
         var client = new FakePostgresDataApiClient();
-        var repository = new DataApiPostgresBankTransactionRepository(client);
+        var repository = new DataApiPostgresBankTransactionRepository(client, new DataApiUnitOfWork(client, new PostgresTransactionContext()));
 
         await repository.UpdateSuggestedCategoryAsync("sync-key-1", null);
 

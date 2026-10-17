@@ -24,6 +24,7 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
     public bool HasBankReviewSchema { get; set; }
     public Dictionary<string, string>? LinkSchemaColumns { get; set; }
     public Dictionary<long, (int? ExpenseId, string Status)> LinkedTransactions { get; } = [];
+    public Dictionary<long, (string Day, string Amount, string Currency, string? Description)> BankDetails { get; } = [];
     private Dictionary<long, (int? ExpenseId, string Status)>? _linksSnapshot;
 
 
@@ -180,6 +181,16 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
             return Task.FromResult(ReadLinkSchema(sql));
         if (ExecuteBank is not null && sql.Contains("bank_transactions", StringComparison.Ordinal))
             return Task.FromResult(ExecuteBank(sql, parameters));
+        if (HasBankReviewSchema && sql.StartsWith("SELECT id FROM bank_transactions", StringComparison.Ordinal))
+        {
+            var id = parameters!.Single(parameter => parameter.Name == "id").Value.LongValue!.Value;
+            return Task.FromResult(new PostgresResult([], LinkedTransactions.ContainsKey(id) ? [[PostgresValue.FromLong(id)]] : [], 0));
+        }
+        if (HasBankReviewSchema && sql.StartsWith("UPDATE bank_transactions bt", StringComparison.Ordinal))
+            return Task.FromResult(ChangeBankLink(sql, parameters!));
+        if (HasBankReviewSchema && sql.StartsWith("SELECT candidate.id", StringComparison.Ordinal))
+            return Task.FromResult(new PostgresResult([], EligibleExpenses(sql, parameters!).Select(row =>
+                (IReadOnlyList<PostgresValue>)row.Take(5).ToArray()).ToList(), 0));
         if (HasBankReviewSchema && (sql.StartsWith("SELECT bt.id", StringComparison.Ordinal)
             || sql.StartsWith("WITH updated AS", StringComparison.Ordinal)))
             return Task.FromResult(ExecuteBankReview(sql, parameters!));
@@ -203,7 +214,49 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
             rows = rows.Where(row => row.Value.Status == values["review_status"].StringValue);
         if (sql.Contains("ORDER BY bt.booking_date DESC, bt.id DESC", StringComparison.Ordinal))
             rows = rows.OrderByDescending(row => row.Key);
-        return new PostgresResult([], rows.Select(row => BankReviewRow(row.Key, row.Value)).ToList(), 0);
+        return new PostgresResult([], rows.Select(row => BankReviewRow(row.Key, row.Value, sql)).ToList(), 0);
+    }
+
+    private PostgresResult ChangeBankLink(string sql, IReadOnlyList<PostgresParameter> parameters)
+    {
+        sql = System.Text.RegularExpressions.Regex.Replace(sql, @"\s+", " ");
+        var values = parameters.ToDictionary(parameter => parameter.Name, parameter => parameter.Value);
+        var id = values["id"].LongValue!.Value;
+        var expenseId = checked((int)values["expense_id"].LongValue!.Value);
+        if (!LinkedTransactions.ContainsKey(id)) return new([], [], 0);
+        if (sql.Contains("SET expense_id = NULL"))
+        {
+            var link = LinkedTransactions[id];
+            if (sql.Contains("bt.expense_id = :expense_id") && link.ExpenseId != expenseId) return new([], [], 0);
+            if (sql.Contains("bt.review_status = 'matched'") && link.Status != "matched") return new([], [], 0);
+            LinkedTransactions[id] = (null, "needsReview");
+            return new([], [[PostgresValue.FromLong(id)]], 1);
+        }
+        if (!EligibleExpenses(sql, parameters).Any(row => !sql.Contains("candidate.id = :expense_id") || int.Parse(row[0].StringValue!) == expenseId))
+            return new([], [], 0);
+        LinkedTransactions[id] = (expenseId, "matched");
+        return new([], [[PostgresValue.FromLong(id)]], 1);
+    }
+
+    private IEnumerable<IReadOnlyList<PostgresValue>> EligibleExpenses(string sql, IReadOnlyList<PostgresParameter> parameters)
+    {
+        sql = System.Text.RegularExpressions.Regex.Replace(sql, @"\s+", " ");
+        var id = parameters.Single(parameter => parameter.Name == "id").Value.LongValue!.Value;
+        if (!LinkedTransactions.TryGetValue(id, out var link)) return [];
+        var bank = BankDetails.GetValueOrDefault(id, ("2026-07-01", "12.34", "EUR", null));
+        if (sql.Contains("bt.review_status = 'needsReview'") && link.Status != "needsReview") return [];
+        if (sql.Contains("bt.expense_id IS NULL") && link.ExpenseId is not null) return [];
+        if (sql.Contains("bt.currency = 'EUR'") && bank.Item3 != "EUR") return [];
+        IEnumerable<IReadOnlyList<PostgresValue>> rows = _expenses;
+        if (sql.Contains("candidate.amount = bt.amount"))
+            rows = rows.Where(row => decimal.Parse(row[2].StringValue!, System.Globalization.CultureInfo.InvariantCulture) == decimal.Parse(bank.Item2, System.Globalization.CultureInfo.InvariantCulture));
+        if (sql.Contains("BETWEEN bt.booking_date - 3 AND bt.booking_date + 3"))
+            rows = rows.Where(row => Math.Abs(DateOnly.FromDateTime(sql.Contains("AT TIME ZONE 'Europe/Lisbon'")
+                ? GuitoApi.Services.TimeService.InLisbon(DateTimeOffset.Parse(row[1].StringValue!)).DateTime
+                : DateTimeOffset.Parse(row[1].StringValue!).UtcDateTime).DayNumber - DateOnly.Parse(bank.Item1).DayNumber) <= 3);
+        if (sql.Contains("linked.expense_id = candidate.id"))
+            rows = rows.Where(row => !LinkedTransactions.Values.Any(value => value.ExpenseId == int.Parse(row[0].StringValue!)));
+        return sql.Contains("LIMIT") ? rows.Take(10) : rows;
     }
 
     private IEnumerable<KeyValuePair<long, (int? ExpenseId, string Status)>> ChangeBankReview(
@@ -216,16 +269,19 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
         return eligible.Select(row => new KeyValuePair<long, (int?, string)>(row.Key, LinkedTransactions[row.Key]));
     }
 
-    private IReadOnlyList<PostgresValue> BankReviewRow(long id, (int? ExpenseId, string Status) link)
+    private IReadOnlyList<PostgresValue> BankReviewRow(long id, (int? ExpenseId, string Status) link, string sql)
     {
         var expense = _expenses.SingleOrDefault(row => int.Parse(row[0].StringValue!) == link.ExpenseId);
+        var bank = BankDetails.GetValueOrDefault(id, ("2026-07-01", "12.34", "EUR", null));
+        var count = sql.Contains("SELECT COUNT(*) FROM expenses candidate")
+            ? EligibleExpenses(sql, [new("id", PostgresValue.FromLong(id))]).Count() : 0;
         return [PostgresValue.FromLong(id), PostgresValue.FromString("eb-account"),
-            PostgresValue.FromString("2026-07-01"), PostgresValue.FromString("12.34"),
-            PostgresValue.FromString("EUR"), PostgresValue.Null(), PostgresValue.Null(), PostgresValue.Null(),
+            PostgresValue.FromString(bank.Item1), PostgresValue.FromString(bank.Item2),
+            PostgresValue.FromString(bank.Item3), bank.Item4 is null ? PostgresValue.Null() : PostgresValue.FromString(bank.Item4), PostgresValue.Null(), PostgresValue.Null(),
             PostgresValue.FromString("BOOK"), PostgresValue.FromString(link.Status),
             link.ExpenseId is { } expenseId ? PostgresValue.FromLong(expenseId) : PostgresValue.Null(),
             expense?[1] ?? PostgresValue.Null(), expense?[2] ?? PostgresValue.Null(),
-            expense?[3] ?? PostgresValue.Null(), expense?[4] ?? PostgresValue.Null()];
+            expense?[3] ?? PostgresValue.Null(), expense?[4] ?? PostgresValue.Null(), PostgresValue.FromLong(count)];
     }
 
     private PostgresResult ReadLinkSchema(string sql)
@@ -247,6 +303,7 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
 
     public async Task<string> BeginTransactionAsync(CancellationToken cancellationToken = default)
     {
+        if (BeginException is not null) throw BeginException;
         var id = NextTransactionId ?? throw new InvalidOperationException("No transaction id scripted.");
         await _transactionGate.WaitAsync(cancellationToken);
         _snapshot = _expenses.ToList();
@@ -257,6 +314,7 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
 
     public Task CommitAsync(string transactionId, CancellationToken cancellationToken = default)
     {
+        if (CommitException is not null) throw CommitException;
         Commits++;
         _snapshot = null;
         _transactionGate.Release();
@@ -264,6 +322,8 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
     }
 
     public Exception? RollbackException { get; set; }
+    public Exception? BeginException { get; set; }
+    public Exception? CommitException { get; set; }
     public Task RollbackCompletion { get; set; } = Task.CompletedTask;
     public TaskCompletionSource RollbackStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
