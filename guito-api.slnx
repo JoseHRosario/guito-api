@@ -9,6 +9,7 @@
     <File Path="db/migrations/008_historical_expense_categories.sql" />
     <File Path="db/migrations/009_bank_review.sql" />
     <File Path="db/migrations/010_expense_revision.sql" />
+    <File Path="db/migrations/011_bank_expense_creation_receipts.sql" />
   </Folder>
   <Folder Name="/docs/" Id="4a5e54fd-a648-58af-ffbf-706d32b5cdde">
     <File Path="docs/adr/0001-aws-serverless-deployment-target.md" />
@@ -30,6 +31,7 @@
     <File Path="docs/expense-cutover.md" />
     <File Path="docs/expense-edit-delete-contract.md" />
     <File Path="docs/bank-manual-matching-contract.md" />
+    <File Path="docs/bank-create-and-match-contract.md" />
     <File Path="docs/sheets-persistence-retirement.md" />
     <File Path="docs/adr/0010-amounts-stored-positive.md" />
   </Folder>
