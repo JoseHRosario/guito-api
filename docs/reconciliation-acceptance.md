@@ -56,7 +56,30 @@ The later owner decisions in those contracts supersede the original #126 prose:
 
 The completed run retained one fake account, three Transactions and eight Expenses.
 Use a fresh marker for an independently approved repeat; IDs below are evidence,
-not reusable mutation targets. No production or pre-existing records are touched.
+not reusable mutation targets. **A new marker alone does not isolate candidates.**
+Before seeding, select a positive exact-cent amount `M` and check read-only that no
+existing, unlinked Expense with that amount falls in the inclusive Lisbon day
+window `2026-10-22`–`2026-10-28`. For example, using bound `:amount`:
+
+```sql
+SELECT count(*) FROM public.expenses e
+WHERE e.amount = CAST(:amount AS numeric)
+  AND (e.booking_date AT TIME ZONE 'Europe/Lisbon')::date
+      BETWEEN DATE '2026-10-22' AND DATE '2026-10-28'
+  AND NOT EXISTS (
+      SELECT 1 FROM public.bank_transactions b WHERE b.expense_id = e.id);
+```
+
+Require zero; otherwise choose a different exact-cent amount and repeat the
+read-only check under the writer hold. Record the selected amount in the new run
+manifest and use it consistently for both EUR Transactions, the USD negative
+Transaction, the six same-amount Expenses and the final create-and-Match. The
+amount-negative Expense is `M + 0.001`, calculated using exact decimal arithmetic,
+never float. This prevents previously retained fixtures entering the expected
+four-candidate set without deleting them or changing production eligibility.
+The table below records the **first run's** `M = 12.34`; later runs substitute
+their collision-checked amount, preserving the equivalent trailing-zero case.
+No production or pre-existing records are touched.
 
 Seed a new account and exactly three Transactions through a bounded Data API
 transaction, obtaining generated IDs with `RETURNING id`. The account has its run
@@ -187,9 +210,12 @@ is a new production rollout, reporting-refresh or write approval.
 
 No production mutation, deployment, credential change, migration or reporting
 refresh is authorized by this procedure. Keep #126 open. #136 cannot be marked
-complete on this partial evidence: browser mutation/return-context and visual
-checks, reporting reopen and live post-insert rollback/uncertain-commit evidence
-remain separate gates (dedicated concurrency is owner-deferred). Real human/agent
-history parity and a live read-only browser subset passed in the dated evidence.
+complete on this partial evidence: live post-insert rollback/uncertain-commit
+experiments and disposition of visual differences remain separate gates
+(dedicated concurrency is owner-deferred). Real human/agent history parity,
+read-only staging browser checks, local browser return-context tests and owner
+reporting security/reopen confirmation are recorded in the dated evidence; local
+stubbed mutation tests are not live browser Save acceptance.
 
-Dated results: [18 October 2026](evidence/136-staging-2026-10-18.md).
+Dated results: [staging](evidence/136-staging-2026-10-18.md) and
+[separate UI/visual evidence](evidence/136-ui-2026-10-18.md).
