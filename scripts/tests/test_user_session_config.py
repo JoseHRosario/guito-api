@@ -31,14 +31,14 @@ class UserSessionDeploymentTests(unittest.TestCase):
                 self.assertEqual({"AppConfiguration__Cors__AllowedOrigins__0": expected}, variables)
 
     def test_key_validation_should_accept_only_base64_32_byte_fake_key_without_output(self):
-        payload = json.dumps({"HumanSessionEncryptionKey": base64.b64encode(bytes(range(32))).decode()})
+        payload = json.dumps({"UserSessionEncryptionKey": base64.b64encode(bytes(range(32))).decode()})
         result = subprocess.run([sys.executable, str(HELPER), "--validate-key"], input=payload, capture_output=True, text=True)
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("", result.stdout)
         self.assertEqual("", result.stderr)
 
     def test_key_validation_should_reject_missing_malformed_and_wrong_length_without_echoing_payload(self):
-        for payload in ("{}", "not-json", '"not-object"', "[]", json.dumps({"HumanSessionEncryptionKey": "fake-sensitive-invalid-key"}), json.dumps({"HumanSessionEncryptionKey": base64.b64encode(bytes(31)).decode()})):
+        for payload in ("{}", "not-json", '"not-object"', "[]", json.dumps({"UserSessionEncryptionKey": "fake-sensitive-invalid-key"}), json.dumps({"UserSessionEncryptionKey": base64.b64encode(bytes(31)).decode()})):
             with self.subTest(payload_shape=payload[:1]):
                 result = subprocess.run([sys.executable, str(HELPER), "--validate-key"], input=payload, capture_output=True, text=True)
                 self.assertNotEqual(0, result.returncode)
@@ -47,19 +47,15 @@ class UserSessionDeploymentTests(unittest.TestCase):
                 self.assertNotIn("fake-sensitive-invalid-key", result.stderr)
                 self.assertNotIn("Traceback", result.stderr)
 
-    def test_key_aliases_should_accept_either_or_equal_and_reject_any_invalid_or_conflicting_present_field(self):
+    def test_key_validation_should_require_valid_canonical_field_and_reject_old_only_payload(self):
         key = base64.b64encode(bytes(range(32))).decode()
-        other = base64.b64encode(bytes(32)).decode()
         for fields, accepted in (
             ({"UserSessionEncryptionKey": key}, True),
             ({"usersessionencryptionkey": key}, True),
-            ({"UserSessionEncryptionKey": key, "humansessionencryptionkey": other}, False),
-            ({"HumanSessionEncryptionKey": key}, True),
-            ({"UserSessionEncryptionKey": key, "HumanSessionEncryptionKey": key}, True),
-            *[({"UserSessionEncryptionKey": value, "HumanSessionEncryptionKey": key}, False)
-              for value in (other, "invalid", "", None, 42, " " + key)],
-            *[({"UserSessionEncryptionKey": key, "HumanSessionEncryptionKey": value}, False)
-              for value in (other, "invalid", "", None, 42, " " + key)],
+            ({"HumanSessionEncryptionKey": key}, False),
+            ({}, False),
+            *[({"UserSessionEncryptionKey": value}, False)
+              for value in ("invalid", "", None, 42, " " + key, base64.b64encode(bytes(31)).decode())],
         ):
             with self.subTest(fields=list(fields), accepted=accepted):
                 result = subprocess.run([sys.executable, str(HELPER), "--validate-key"],
@@ -67,7 +63,6 @@ class UserSessionDeploymentTests(unittest.TestCase):
                 self.assertEqual(accepted, result.returncode == 0, result.stderr)
                 self.assertEqual("", result.stdout)
                 self.assertNotIn(key, result.stderr)
-                self.assertNotIn(other, result.stderr)
                 self.assertNotIn("Traceback", result.stderr)
 
     def test_environment_should_reject_unspecified_or_unknown_target(self):

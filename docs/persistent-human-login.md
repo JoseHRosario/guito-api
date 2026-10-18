@@ -49,22 +49,30 @@ must never call `/Auth/logout`**, which revokes Google's grant.
 ## Encryption key configuration and separately gated field-name transition
 
 Initial staging provisioning/deployment was owner-approved; staging currently has
-`HumanSessionEncryptionKey`. This review rename does **not** modify that payload,
-rotate its value, provision another key, run migrations or deploy. New code and the
-deployment validator accept the existing field unchanged. The canonical name for
-new owner-authorized configuration is `UserSessionEncryptionKey`.
+`HumanSessionEncryptionKey` (historical deployed field, not supported by this
+source). This review changes source only: it does **not** read or modify that
+payload, rotate its value, provision another key, run migrations or deploy.
 
-Either field alone must be canonical base64 for exactly 32 bytes. When both are
-present, both must validate and decode to identical bytes; present null/empty/invalid
-or conflicting fields fail closed (runtime 503 and deployment rejection). Invalid
-canonical input never falls back to the legacy field. No key value is logged.
+Runtime and deployment validation require **only `UserSessionEncryptionKey`**:
+canonical base64 for exactly 32 bytes. The typed `SecretsPayload` property
+deserializes JSON retrieved/decrypted by `ISecretsProvider` from SSM; it is not a
+key literal or a second secret store. Missing, null, empty or invalid canonical
+input fails closed (runtime 503 and deployment rejection). An old-only payload
+is rejected. No key value is logged.
 
-A later field-name migration requires explicit owner approval: privately add the
-canonical field with the **same** key, preserve all unrelated fields and metadata,
-read back/validate equality, deploy/verify compatible consumers and allow cache
-expiry, then separately authorize legacy-field removal only when rollback
-consumers no longer need it. Do not rotate or delete the key during a rename.
-The existing legacy-only staging payload is supported until that gate is cleared.
+**Before any push or deployment of this source**, ask José to authorize renaming
+the JSON field in the existing `/guito-api/staging` SecureString from
+`HumanSessionEncryptionKey` to `UserSessionEncryptionKey`, retaining the **exact
+same value** and removing the old field. Preserve every unrelated payload field,
+parameter metadata and encryption settings. This is a rename, not key rotation.
+Under that separate approval, first verify the currently deployed consumers and
+rollback target can read the canonical field; otherwise stop for coordination.
+Privately read back the exact parameter and verify the canonical value equals the
+pre-change value, the old field is absent and unrelated fields/settings are
+unchanged. Never print either value. Only after that gate and shared-staging
+replacement approval may source be pushed/deployed. Account for the five-minute
+secret cache and verify canonical-field consumers after deployment. No production
+parameter change is authorized by this staging gate.
 
 For any future owner-authorized provisioning (not authorized by this review):
 

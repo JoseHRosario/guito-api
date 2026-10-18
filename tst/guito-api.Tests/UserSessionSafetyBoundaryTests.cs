@@ -85,11 +85,26 @@ public class UserSessionSafetyBoundaryTests
         Assert.Empty(state.Forms);
     }
 
-    [Fact]
-    public async Task Establish_ShouldFailClosedWithoutCookie_WhenEnvironmentEncryptionKeyIsMissing()
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("old-only")]
+    [InlineData("null")]
+    [InlineData("empty")]
+    [InlineData("malformed")]
+    [InlineData("wrong-length")]
+    public async Task Establish_ShouldFailClosedWithoutCookie_WhenCanonicalEncryptionKeyIsMissingOrInvalid(string failure)
     {
         // Arrange
-        var state = new UserSessionTestHost.State { Key = "" };
+        var state = new UserSessionTestHost.State();
+        state.KeyPayload = failure switch
+        {
+            "missing" => "{}",
+            "old-only" => JsonSerializer.Serialize(new { HumanSessionEncryptionKey = state.Key }),
+            "null" => "{\"UserSessionEncryptionKey\":null}",
+            "empty" => "{\"UserSessionEncryptionKey\":\"\"}",
+            "wrong-length" => JsonSerializer.Serialize(new { UserSessionEncryptionKey = Convert.ToBase64String(new byte[31]) }),
+            _ => "{\"UserSessionEncryptionKey\":\"fake-sensitive-invalid-key\"}"
+        };
         using var host = new UserSessionTestHost(state);
         using var client = Client(host);
 
@@ -100,23 +115,20 @@ public class UserSessionSafetyBoundaryTests
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
         Assert.False(response.Headers.Contains("Set-Cookie"));
         Assert.Empty(state.Database.CredentialsWritten);
+        Assert.DoesNotContain("fake-sensitive-invalid-key", await response.Content.ReadAsStringAsync());
     }
 
     [Theory]
     [InlineData("UserSessionEncryptionKey")]
     [InlineData("usersessionencryptionkey")]
-    [InlineData("HumanSessionEncryptionKey")]
-    [InlineData("both")]
-    public async Task Refresh_ShouldRetainExistingEncryptedCredentials_WhenKeyFieldNameChanges(string field)
+    public async Task Refresh_ShouldReadExistingEncryptedCredentials_WhenCanonicalKeyIsDeserialized(string field)
     {
         // Arrange
         var state = new UserSessionTestHost.State();
         using var host = new UserSessionTestHost(state);
         using var client = Client(host);
         var cookie = Cookie(await Login(client));
-        state.KeyPayload = JsonSerializer.Serialize(field == "both"
-            ? new Dictionary<string, string> { ["UserSessionEncryptionKey"] = state.Key, ["HumanSessionEncryptionKey"] = state.Key }
-            : new Dictionary<string, string> { [field] = state.Key });
+        state.KeyPayload = JsonSerializer.Serialize(new Dictionary<string, string> { [field] = state.Key });
 
         // Act
         var response = await Send(client, "refresh", cookie);
@@ -127,34 +139,35 @@ public class UserSessionSafetyBoundaryTests
     }
 
     [Theory]
-    [InlineData("different")]
+    [InlineData("missing")]
+    [InlineData("old-only")]
+    [InlineData("wrong-key")]
+    [InlineData("wrong-length")]
     [InlineData("malformed")]
     [InlineData("empty")]
     [InlineData("null")]
     [InlineData("whitespace")]
-    [InlineData("different", true)]
-    [InlineData("malformed", true)]
-    [InlineData("empty", true)]
-    [InlineData("null", true)]
-    [InlineData("whitespace", true)]
-    public async Task Refresh_ShouldFailClosedAndPreserveCookie_WhenCanonicalFieldConflictsWithLegacy(string failure, bool invalidLegacy = false)
+    public async Task Refresh_ShouldFailClosedAndPreserveCookie_WhenCanonicalKeyIsMissingOrInvalid(string failure)
     {
         // Arrange
         var state = new UserSessionTestHost.State();
         using var host = new UserSessionTestHost(state);
         using var client = Client(host);
         var cookie = Cookie(await Login(client));
-        string? canonical = failure switch
+        state.KeyPayload = failure switch
         {
-            "different" => Convert.ToBase64String(new byte[32]),
-            "malformed" => "fake-sensitive-invalid-key",
-            "empty" => "",
-            "whitespace" => " " + state.Key,
-            _ => null
+            "missing" => "{}",
+            "old-only" => JsonSerializer.Serialize(new { HumanSessionEncryptionKey = state.Key }),
+            _ => JsonSerializer.Serialize(new { UserSessionEncryptionKey = failure switch
+            {
+                "wrong-key" => Convert.ToBase64String(new byte[32]),
+                "wrong-length" => Convert.ToBase64String(new byte[31]),
+                "malformed" => "fake-sensitive-invalid-key",
+                "empty" => "",
+                "whitespace" => " " + state.Key,
+                _ => (string?)null
+            } })
         };
-        state.KeyPayload = JsonSerializer.Serialize(new Dictionary<string, string?>
-            { ["UserSessionEncryptionKey"] = invalidLegacy ? state.Key : canonical,
-                ["HumanSessionEncryptionKey"] = invalidLegacy ? canonical : state.Key });
 
         // Act
         var response = await Send(client, "refresh", cookie);

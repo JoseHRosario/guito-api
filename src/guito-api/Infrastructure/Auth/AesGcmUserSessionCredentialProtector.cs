@@ -59,18 +59,7 @@ public sealed class AesGcmUserSessionCredentialProtector(ISecretsProvider secret
         try
         {
             var payload = await secrets.GetAsync(cancellationToken);
-            var key = DecodeKey(payload.HasUserSessionEncryptionKey ? payload.UserSessionEncryptionKey : payload.HumanSessionEncryptionKey);
-            try
-            {
-                if (payload.HasUserSessionEncryptionKey && payload.HasLegacyUserSessionEncryptionKey)
-                    ValidateLegacyAlias(key, payload.HumanSessionEncryptionKey);
-                return key;
-            }
-            catch
-            {
-                CryptographicOperations.ZeroMemory(key);
-                throw;
-            }
+            return DecodeKey(payload.UserSessionEncryptionKey);
         }
         catch (FormatException) { throw UserSessionException.Unavailable(); }
     }
@@ -82,15 +71,5 @@ public sealed class AesGcmUserSessionCredentialProtector(ISecretsProvider secret
         if (key.Length == 32 && Convert.ToBase64String(key) == encoded) return key;
         CryptographicOperations.ZeroMemory(key);
         throw new FormatException();
-    }
-
-    private static void ValidateLegacyAlias(byte[] key, string? encoded)
-    {
-        var legacy = DecodeKey(encoded);
-        try
-        {
-            if (!CryptographicOperations.FixedTimeEquals(key, legacy)) throw new FormatException();
-        }
-        finally { CryptographicOperations.ZeroMemory(legacy); }
     }
 }

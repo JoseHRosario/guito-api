@@ -15,11 +15,9 @@ def validate_key(payload):
             raise ValueError()
         # Runtime secret providers deserialize property names case-insensitively.
         fields = {name.lower(): value for name, value in fields.items()}
-        keys = [decode_key(fields[name]) for name in ("usersessionencryptionkey", "humansessionencryptionkey") if name in fields]
-        if not keys or any(key != keys[0] for key in keys):
-            raise ValueError()
+        decode_key(fields["usersessionencryptionkey"])
     except (ValueError, KeyError, TypeError):
-        raise ValueError("UserSessionEncryptionKey or its legacy backend alias must be valid and agree when both are present") from None
+        raise ValueError("UserSessionEncryptionKey must be canonical base64 for exactly 32 bytes") from None
 
 
 def decode_key(encoded):

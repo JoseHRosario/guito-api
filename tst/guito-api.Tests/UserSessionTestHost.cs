@@ -87,7 +87,7 @@ internal sealed class UserSessionTestHost(UserSessionTestHost.State state) : Cus
     private sealed class KeySecrets(State state) : ISecretsProvider
     {
         public Task<SecretsPayload> GetAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(state.KeyPayload is null ? new SecretsPayload { HumanSessionEncryptionKey = state.Key }
+            Task.FromResult(state.KeyPayload is null ? new SecretsPayload { UserSessionEncryptionKey = state.Key }
                 : JsonSerializer.Deserialize<SecretsPayload>(state.KeyPayload, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!);
     }
 

@@ -5,7 +5,8 @@
 Accepted design for #156; API version 0.27.0; companion UI 0.12.0. Initial
 staging key provisioning and paired staging deployment were owner-approved.
 The naming correction was deployed to staging; this one-migration simplification
-is local-only until the next approved staging deployment;
+and canonical-only key binding are local-only until the separately approved
+staging JSON field rename and next approved staging deployment;
 real Google/browser acceptance, Android persistence and production remain separate
 unverified gates. Existing ADR/runbook filenames are stable links, not domain names.
 
@@ -33,13 +34,16 @@ not placed in Lambda environment variables. No new dependency, IAM permission,
 service or plaintext fallback is introduced. Missing keys, wrong keys, unavailable
 secrets and damaged envelopes fail closed with a retryable error, not session loss.
 Provisioning is an explicitly owner-approved operation, never a deployment side effect.
-The deployed `HumanSessionEncryptionKey` field remains an explicit legacy backend
-alias. Either field alone is accepted; if both are present, each must be canonical
-base64 encoding of the same 32 bytes. A present null, empty, malformed or conflicting
-field fails closed, with no fallback around an invalid field. The same deterministic
-rules apply in deployment validation. This is a field-name transition, not rotation;
-no live credential is changed by the source rename. Alias migration/removal needs
-separate owner authorization and verification across old consumers/caches.
+The typed property exists to deserialize the JSON retrieved from SSM, not to store
+a key literal in source. Runtime and deployment validation require this canonical
+field only: missing, null, empty, noncanonical base64 or a decoded length other than
+32 bytes fails closed. Old-only payloads are rejected. Before pushing/deploying
+this source, José must separately approve renaming the existing staging JSON field
+to the canonical name, retaining its exact value and removing the old field.
+This is not rotation; unrelated payload fields/settings must remain unchanged.
+The runbook defines private readback, deployed-consumer and rollback compatibility,
+cache coordination and shared-staging replacement gates. Source changes do not
+authorize a live credential read or write.
 
 New exact POST routes `/Auth/session/token`, `/Auth/session/refresh` and
 `/Auth/session/logout` bypass the edge and in-app bearer/API-key gates, but enforce
