@@ -4,7 +4,8 @@
 
 Accepted design for #156; API version 0.27.0; companion UI 0.12.0. Initial
 staging key provisioning and paired staging deployment were owner-approved.
-This review rename is source-only until the next approved staging deployment;
+The naming correction was deployed to staging; this one-migration simplification
+is local-only until the next approved staging deployment;
 real Google/browser acceptance, Android persistence and production remain separate
 unverified gates. Existing ADR/runbook filenames are stable links, not domain names.
 
@@ -98,15 +99,19 @@ o global bearer revocation list is added. Other devices remain signed in. Offlin
 logout cannot promise server deletion until a successful request; the UI immediately
 signs out locally and suppresses cookie bootstrap with its local signed-out marker.
 
-Migration 011 is already applied in staging and remains byte-for-byte unchanged.
-Forward migration 012 atomically renames `human_sessions` to `user_sessions`,
-its constraints (including the primary-key index) and expiry index. It preserves
-rows, handle hashes, encrypted envelopes, OIDs and grants; no user/account model
-is introduced. The runner sends the single dollar-quoted DO block intact and
-records its ledger entry only after success. Re-execution after an ambiguous
-response/ledger interruption is a no-op; dual/missing tables or missing constraints
-fail closed instead of guessing or recreating data. Migrations precede code swap;
-old-table API builds are incompatible after 012, so do not roll back to them.
+José explicitly chose one direct table migration while this feature is unmerged:
+`011_user_sessions.sql` creates `user_sessions` and its expiry index with
+`IF NOT EXISTS`, retaining the same hash/envelope checks and paired lease fields.
+There is no rename/ALTER migration or special DO-block runner support. No
+user/account model is introduced. The simple statement runner records the filename
+only after both statements succeed.
+Staging previously applied `011_human_sessions.sql` and `012_user_sessions.sql`;
+their historical ledger entries may stay. The new filename runs on the existing
+renamed `user_sessions` table without changing rows when its schema/indexes match.
+`IF NOT EXISTS` does not validate or repair a mismatched existing schema. Any
+necessary cleanup is José's manual decision; no table drop, ledger deletion or
+automatic repair is authorized. Migrations precede code swap; old-table API builds
+remain incompatible, so roll back only to reviewed `user_sessions`-compatible code.
 Hermetic HTTP tests use signed
 fake Google responses/JWKS, fake Data API and clock. They are not live PostgreSQL
 locking, Google consent, cross-origin browser-cookie or Android restart acceptance.

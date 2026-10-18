@@ -70,13 +70,9 @@ for SQL_FILE in "$SQL_DIR"/*.sql; do
   echo "Applying $NAME to $DB ..."
   python3 - "$SQL_FILE" "$CLUSTER_ARN" "$ADMIN_SECRET_ARN" "$DB" "$REGION" <<'PYEOF'
 import sys, re, subprocess, time
-from pathlib import Path
 sql_file, cluster, secret, db, region = sys.argv[1:6]
-sql = re.sub(r'--[^\n]*', '', Path(sql_file).read_text()).strip()
-# Migrations may be one complete dollar-quoted DO block (atomic, resumable DDL)
-# or the existing simple semicolon-separated statements. Never split a DO body.
-atomic_block = re.fullmatch(r'DO\s+(\$[A-Za-z_][A-Za-z_0-9]*\$|\$\$).*?\1\s*;?', sql, re.DOTALL | re.IGNORECASE)
-statements = [sql] if atomic_block else [p.strip() for p in sql.split(';') if p.strip()]
+sql = re.sub(r'--[^\n]*', '', open(sql_file).read())
+statements = [p.strip() for p in sql.split(';') if p.strip()]
 def run(s):
     # Retry while the auto-paused cluster resumes (DatabaseResumingException) —
     # same policy as the app-side DataApiClient (PR #108) and rds_exec above.

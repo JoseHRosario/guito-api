@@ -93,22 +93,30 @@ For any future owner-authorized provisioning (not authorized by this review):
    invalidation/re-login and deployment/cache coordination; never discard the
    old key or pretend an unreadable credential is a Google revocation.
 
-## Next approved staging deployment gate (not executed by this rename)
+## Next approved staging deployment gate (not executed by this simplification)
 
 Before permitting any push, inspect staging's current deployed ref and migration
 ledger through the approved identity; a sibling feature may already own shared
 staging. Confirm José approves replacing that exact revision and the schema/key
-changes. Migrations run through Actions before code replacement. Applied 011
-remains immutable. Forward-only 012 renames the existing `human_sessions` table
-to `user_sessions`, its primary-key/check constraints, primary-key index and expiry
-index in one atomic DO block. The runner submits that block without semicolon
-splitting and records the migration only after success. Retry after an uncertain
-response or missing ledger entry is safe: already-renamed objects are accepted;
-missing/dual tables or missing expected constraints/index fail closed. Rows,
-handles, AES-GCM envelopes/AAD, grants and cookie/wire contracts are preserved.
-No account/user ownership model, AWS resource or IAM permission is introduced.
-Do not reset/drop sibling schema, rewrite applied migrations or run financial
-writes to prove authentication.
+changes. Migrations run through Actions before code replacement. José explicitly
+requested one table migration while the feature is unmerged: the source now has
+only `011_user_sessions.sql`, directly creating `user_sessions` and its expiry
+index with `IF NOT EXISTS`. Hash/envelope checks, paired nullable lease fields,
+AES-GCM envelopes/AAD and cookie/wire contracts are unchanged. The runner retains
+its simple semicolon-separated statements and records the filename after success;
+there is no rename/ALTER migration or DO-block support.
+
+Earlier staging deployments applied `011_human_sessions.sql` and
+`012_user_sessions.sql`, leaving the renamed `user_sessions` table. Those historical
+ledger entries may stay: the new `011_user_sessions.sql` filename is not in that
+ledger, so Actions runs its CREATE statements and records it. On a matching table
+and index this is a no-op; dropping tables is not required. `IF NOT EXISTS` does
+not validate/repair existing columns, constraints or index definitions. If staging
+instead has an incompatible table/index or only the old `human_sessions` table,
+pause for José's manual decision; do not automatically rename, copy or delete old
+sessions. José reserves any needed staging cleanup. Do not automate table drops,
+ledger deletion or arbitrary repair. No account/user ownership model, AWS resource
+or IAM permission is introduced, and financial records must remain untouched.
 
 `deploy/user-session-config.py` derives exact HTTPS UI origins from the base and
 environment appsettings, emits nonsecret edge CORS and indexed app origin
@@ -179,10 +187,10 @@ by this implementation.
   otherwise remain encrypted until an owner-approved expiry cleanup; there is no
   new scheduler or automatic broad cleanup. Never delete active sessions merely
   to make a test pass. Do not expose row contents in support logs.
-- After 012, do not roll back to API builds querying `human_sessions`; they cannot
-  use the renamed table. Roll back API/UI only to a reviewed `user_sessions`-compatible
+- Do not roll back to API builds querying `human_sessions`; they cannot
+  use the current table. Roll back API/UI only to a reviewed `user_sessions`-compatible
   build that still accepts the deployed key field. Do not reverse DDL, add a second
-  session store or rewrite 011 to make rollback appear safe. Keep the table/key
+  session store or alter migration history to make rollback appear safe. Keep the table/key
   intact. Legacy UI rollback may need explicit Google
   login and its legacy logout has grant-wide effects. Removing the key/table or
   rotating credentials is a separate owner-approved destructive operation.
