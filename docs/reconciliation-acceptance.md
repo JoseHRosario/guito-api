@@ -187,8 +187,9 @@ is a new production rollout, reporting-refresh or write approval.
 
 No production mutation, deployment, credential change, migration or reporting
 refresh is authorized by this procedure. Keep #126 open. #136 cannot be marked
-complete on this partial evidence: browser/visual checks, reporting reopen, real
-human-path parity and live post-insert rollback/uncertain-commit evidence remain
-separate gates (dedicated concurrency is owner-deferred).
+complete on this partial evidence: browser mutation/return-context and visual
+checks, reporting reopen and live post-insert rollback/uncertain-commit evidence
+remain separate gates (dedicated concurrency is owner-deferred). Real human/agent
+history parity and a live read-only browser subset passed in the dated evidence.
 
 Dated results: [18 October 2026](evidence/136-staging-2026-10-18.md).
