@@ -42,6 +42,10 @@ case "$ENV_TARGET" in
   *) echo "Usage: $0 [staging|production] (got '$ENV_TARGET')" >&2; exit 1 ;;
 esac
 
+export GUITO_TARGET_UI_ORIGIN
+GUITO_TARGET_UI_ORIGIN=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["AppConfiguration"]["Cors"]["AllowedOrigins"][0])' \
+  "$REPO_ROOT/src/guito-api/appsettings.${ENV_TARGET^}.json")
+
 export PATH="$HOME/.dotnet:$PATH"
 export DOTNET_ROOT="${DOTNET_ROOT:-$HOME/.dotnet}"
 

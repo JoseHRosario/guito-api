@@ -24,6 +24,9 @@ public static class DeployedEndpointFixture
     /// <summary>Root of the deployed TARGET environment stack (staging default, or production), e.g. https://abc123.execute-api.eu-west-1.amazonaws.com.</summary>
     public static string BaseUrl => _baseUrl.Value.TrimEnd('/');
 
+    /// <summary>Trusted UI origin resolved from the target environment's CORS configuration by the runner.</summary>
+    public static string UiOrigin => RequiredEnvironment("GUITO_TARGET_UI_ORIGIN");
+
     /// <summary>Agent key from the TARGET environment's secret (ApiKeys[0]) — the positive-path credential.</summary>
     public static string AgentKey => _agentKey.Value;
 
