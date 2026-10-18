@@ -160,8 +160,19 @@ For SQL readback use only the deployed staging credential/database verified abov
 Existing `UNIQUE(expense_id)`, restrictive FK and review-state CHECK metadata prove
 constraint presence; only a separately performed experiment proves its behavior.
 Do not inject a trigger, weaken a constraint, alter a category or invent destructive
-failure controls just to manufacture a live post-insert rollback. A safe approved
-application-level rollback experiment remains an explicit outstanding gate.
+failure controls just to manufacture a live post-insert rollback. The existing
+USD fixture offers a natural test: after fresh owner authorization, POST valid
+EUR Expense input with a unique description to C's create-and-Match route. At
+served build `ea41d9c`, the Expense INSERT precedes the guarded link UPDATE, which
+rejects USD. Verify 409, zero rows for that description, unchanged application-row
+fingerprints and unchanged C state/link. Inspect the actual generated identity
+sequence before/after to corroborate allocation; a consumed ID without a retained
+Expense is expected after rollback. The tested single attempt advanced it once,
+with no application-row drift observed. Never reset the sequence. If any Expense remains,
+retain it and report failed rollback instead of deleting evidence. Recheck source
+order on later builds: moving eligibility validation before INSERT would turn
+this into a pre-insert rejection, no longer a rollback experiment. The dated
+follow-up records this test passing against the deployed API and real Postgres.
 
 ## Retention, not cleanup
 
@@ -210,12 +221,13 @@ is a new production rollout, reporting-refresh or write approval.
 
 No production mutation, deployment, credential change, migration or reporting
 refresh is authorized by this procedure. Keep #126 open. #136 cannot be marked
-complete on this partial evidence: live post-insert rollback/uncertain-commit
-experiments and disposition of visual differences remain separate gates
-(dedicated concurrency is owner-deferred). Real human/agent history parity,
-read-only staging browser checks, local browser return-context tests and owner
-reporting security/reopen confirmation are recorded in the dated evidence; local
-stubbed mutation tests are not live browser Save acceptance.
+complete until the real uncertain-commit experiment has evidence or explicit
+owner deferral (dedicated concurrency is already owner-deferred). Live post-insert
+rollback passed; José accepted the recorded visual differences for this release.
+Real human/agent history parity, read-only staging browser checks, local browser
+return-context tests and owner reporting security/reopen confirmation are recorded
+in the dated evidence. Owner manual Save/return confirmation remains distinct
+from agent-driven live browser read-only checks.
 
 Dated results: [staging](evidence/136-staging-2026-10-18.md) and
 [separate UI/visual evidence](evidence/136-ui-2026-10-18.md).
