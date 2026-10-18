@@ -9,10 +9,10 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
-HELPER = ROOT / "deploy" / "human-session-config.py"
+HELPER = ROOT / "deploy" / "user-session-config.py"
 
 
-class HumanSessionDeploymentTests(unittest.TestCase):
+class UserSessionDeploymentTests(unittest.TestCase):
     def test_configuration_should_emit_credentialed_exact_origins_for_each_environment(self):
         for environment, expected in (
             ("Production", "https://guito.web.kerumirembora.com"),
@@ -21,8 +21,8 @@ class HumanSessionDeploymentTests(unittest.TestCase):
             with self.subTest(environment=environment), tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR", os.environ.get("RUNNER_TEMP"))) as directory:
                 result = subprocess.run([sys.executable, str(HELPER), "--environment", environment, "--output-dir", directory], capture_output=True, text=True)
                 self.assertEqual(0, result.returncode, result.stderr)
-                cors = json.loads((Path(directory) / "human-session-cors.json").read_text())
-                variables = json.loads((Path(directory) / "human-session-env.json").read_text())
+                cors = json.loads((Path(directory) / "user-session-cors.json").read_text())
+                variables = json.loads((Path(directory) / "user-session-env.json").read_text())
                 self.assertEqual([expected], cors["AllowOrigins"])
                 self.assertIs(True, cors["AllowCredentials"])
                 self.assertIn("x-guito-session", cors["AllowHeaders"])
@@ -47,6 +47,29 @@ class HumanSessionDeploymentTests(unittest.TestCase):
                 self.assertNotIn("fake-sensitive-invalid-key", result.stderr)
                 self.assertNotIn("Traceback", result.stderr)
 
+    def test_key_aliases_should_accept_either_or_equal_and_reject_any_invalid_or_conflicting_present_field(self):
+        key = base64.b64encode(bytes(range(32))).decode()
+        other = base64.b64encode(bytes(32)).decode()
+        for fields, accepted in (
+            ({"UserSessionEncryptionKey": key}, True),
+            ({"usersessionencryptionkey": key}, True),
+            ({"UserSessionEncryptionKey": key, "humansessionencryptionkey": other}, False),
+            ({"HumanSessionEncryptionKey": key}, True),
+            ({"UserSessionEncryptionKey": key, "HumanSessionEncryptionKey": key}, True),
+            *[({"UserSessionEncryptionKey": value, "HumanSessionEncryptionKey": key}, False)
+              for value in (other, "invalid", "", None, 42, " " + key)],
+            *[({"UserSessionEncryptionKey": key, "HumanSessionEncryptionKey": value}, False)
+              for value in (other, "invalid", "", None, 42, " " + key)],
+        ):
+            with self.subTest(fields=list(fields), accepted=accepted):
+                result = subprocess.run([sys.executable, str(HELPER), "--validate-key"],
+                                        input=json.dumps(fields), capture_output=True, text=True)
+                self.assertEqual(accepted, result.returncode == 0, result.stderr)
+                self.assertEqual("", result.stdout)
+                self.assertNotIn(key, result.stderr)
+                self.assertNotIn(other, result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+
     def test_environment_should_reject_unspecified_or_unknown_target(self):
         with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR", os.environ.get("RUNNER_TEMP"))) as directory:
             for environment in ("", "Development", "prod"):
@@ -55,7 +78,7 @@ class HumanSessionDeploymentTests(unittest.TestCase):
                     args += ["--environment", environment]
                 result = subprocess.run(args, capture_output=True, text=True)
                 self.assertNotEqual(0, result.returncode)
-                self.assertFalse((Path(directory) / "human-session-cors.json").exists())
+                self.assertFalse((Path(directory) / "user-session-cors.json").exists())
 
     def test_deploy_should_reconcile_public_post_routes_and_retain_custom_business_gate(self):
         source = (ROOT / "deploy" / "deploy.sh").read_text()
@@ -63,7 +86,7 @@ class HumanSessionDeploymentTests(unittest.TestCase):
         self.assertIn('route="POST /Auth/session/$operation"', source)
         self.assertIn('--authorization-type NONE --target "integrations/$INT_ID"', source)
         self.assertIn('--authorization-type CUSTOM --authorizer-id "$AUTH_ID" --target "integrations/$INT_ID"', source)
-        self.assertIn('--cors-configuration "file://$DEPLOY_WORK_DIR/human-session-cors.json" >/dev/null\n', source)
+        self.assertIn('--cors-configuration "file://$DEPLOY_WORK_DIR/user-session-cors.json" >/dev/null\n', source)
         self.assertNotIn('"AllowOrigins":["*"]', source)
         result = subprocess.run(["bash", "-n", str(ROOT / "deploy" / "deploy.sh")], capture_output=True, text=True)
         self.assertEqual(0, result.returncode, result.stderr)

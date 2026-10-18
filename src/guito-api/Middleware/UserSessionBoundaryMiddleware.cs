@@ -3,7 +3,7 @@ using Microsoft.Extensions.Options;
 
 namespace GuitoApi.Middleware;
 
-public sealed class HumanSessionBoundaryMiddleware(RequestDelegate next, IOptions<AppConfigurationOptions> options)
+public sealed class UserSessionBoundaryMiddleware(RequestDelegate next, IOptions<AppConfigurationOptions> options)
 {
     public static bool IsSessionPath(PathString path)
     {

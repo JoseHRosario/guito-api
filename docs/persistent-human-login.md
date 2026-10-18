@@ -2,7 +2,7 @@
 
 ## Current scope
 
-API 0.27.0 adds server-managed human sessions; it does not replace Google business
+API 0.27.0 adds server-managed user sessions; it does not replace Google business
 authorization, agent keys or reporting identity. Source/test completion is not
 provisioning or rollout approval. **Do not push this feature without José's shared
 staging replacement approval:** `.github/workflows/ci-cd.yml` auto-deploys
@@ -46,7 +46,27 @@ verbatim reflected text. Old token-only installations need a fresh explicit cons
 Legacy token/logout endpoints remain for existing clients; **new device signout
 must never call `/Auth/logout`**, which revokes Google's grant.
 
-## Separate owner-provisioning gate (not executed)
+## Encryption key configuration and separately gated field-name transition
+
+Initial staging provisioning/deployment was owner-approved; staging currently has
+`HumanSessionEncryptionKey`. This review rename does **not** modify that payload,
+rotate its value, provision another key, run migrations or deploy. New code and the
+deployment validator accept the existing field unchanged. The canonical name for
+new owner-authorized configuration is `UserSessionEncryptionKey`.
+
+Either field alone must be canonical base64 for exactly 32 bytes. When both are
+present, both must validate and decode to identical bytes; present null/empty/invalid
+or conflicting fields fail closed (runtime 503 and deployment rejection). Invalid
+canonical input never falls back to the legacy field. No key value is logged.
+
+A later field-name migration requires explicit owner approval: privately add the
+canonical field with the **same** key, preserve all unrelated fields and metadata,
+read back/validate equality, deploy/verify compatible consumers and allow cache
+expiry, then separately authorize legacy-field removal only when rollback
+consumers no longer need it. Do not rotate or delete the key during a rename.
+The existing legacy-only staging payload is supported until that gate is cleared.
+
+For any future owner-authorized provisioning (not authorized by this review):
 
 1. Ask José to approve a new distinct encryption key for **each** environment. Do
    not read, create, generate, copy or provision live keys without that approval.
@@ -54,9 +74,9 @@ must never call `/Auth/logout`**, which revokes Google's grant.
    bank/agent/API credentials and Data API database secrets.
 2. Approved owner setup supplies a cryptographically random 32-byte AES key through
    the existing secure delivery process, base64 encoded into
-   `HumanSessionEncryptionKey` in `/guito-api/staging` or `/guito-api/prod`
+   `UserSessionEncryptionKey` in `/guito-api/staging` or `/guito-api/prod`
    SecureString respectively. Never reuse a staging key in production. Placeholder
-   schema only: `"HumanSessionEncryptionKey": "<owner-provisioned-base64-32-byte-key>"`.
+   schema only: `"UserSessionEncryptionKey": "<owner-provisioned-base64-32-byte-key>"`.
    The placeholder intentionally fails validation. Check SecureString type and the
    complete payload's 4096-byte standard-tier limit privately. No key goes in git,
    chat, shell arguments, screenshots, Lambda environment variables or this guide.
@@ -73,18 +93,24 @@ must never call `/Auth/logout`**, which revokes Google's grant.
    invalidation/re-login and deployment/cache coordination; never discard the
    old key or pretend an unreadable credential is a Google revocation.
 
-## Approved staging deployment gate (not executed)
+## Next approved staging deployment gate (not executed by this rename)
 
 Before permitting any push, inspect staging's current deployed ref and migration
 ledger through the approved identity; a sibling feature may already own shared
 staging. Confirm José approves replacing that exact revision and the schema/key
-changes. Migrations run through Actions before code replacement; 011 adds only
-`human_sessions` plus an expiry index and constraints, using existing Data API
-and runtime-role privileges. No new AWS resource or IAM permission is required.
+changes. Migrations run through Actions before code replacement. Applied 011
+remains immutable. Forward-only 012 renames the existing `human_sessions` table
+to `user_sessions`, its primary-key/check constraints, primary-key index and expiry
+index in one atomic DO block. The runner submits that block without semicolon
+splitting and records the migration only after success. Retry after an uncertain
+response or missing ledger entry is safe: already-renamed objects are accepted;
+missing/dual tables or missing expected constraints/index fail closed. Rows,
+handles, AES-GCM envelopes/AAD, grants and cookie/wire contracts are preserved.
+No account/user ownership model, AWS resource or IAM permission is introduced.
 Do not reset/drop sibling schema, rewrite applied migrations or run financial
 writes to prove authentication.
 
-`deploy/human-session-config.py` derives exact HTTPS UI origins from the base and
+`deploy/user-session-config.py` derives exact HTTPS UI origins from the base and
 environment appsettings, emits nonsecret edge CORS and indexed app origin
 configuration, and rejects empty/wildcard/path origins. Deployment removes stale
 origin overrides before merging these values. It validates the existing key
@@ -153,8 +179,11 @@ by this implementation.
   otherwise remain encrypted until an owner-approved expiry cleanup; there is no
   new scheduler or automatic broad cleanup. Never delete active sessions merely
   to make a test pass. Do not expose row contents in support logs.
-- Roll back API/UI together to a compatible reviewed build if needed; leave the
-  additive table/key intact initially. Legacy UI rollback may need explicit Google
+- After 012, do not roll back to API builds querying `human_sessions`; they cannot
+  use the renamed table. Roll back API/UI only to a reviewed `user_sessions`-compatible
+  build that still accepts the deployed key field. Do not reverse DDL, add a second
+  session store or rewrite 011 to make rollback appear safe. Keep the table/key
+  intact. Legacy UI rollback may need explicit Google
   login and its legacy logout has grant-wide effects. Removing the key/table or
   rotating credentials is a separate owner-approved destructive operation.
 - No-store responses, sanitized RFC errors and no body/header credential logging

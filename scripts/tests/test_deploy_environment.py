@@ -42,7 +42,7 @@ elif 'wait' not in a:
             (root / "guito-reporting-auth-env.json").write_text(json.dumps({
                 "SHEETS_REPORTING_GOOGLE_AUDIENCE": "report-client",
                 "SHEETS_REPORTING_GOOGLE_SUBJECT": "installer"}))
-            helper = Path(__file__).resolve().parents[2] / "deploy/human-session-config.py"
+            helper = Path(__file__).resolve().parents[2] / "deploy/user-session-config.py"
             prepared = subprocess.run(["python3", str(helper), "--environment", "Production", "--output-dir", folder], capture_output=True, text=True)
             self.assertEqual(prepared.returncode, 0, prepared.stderr)
             env = {"PATH": f"{root}:{os.defpath}", "DEPLOY_WORK_DIR": folder,

@@ -12,7 +12,7 @@ using Microsoft.Extensions.Options;
 
 namespace GuitoApi.Tests;
 
-internal sealed class HumanSessionTestHost(HumanSessionTestHost.State state) : CustomWebApplicationFactory
+internal sealed class UserSessionTestHost(UserSessionTestHost.State state) : CustomWebApplicationFactory
 {
     public const string Origin = "https://guito.test";
     public const string ClientId = "human-client";
@@ -45,7 +45,7 @@ internal sealed class HumanSessionTestHost(HumanSessionTestHost.State state) : C
             services.AddHttpClient(GuitoApi.Services.Auth.RevokeGoogleTokenService.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => new RejectLegacyGoogleTransport(state));
             services.AddHttpClient(GuitoApi.Services.Auth.GoogleTokenExchangeService.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => new RejectLegacyGoogleTransport(state));
             services.AddHttpClient("SheetsReportingJwks").ConfigurePrimaryHttpMessageHandler(() => state.Keys);
-            services.AddHttpClient("HumanSessionJwks").ConfigurePrimaryHttpMessageHandler(() => new KeyTransport(state));
+            services.AddHttpClient("UserSessionJwks").ConfigurePrimaryHttpMessageHandler(() => new KeyTransport(state));
         });
     }
 
@@ -55,6 +55,7 @@ internal sealed class HumanSessionTestHost(HumanSessionTestHost.State state) : C
         public Database Database { get; } = new();
         public ReportingTokenFixture Keys { get; } = new();
         public string Key { get; set; } = Convert.ToBase64String(Enumerable.Range(1, 32).Select(number => (byte)number).ToArray());
+        public string? KeyPayload { get; set; }
         public List<Dictionary<string, string?>> Forms { get; } = [];
         public HttpStatusCode Status { get; set; } = HttpStatusCode.OK;
         public string? Body { get; set; }
@@ -86,7 +87,8 @@ internal sealed class HumanSessionTestHost(HumanSessionTestHost.State state) : C
     private sealed class KeySecrets(State state) : ISecretsProvider
     {
         public Task<SecretsPayload> GetAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(new SecretsPayload { HumanSessionEncryptionKey = state.Key });
+            Task.FromResult(state.KeyPayload is null ? new SecretsPayload { HumanSessionEncryptionKey = state.Key }
+                : JsonSerializer.Deserialize<SecretsPayload>(state.KeyPayload, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!);
     }
 
     private sealed class RejectLegacyGoogleTransport(State state) : HttpMessageHandler
@@ -146,7 +148,7 @@ internal sealed class HumanSessionTestHost(HumanSessionTestHost.State state) : C
         private PostgresResult Execute(string sql, IReadOnlyList<PostgresParameter> parameters)
         {
             if (Fail) throw new InvalidOperationException("fake database outage fake-refresh-credential");
-            Assert.Contains("human_sessions", sql);
+            Assert.Contains("user_sessions", sql);
             var values = parameters.ToDictionary(parameter => parameter.Name, parameter => parameter.Value.StringValue);
             var hash = values["hash"]!;
             _rows.TryGetValue(hash, out var row);

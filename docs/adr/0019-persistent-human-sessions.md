@@ -1,10 +1,12 @@
-# Persistent human sessions without replacing Google business authorization
+# Persistent user sessions without replacing Google business authorization
 
 ## Status
 
-Accepted design for #156; implementation is local until reviewed. Key provisioning,
-shared staging replacement, real Google acceptance and production rollout are
-separate owner gates. API version 0.27.0; companion UI 0.12.0.
+Accepted design for #156; API version 0.27.0; companion UI 0.12.0. Initial
+staging key provisioning and paired staging deployment were owner-approved.
+This review rename is source-only until the next approved staging deployment;
+real Google/browser acceptance, Android persistence and production remain separate
+unverified gates. Existing ADR/runbook filenames are stable links, not domain names.
 
 ## Decision
 
@@ -23,13 +25,20 @@ authenticated additional data, preventing credential-envelope substitution betwe
 sessions. Plaintext refresh credentials exist only in bounded request memory and
 Google's TLS token form; they never cross an HTTP response or logging boundary.
 
-`SecretsPayload.HumanSessionEncryptionKey` is a base64 32-byte key in the existing
+`SecretsPayload.UserSessionEncryptionKey` is a base64 32-byte key in the existing
 **per-environment** SSM SecureString runtime parameter, accessed through
 `ISecretsProvider`. It is not added to the shared human OAuth client secret and is
 not placed in Lambda environment variables. No new dependency, IAM permission,
 service or plaintext fallback is introduced. Missing keys, wrong keys, unavailable
 secrets and damaged envelopes fail closed with a retryable error, not session loss.
 Provisioning is an explicitly owner-approved operation, never a deployment side effect.
+The deployed `HumanSessionEncryptionKey` field remains an explicit legacy backend
+alias. Either field alone is accepted; if both are present, each must be canonical
+base64 encoding of the same 32 bytes. A present null, empty, malformed or conflicting
+field fails closed, with no fallback around an invalid field. The same deterministic
+rules apply in deployment validation. This is a field-name transition, not rotation;
+no live credential is changed by the source rename. Alias migration/removal needs
+separate owner authorization and verification across old consumers/caches.
 
 New exact POST routes `/Auth/session/token`, `/Auth/session/refresh` and
 `/Auth/session/logout` bypass the edge and in-app bearer/API-key gates, but enforce
@@ -89,7 +98,16 @@ o global bearer revocation list is added. Other devices remain signed in. Offlin
 logout cannot promise server deletion until a successful request; the UI immediately
 signs out locally and suppresses cookie bootstrap with its local signed-out marker.
 
-Migration 011 is additive and normal pipeline-owned. Hermetic HTTP tests use signed
+Migration 011 is already applied in staging and remains byte-for-byte unchanged.
+Forward migration 012 atomically renames `human_sessions` to `user_sessions`,
+its constraints (including the primary-key index) and expiry index. It preserves
+rows, handle hashes, encrypted envelopes, OIDs and grants; no user/account model
+is introduced. The runner sends the single dollar-quoted DO block intact and
+records its ledger entry only after success. Re-execution after an ambiguous
+response/ledger interruption is a no-op; dual/missing tables or missing constraints
+fail closed instead of guessing or recreating data. Migrations precede code swap;
+old-table API builds are incompatible after 012, so do not roll back to them.
+Hermetic HTTP tests use signed
 fake Google responses/JWKS, fake Data API and clock. They are not live PostgreSQL
 locking, Google consent, cross-origin browser-cookie or Android restart acceptance.
 See [provisioning and acceptance runbook](../persistent-human-login.md).

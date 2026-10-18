@@ -1,6 +1,6 @@
 namespace GuitoApi.Services.Auth;
 
-public interface ILogoutHumanSessionService
+public interface ILogoutUserSessionService
 {
     Task LogoutAsync(string? handle, CancellationToken cancellationToken = default);
 }

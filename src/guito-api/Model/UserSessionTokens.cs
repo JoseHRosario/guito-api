@@ -1,6 +1,6 @@
 namespace GuitoApi.Model;
 
-public sealed class HumanSessionTokens
+public sealed class UserSessionTokens
 {
     public string IdToken { get; set; } = string.Empty;
     public string AccessToken { get; set; } = string.Empty;

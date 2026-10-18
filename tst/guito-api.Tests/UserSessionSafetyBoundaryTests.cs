@@ -1,11 +1,11 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
-using static GuitoApi.Tests.HumanSessionBoundaryTests;
+using static GuitoApi.Tests.UserSessionBoundaryTests;
 
 namespace GuitoApi.Tests;
 
-public class HumanSessionSafetyBoundaryTests
+public class UserSessionSafetyBoundaryTests
 {
     [Theory]
     [InlineData("Development", true)]
@@ -17,11 +17,11 @@ public class HumanSessionSafetyBoundaryTests
     public async Task Preflight_ShouldAllowCredentialsOnlyForExplicitOrigin_WhenBrowserRequestsSession(string environment, bool trusted)
     {
         // Arrange
-        var state = new HumanSessionTestHost.State();
-        using var host = new HumanSessionTestHost(state) { Environment = environment };
+        var state = new UserSessionTestHost.State();
+        using var host = new UserSessionTestHost(state) { Environment = environment };
         using var client = Client(host);
         using var request = new HttpRequestMessage(HttpMethod.Options, "/Auth/session/refresh");
-        request.Headers.Add("Origin", trusted ? HumanSessionTestHost.Origin : "https://evil.test");
+        request.Headers.Add("Origin", trusted ? UserSessionTestHost.Origin : "https://evil.test");
         request.Headers.Add("Access-Control-Request-Method", "POST");
         request.Headers.Add("Access-Control-Request-Headers", "content-type,x-guito-session");
 
@@ -32,7 +32,7 @@ public class HumanSessionSafetyBoundaryTests
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         if (trusted)
         {
-            Assert.Equal(HumanSessionTestHost.Origin, Assert.Single(response.Headers.GetValues("Access-Control-Allow-Origin")));
+            Assert.Equal(UserSessionTestHost.Origin, Assert.Single(response.Headers.GetValues("Access-Control-Allow-Origin")));
             Assert.Equal("true", Assert.Single(response.Headers.GetValues("Access-Control-Allow-Credentials")));
             Assert.Contains("x-guito-session", string.Join(",", response.Headers.GetValues("Access-Control-Allow-Headers")).ToLowerInvariant());
         }
@@ -44,8 +44,8 @@ public class HumanSessionSafetyBoundaryTests
     public async Task Logout_ShouldKeepExistingSession_WhenUntrustedOriginAttemptsSignout()
     {
         // Arrange
-        var state = new HumanSessionTestHost.State();
-        using var host = new HumanSessionTestHost(state);
+        var state = new UserSessionTestHost.State();
+        using var host = new UserSessionTestHost(state);
         using var client = Client(host);
         var cookie = Cookie(await Login(client));
         using var request = new HttpRequestMessage(HttpMethod.Post, "/Auth/session/logout") { Content = JsonContent.Create(new { }) };
@@ -65,15 +65,15 @@ public class HumanSessionSafetyBoundaryTests
 
     [Theory]
     [InlineData("https://evil.test/auth/callback", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
-    [InlineData(HumanSessionTestHost.Origin + "/wrong", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
-    [InlineData(HumanSessionTestHost.Origin + "/auth/callback?redirect=evil", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
-    [InlineData(HumanSessionTestHost.Origin + "/auth/callback", "short")]
-    [InlineData(HumanSessionTestHost.Origin + "/auth/callback", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa+")]
+    [InlineData(UserSessionTestHost.Origin + "/wrong", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    [InlineData(UserSessionTestHost.Origin + "/auth/callback?redirect=evil", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    [InlineData(UserSessionTestHost.Origin + "/auth/callback", "short")]
+    [InlineData(UserSessionTestHost.Origin + "/auth/callback", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa+")]
     public async Task Establish_ShouldRejectBadRedirectOrPkce_WhenRequestCannotBeBoundSafely(string redirectUri, string verifier)
     {
         // Arrange
-        var state = new HumanSessionTestHost.State();
-        using var host = new HumanSessionTestHost(state);
+        var state = new UserSessionTestHost.State();
+        using var host = new UserSessionTestHost(state);
         using var client = Client(host);
 
         // Act
@@ -89,8 +89,8 @@ public class HumanSessionSafetyBoundaryTests
     public async Task Establish_ShouldFailClosedWithoutCookie_WhenEnvironmentEncryptionKeyIsMissing()
     {
         // Arrange
-        var state = new HumanSessionTestHost.State { Key = "" };
-        using var host = new HumanSessionTestHost(state);
+        var state = new UserSessionTestHost.State { Key = "" };
+        using var host = new UserSessionTestHost(state);
         using var client = Client(host);
 
         // Act
@@ -103,6 +103,72 @@ public class HumanSessionSafetyBoundaryTests
     }
 
     [Theory]
+    [InlineData("UserSessionEncryptionKey")]
+    [InlineData("usersessionencryptionkey")]
+    [InlineData("HumanSessionEncryptionKey")]
+    [InlineData("both")]
+    public async Task Refresh_ShouldRetainExistingEncryptedCredentials_WhenKeyFieldNameChanges(string field)
+    {
+        // Arrange
+        var state = new UserSessionTestHost.State();
+        using var host = new UserSessionTestHost(state);
+        using var client = Client(host);
+        var cookie = Cookie(await Login(client));
+        state.KeyPayload = JsonSerializer.Serialize(field == "both"
+            ? new Dictionary<string, string> { ["UserSessionEncryptionKey"] = state.Key, ["HumanSessionEncryptionKey"] = state.Key }
+            : new Dictionary<string, string> { [field] = state.Key });
+
+        // Act
+        var response = await Send(client, "refresh", cookie);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.DoesNotContain("fake-refresh-credential", await response.Content.ReadAsStringAsync());
+    }
+
+    [Theory]
+    [InlineData("different")]
+    [InlineData("malformed")]
+    [InlineData("empty")]
+    [InlineData("null")]
+    [InlineData("whitespace")]
+    [InlineData("different", true)]
+    [InlineData("malformed", true)]
+    [InlineData("empty", true)]
+    [InlineData("null", true)]
+    [InlineData("whitespace", true)]
+    public async Task Refresh_ShouldFailClosedAndPreserveCookie_WhenCanonicalFieldConflictsWithLegacy(string failure, bool invalidLegacy = false)
+    {
+        // Arrange
+        var state = new UserSessionTestHost.State();
+        using var host = new UserSessionTestHost(state);
+        using var client = Client(host);
+        var cookie = Cookie(await Login(client));
+        string? canonical = failure switch
+        {
+            "different" => Convert.ToBase64String(new byte[32]),
+            "malformed" => "fake-sensitive-invalid-key",
+            "empty" => "",
+            "whitespace" => " " + state.Key,
+            _ => null
+        };
+        state.KeyPayload = JsonSerializer.Serialize(new Dictionary<string, string?>
+            { ["UserSessionEncryptionKey"] = invalidLegacy ? state.Key : canonical,
+                ["HumanSessionEncryptionKey"] = invalidLegacy ? canonical : state.Key });
+
+        // Act
+        var response = await Send(client, "refresh", cookie);
+        state.KeyPayload = null;
+        var recovered = await Send(client, "refresh", cookie);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.False(response.Headers.Contains("Set-Cookie"));
+        Assert.DoesNotContain("fake-sensitive-invalid-key", await response.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.OK, recovered.StatusCode);
+    }
+
+    [Theory]
     [InlineData("aud")]
     [InlineData("iss")]
     [InlineData("exp")]
@@ -110,8 +176,8 @@ public class HumanSessionSafetyBoundaryTests
     public async Task Refresh_ShouldPreserveGoodSession_WhenProviderReturnsInvalidRenewedToken(string failure)
     {
         // Arrange
-        var state = new HumanSessionTestHost.State();
-        using var host = new HumanSessionTestHost(state);
+        var state = new UserSessionTestHost.State();
+        using var host = new UserSessionTestHost(state);
         using var client = Client(host);
         var cookie = Cookie(await Login(client));
         state.WrongSignature = failure == "signature";
@@ -137,8 +203,8 @@ public class HumanSessionSafetyBoundaryTests
     public async Task Refresh_ShouldPreserveSession_WhenGoogleSigningKeysAreTemporarilyUnavailable()
     {
         // Arrange
-        var state = new HumanSessionTestHost.State();
-        using var host = new HumanSessionTestHost(state);
+        var state = new UserSessionTestHost.State();
+        using var host = new UserSessionTestHost(state);
         using var client = Client(host);
         var cookie = Cookie(await Login(client));
         state.KeyFailure = true;
@@ -158,8 +224,8 @@ public class HumanSessionSafetyBoundaryTests
     public async Task Establish_ShouldPreserveExistingSessionAndRfcErrorShape_WhenGoogleRejectsCode()
     {
         // Arrange
-        var state = new HumanSessionTestHost.State();
-        using var host = new HumanSessionTestHost(state);
+        var state = new UserSessionTestHost.State();
+        using var host = new UserSessionTestHost(state);
         using var client = Client(host);
         var cookie = Cookie(await Login(client));
         state.Status = HttpStatusCode.BadRequest;
@@ -185,8 +251,8 @@ public class HumanSessionSafetyBoundaryTests
     public async Task Refresh_ShouldKeepNewerLease_WhenObsoleteWorkerReceivesInvalidGrant()
     {
         // Arrange
-        var state = new HumanSessionTestHost.State();
-        using var host = new HumanSessionTestHost(state);
+        var state = new UserSessionTestHost.State();
+        using var host = new UserSessionTestHost(state);
         using var client = Client(host);
         var cookie = Cookie(await Login(client));
         state.Status = HttpStatusCode.BadRequest;
@@ -217,8 +283,8 @@ public class HumanSessionSafetyBoundaryTests
     public async Task Refresh_ShouldRejectIdleExpiryDuringProviderCall_WhenOriginalSessionExpiresBeforeCompletion()
     {
         // Arrange
-        var state = new HumanSessionTestHost.State();
-        using var host = new HumanSessionTestHost(state);
+        var state = new UserSessionTestHost.State();
+        using var host = new UserSessionTestHost(state);
         using var client = Client(host);
         var cookie = Cookie(await Login(client));
         state.Clock.Now = state.Clock.Now.AddDays(7).AddSeconds(-1);
@@ -244,8 +310,8 @@ public class HumanSessionSafetyBoundaryTests
     public async Task Refresh_ShouldRequireReauthentication_WhenCookieIsMissingMalformedOrUnknown(string? cookie)
     {
         // Arrange
-        var state = new HumanSessionTestHost.State();
-        using var host = new HumanSessionTestHost(state);
+        var state = new UserSessionTestHost.State();
+        using var host = new UserSessionTestHost(state);
         using var client = Client(host);
 
         // Act

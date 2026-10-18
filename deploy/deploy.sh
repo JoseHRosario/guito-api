@@ -53,9 +53,9 @@ python3 "$REPO_ROOT/deploy/sheets-reporting-config.py" --region "$REGION" \
   --api "$API_NAME" --authorizer "$AUTH_NAME" --environment "$ENV" --output-dir "$DEPLOY_WORK_DIR"
 export DEPLOY_WORK_DIR
 # #156: all output is nonsecret. Shared staging replacement/key provisioning remain owner gates.
-python3 "$REPO_ROOT/deploy/human-session-config.py" --environment "$ASPNETCORE_ENV" --output-dir "$DEPLOY_WORK_DIR"
+python3 "$REPO_ROOT/deploy/user-session-config.py" --environment "$ASPNETCORE_ENV" --output-dir "$DEPLOY_WORK_DIR"
 aws --region "$REGION" ssm get-parameter --name "$SECRET_NAME" --with-decryption \
-  --query Parameter.Value --output text | python3 "$REPO_ROOT/deploy/human-session-config.py" --validate-key
+  --query Parameter.Value --output text | python3 "$REPO_ROOT/deploy/user-session-config.py" --validate-key
 # Fail closed on missing parameters or denied access; never generate replacement
 # credentials during a deploy or overwrite an existing runtime payload.
 BANK_PARAMETER="/guito-api/eb-$([ "$ENV" = production ] && printf prod || printf staging)-pk"
@@ -218,7 +218,7 @@ if os.environ.get('GOOGLE_ALLOWED_EMAILS'):
     v['AppConfiguration__Authentication__AllowedLogins'] = json.dumps(
         [e.strip() for e in os.environ['GOOGLE_ALLOWED_EMAILS'].split(',')])
 v.update(json.load(open(os.path.join(os.environ['DEPLOY_WORK_DIR'], 'guito-reporting-api-env.json'))))
-v.update(json.load(open(os.path.join(os.environ['DEPLOY_WORK_DIR'], 'human-session-env.json'))))
+v.update(json.load(open(os.path.join(os.environ['DEPLOY_WORK_DIR'], 'user-session-env.json'))))
 print(json.dumps(v))" > "$DEPLOY_WORK_DIR/guito-api-env.json"
 apply_env "$AUTH_NAME" "$DEPLOY_WORK_DIR/guito-auth-env.json"
 apply_env "$API_NAME" "$DEPLOY_WORK_DIR/guito-api-env.json"
@@ -237,7 +237,7 @@ AUTH_ARN=$(aws --region "$REGION" lambda get-function --function-name "$AUTH_NAM
 # API Gateway answers browser preflights. Credentialed cookies require exact
 # environment origins, including X-Guito-Session; never swallow reconciliation failure.
 aws --region "$REGION" apigatewayv2 update-api --api-id "$API_ID" \
-  --cors-configuration "file://$DEPLOY_WORK_DIR/human-session-cors.json" >/dev/null
+  --cors-configuration "file://$DEPLOY_WORK_DIR/user-session-cors.json" >/dev/null
 
 AUTH_ID=$(aws --region "$REGION" apigatewayv2 get-authorizers --api-id "$API_ID" --query "Items[?Name=='guito-key-authorizer'].AuthorizerId" --output text)
 [ -n "$AUTH_ID" ] || AUTH_ID=$(aws --region "$REGION" apigatewayv2 create-authorizer --api-id "$API_ID" --name guito-key-authorizer \

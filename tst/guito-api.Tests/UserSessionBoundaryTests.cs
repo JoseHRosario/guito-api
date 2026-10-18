@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace GuitoApi.Tests;
 
-public class HumanSessionBoundaryTests
+public class UserSessionBoundaryTests
 {
     [Theory]
     [InlineData("token")]
@@ -29,15 +29,15 @@ public class HumanSessionBoundaryTests
     [Theory]
     [InlineData("https://evil.test", "1", "application/json", 403)]
     [InlineData("null", "1", "application/json", 403)]
-    [InlineData(HumanSessionTestHost.Origin, "", "application/json", 403)]
-    [InlineData(HumanSessionTestHost.Origin, "2", "application/json", 403)]
-    [InlineData(HumanSessionTestHost.Origin, "1", "text/plain", 415)]
-    [InlineData(HumanSessionTestHost.Origin, "1", "application/x-www-form-urlencoded", 415)]
+    [InlineData(UserSessionTestHost.Origin, "", "application/json", 403)]
+    [InlineData(UserSessionTestHost.Origin, "2", "application/json", 403)]
+    [InlineData(UserSessionTestHost.Origin, "1", "text/plain", 415)]
+    [InlineData(UserSessionTestHost.Origin, "1", "application/x-www-form-urlencoded", 415)]
     public async Task Session_ShouldRejectUnsafeRequest_WhenOriginHeaderOrContentTypeIsWrong(string origin, string header, string contentType, int status)
     {
         // Arrange
-        var state = new HumanSessionTestHost.State();
-        using var host = new HumanSessionTestHost(state);
+        var state = new UserSessionTestHost.State();
+        using var host = new UserSessionTestHost(state);
         using var client = Client(host);
 
         // Act
@@ -55,8 +55,8 @@ public class HumanSessionBoundaryTests
     public async Task Establish_ShouldReturnOnlyShortLivedTokensAndSecureCookie_WhenPkceAndIdentityAreValid()
     {
         // Arrange
-        var state = new HumanSessionTestHost.State();
-        using var host = new HumanSessionTestHost(state);
+        var state = new UserSessionTestHost.State();
+        using var host = new UserSessionTestHost(state);
         using var client = Client(host);
 
         // Act
@@ -75,13 +75,13 @@ public class HumanSessionBoundaryTests
     public async Task Refresh_ShouldSurviveHostRestartAndRetainCredential_WhenGoogleOmitsRefreshToken()
     {
         // Arrange
-        var state = new HumanSessionTestHost.State();
+        var state = new UserSessionTestHost.State();
         string cookie;
-        using (var first = new HumanSessionTestHost(state))
+        using (var first = new UserSessionTestHost(state))
         using (var browser = Client(first)) cookie = Cookie(await Login(browser));
         state.Clock.Now = state.Clock.Now.AddDays(6);
         state.RefreshCredential = null;
-        using var restarted = new HumanSessionTestHost(state);
+        using var restarted = new UserSessionTestHost(state);
         using var client = Client(restarted);
 
         // Act
@@ -104,8 +104,8 @@ public class HumanSessionBoundaryTests
     public async Task Refresh_ShouldEnforceExactIdleBoundary_WhenSevenDaysElapse(int seconds, int expected)
     {
         // Arrange
-        var state = new HumanSessionTestHost.State();
-        using var host = new HumanSessionTestHost(state);
+        var state = new UserSessionTestHost.State();
+        using var host = new UserSessionTestHost(state);
         using var client = Client(host);
         var cookie = Cookie(await Login(client));
         state.Clock.Now = state.Clock.Now.AddDays(7).AddSeconds(seconds);
@@ -127,8 +127,8 @@ public class HumanSessionBoundaryTests
     public async Task Refresh_ShouldHaveNoAbsoluteLifetime_WhenForegroundUseContinues()
     {
         // Arrange
-        var state = new HumanSessionTestHost.State();
-        using var host = new HumanSessionTestHost(state);
+        var state = new UserSessionTestHost.State();
+        using var host = new UserSessionTestHost(state);
         using var client = Client(host);
         var cookie = Cookie(await Login(client));
 
@@ -152,8 +152,8 @@ public class HumanSessionBoundaryTests
     public async Task Refresh_ShouldPreserveSession_WhenProviderFailureIsNotDefinitive(int status, string error)
     {
         // Arrange
-        var state = new HumanSessionTestHost.State();
-        using var host = new HumanSessionTestHost(state);
+        var state = new UserSessionTestHost.State();
+        using var host = new UserSessionTestHost(state);
         using var client = Client(host);
         var cookie = Cookie(await Login(client));
         state.Clock.Now = state.Clock.Now.AddDays(6);
@@ -182,8 +182,8 @@ public class HumanSessionBoundaryTests
     public async Task Refresh_ShouldNotExtendIdleExpiry_WhenTemporaryFailureOccurs()
     {
         // Arrange
-        var state = new HumanSessionTestHost.State();
-        using var host = new HumanSessionTestHost(state);
+        var state = new UserSessionTestHost.State();
+        using var host = new UserSessionTestHost(state);
         using var client = Client(host);
         var cookie = Cookie(await Login(client));
         state.Clock.Now = state.Clock.Now.AddDays(6);
@@ -203,8 +203,8 @@ public class HumanSessionBoundaryTests
     public async Task Refresh_ShouldPermanentlyInvalidateOnlySession_WhenGoogleReturnsInvalidGrant()
     {
         // Arrange
-        var state = new HumanSessionTestHost.State();
-        using var host = new HumanSessionTestHost(state);
+        var state = new UserSessionTestHost.State();
+        using var host = new UserSessionTestHost(state);
         using var client = Client(host);
         var first = Cookie(await Login(client));
         var otherDevice = Cookie(await Login(client));
@@ -229,8 +229,8 @@ public class HumanSessionBoundaryTests
     public async Task Refresh_ShouldUseRotatedCredential_WhenGoogleProvidesOne()
     {
         // Arrange
-        var state = new HumanSessionTestHost.State();
-        using var host = new HumanSessionTestHost(state);
+        var state = new UserSessionTestHost.State();
+        using var host = new UserSessionTestHost(state);
         using var client = Client(host);
         var cookie = Cookie(await Login(client));
         state.RefreshCredential = "fake-rotated-credential";
@@ -250,8 +250,8 @@ public class HumanSessionBoundaryTests
     public async Task Establish_ShouldFailExplicitlyAndKeepOldSession_WhenRefreshPermissionIsMissing()
     {
         // Arrange
-        var state = new HumanSessionTestHost.State();
-        using var host = new HumanSessionTestHost(state);
+        var state = new UserSessionTestHost.State();
+        using var host = new UserSessionTestHost(state);
         using var client = Client(host);
         var old = Cookie(await Login(client));
         state.RefreshCredential = null;
@@ -278,10 +278,10 @@ public class HumanSessionBoundaryTests
     public async Task Establish_ShouldRejectInvalidGoogleIdentity_WhenTokenIsNotAuthoritative(string claim)
     {
         // Arrange
-        var state = new HumanSessionTestHost.State();
+        var state = new UserSessionTestHost.State();
         state.Claims = claims => ChangeClaim(claims, claim, state.Clock.GetUtcNow());
         state.WrongSignature = claim == "signature";
-        using var host = new HumanSessionTestHost(state);
+        using var host = new UserSessionTestHost(state);
         using var client = Client(host);
 
         // Act
@@ -299,8 +299,8 @@ public class HumanSessionBoundaryTests
     public async Task Refresh_ShouldRejectChangedIdentity_WhenRenewedTokenChangesOwner(string claim)
     {
         // Arrange
-        var state = new HumanSessionTestHost.State();
-        using var host = new HumanSessionTestHost(state);
+        var state = new UserSessionTestHost.State();
+        using var host = new UserSessionTestHost(state);
         using var client = Client(host);
         var cookie = Cookie(await Login(client));
         state.Claims = claims => claims[claim] = "someone-else";
@@ -319,8 +319,8 @@ public class HumanSessionBoundaryTests
     public async Task Logout_ShouldBeIdempotentAndDeviceLocal_WhenIdTokenIsAbsent()
     {
         // Arrange
-        var state = new HumanSessionTestHost.State();
-        using var host = new HumanSessionTestHost(state);
+        var state = new UserSessionTestHost.State();
+        using var host = new UserSessionTestHost(state);
         using var client = Client(host);
         var first = Cookie(await Login(client));
         var otherDevice = Cookie(await Login(client));
@@ -347,8 +347,8 @@ public class HumanSessionBoundaryTests
     public async Task Refresh_ShouldNotResurrectSession_WhenLogoutWinsDuringGoogleRequest()
     {
         // Arrange
-        var state = new HumanSessionTestHost.State();
-        using var host = new HumanSessionTestHost(state);
+        var state = new UserSessionTestHost.State();
+        using var host = new UserSessionTestHost(state);
         using var client = Client(host);
         var cookie = Cookie(await Login(client));
         state.Entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -374,8 +374,8 @@ public class HumanSessionBoundaryTests
     public async Task Refresh_ShouldAvoidConcurrentProviderRefresh_WhenAnotherTabHoldsLease()
     {
         // Arrange
-        var state = new HumanSessionTestHost.State();
-        using var host = new HumanSessionTestHost(state);
+        var state = new UserSessionTestHost.State();
+        using var host = new UserSessionTestHost(state);
         using var client = Client(host);
         var cookie = Cookie(await Login(client));
         state.Entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -403,8 +403,8 @@ public class HumanSessionBoundaryTests
     public async Task Refresh_ShouldPreserveSession_WhenStorageOrKeyIsUnavailable(string failure)
     {
         // Arrange
-        var state = new HumanSessionTestHost.State();
-        using var host = new HumanSessionTestHost(state);
+        var state = new UserSessionTestHost.State();
+        using var host = new UserSessionTestHost(state);
         using var client = Client(host);
         var cookie = Cookie(await Login(client));
         var original = state.Key;
@@ -430,8 +430,8 @@ public class HumanSessionBoundaryTests
     public async Task Business_ShouldRejectCookieOnlyAuthentication_WhenSessionExists()
     {
         // Arrange
-        var state = new HumanSessionTestHost.State();
-        using var host = new HumanSessionTestHost(state);
+        var state = new UserSessionTestHost.State();
+        using var host = new UserSessionTestHost(state);
         using var client = Client(host);
         var cookie = Cookie(await Login(client));
         using var request = new HttpRequestMessage(HttpMethod.Get, "/Expense/latest/5");
@@ -457,7 +457,7 @@ public class HumanSessionBoundaryTests
     private static void AssertSecureSessionCookie(HttpResponseMessage response)
     {
         var cookie = Assert.Single(response.Headers.GetValues("Set-Cookie"));
-        Assert.StartsWith($"{HumanSessionController.CookieName}=", cookie);
+        Assert.StartsWith($"{UserSessionController.CookieName}=", cookie);
         Assert.Contains("max-age=604800", cookie);
         Assert.Contains("path=/", cookie);
         Assert.Contains("secure", cookie);
@@ -466,13 +466,13 @@ public class HumanSessionBoundaryTests
         Assert.DoesNotContain("domain=", cookie);
     }
 
-    private static void AssertPkceProviderExchange(HumanSessionTestHost.State state)
+    private static void AssertPkceProviderExchange(UserSessionTestHost.State state)
     {
         var form = Assert.Single(state.Forms);
         Assert.Equal("authorization_code", form["grant_type"]);
         Assert.Equal(new string('a', 43), form["code_verifier"]);
-        Assert.Equal(HumanSessionTestHost.Origin + "/auth/callback", form["redirect_uri"]);
-        Assert.Equal(HumanSessionTestHost.ClientId, form["client_id"]);
+        Assert.Equal(UserSessionTestHost.Origin + "/auth/callback", form["redirect_uri"]);
+        Assert.Equal(UserSessionTestHost.ClientId, form["client_id"]);
         Assert.Equal("fake-client-secret", form["client_secret"]);
     }
 
@@ -485,7 +485,7 @@ public class HumanSessionBoundaryTests
     internal static HttpClient Client(CustomWebApplicationFactory host) => host.CreateClient(new WebApplicationFactoryClientOptions
     { BaseAddress = new Uri("https://localhost"), HandleCookies = false, AllowAutoRedirect = false });
     internal static Task<HttpResponseMessage> Login(HttpClient client) => Send(client, "token", body: new
-    { code = "fake-code", codeVerifier = new string('a', 43), redirectUri = HumanSessionTestHost.Origin + "/auth/callback" });
+    { code = "fake-code", codeVerifier = new string('a', 43), redirectUri = UserSessionTestHost.Origin + "/auth/callback" });
     internal static string Cookie(HttpResponseMessage response)
     {
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -494,7 +494,7 @@ public class HumanSessionBoundaryTests
     internal static Task<HttpResponseMessage> Send(HttpClient client, string operation, string? cookie = null, object? body = null)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, $"/Auth/session/{operation}") { Content = JsonContent.Create(body ?? new { }) };
-        request.Headers.Add("Origin", HumanSessionTestHost.Origin);
+        request.Headers.Add("Origin", UserSessionTestHost.Origin);
         request.Headers.Add("X-Guito-Session", "1");
         if (cookie is not null) request.Headers.TryAddWithoutValidation("Cookie", cookie);
         return client.SendAsync(request);

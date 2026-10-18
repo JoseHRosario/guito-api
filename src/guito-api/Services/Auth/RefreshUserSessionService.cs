@@ -4,18 +4,18 @@ using GuitoApi.Repositories;
 
 namespace GuitoApi.Services.Auth;
 
-public sealed class RefreshHumanSessionService(IGoogleSessionProvider google, IHumanSessionRepository sessions,
-    IHumanSessionCredentialProtector protector, TimeProvider clock) : IRefreshHumanSessionService
+public sealed class RefreshUserSessionService(IGoogleSessionProvider google, IUserSessionRepository sessions,
+    IUserSessionCredentialProtector protector, TimeProvider clock) : IRefreshUserSessionService
 {
-    public async Task<HumanSessionIssue> RefreshAsync(string? handle, CancellationToken cancellationToken = default)
+    public async Task<UserSessionIssue> RefreshAsync(string? handle, CancellationToken cancellationToken = default)
     {
-        var hash = HumanSessionHandle.Hash(handle) ?? throw HumanSessionException.Expired();
-        var lease = HumanSessionHandle.Create();
-        var session = await sessions.AcquireAsync(hash, lease, clock.GetUtcNow(), cancellationToken) ?? throw HumanSessionException.Expired();
+        var hash = UserSessionHandle.Hash(handle) ?? throw UserSessionException.Expired();
+        var lease = UserSessionHandle.Create();
+        var session = await sessions.AcquireAsync(hash, lease, clock.GetUtcNow(), cancellationToken) ?? throw UserSessionException.Expired();
         try { return await RenewAsync(handle!, session, lease, cancellationToken); }
-        catch (HumanSessionException exception) when (exception.StatusCode == 401)
+        catch (UserSessionException exception) when (exception.StatusCode == 401)
         {
-            if (!await sessions.InvalidateAsync(hash, lease, cancellationToken)) throw HumanSessionException.Unavailable();
+            if (!await sessions.InvalidateAsync(hash, lease, cancellationToken)) throw UserSessionException.Unavailable();
             throw;
         }
         finally
@@ -27,21 +27,21 @@ public sealed class RefreshHumanSessionService(IGoogleSessionProvider google, IH
         }
     }
 
-    private async Task<HumanSessionIssue> RenewAsync(string handle, HumanSession session, string lease, CancellationToken cancellationToken)
+    private async Task<UserSessionIssue> RenewAsync(string handle, UserSession session, string lease, CancellationToken cancellationToken)
     {
         using var bounded = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         bounded.CancelAfter(TimeSpan.FromSeconds(20));
         var credential = await protector.DecryptAsync(session.EncryptedCredential, session.HandleHash, bounded.Token);
         var tokens = await google.RefreshAsync(credential, bounded.Token);
         var identity = await google.ValidateAsync(tokens.IdToken, session.Subject, bounded.Token);
-        if (identity.Email != session.Email) throw HumanSessionException.Expired();
+        if (identity.Email != session.Email) throw UserSessionException.Expired();
         var encrypted = string.IsNullOrWhiteSpace(tokens.RefreshToken) ? session.EncryptedCredential
             : await protector.EncryptAsync(tokens.RefreshToken, session.HandleHash, bounded.Token);
         var now = clock.GetUtcNow();
-        if (session.ExpiresAt <= now) throw HumanSessionException.Expired();
+        if (session.ExpiresAt <= now) throw UserSessionException.Expired();
         var expiry = now.AddDays(7);
         if (!await sessions.CompleteAsync(session.HandleHash, lease, encrypted, now, expiry, bounded.Token))
-            throw HumanSessionException.Unavailable();
-        return new HumanSessionIssue(handle, tokens, expiry);
+            throw UserSessionException.Unavailable();
+        return new UserSessionIssue(handle, tokens, expiry);
     }
 }

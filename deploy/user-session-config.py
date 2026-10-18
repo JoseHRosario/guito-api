@@ -10,11 +10,25 @@ from urllib.parse import urlsplit
 
 def validate_key(payload):
     try:
-        key = base64.b64decode(json.loads(payload)["HumanSessionEncryptionKey"], validate=True)
-        if len(key) != 32:
+        fields = json.loads(payload)
+        if not isinstance(fields, dict):
+            raise ValueError()
+        # Runtime secret providers deserialize property names case-insensitively.
+        fields = {name.lower(): value for name, value in fields.items()}
+        keys = [decode_key(fields[name]) for name in ("usersessionencryptionkey", "humansessionencryptionkey") if name in fields]
+        if not keys or any(key != keys[0] for key in keys):
             raise ValueError()
     except (ValueError, KeyError, TypeError):
-        raise ValueError("HumanSessionEncryptionKey must be an owner-provisioned base64 32-byte key") from None
+        raise ValueError("UserSessionEncryptionKey or its legacy backend alias must be valid and agree when both are present") from None
+
+
+def decode_key(encoded):
+    if not isinstance(encoded, str):
+        raise ValueError()
+    key = base64.b64decode(encoded, validate=True)
+    if len(key) != 32 or base64.b64encode(key).decode("ascii") != encoded:
+        raise ValueError()
+    return key
 
 
 def configuration(root, environment):
@@ -51,8 +65,8 @@ def main():
         if not args.output_dir:
             raise ValueError("Output directory is required")
         cors, variables = configuration(Path(__file__).resolve().parents[1], args.environment)
-        (args.output_dir / "human-session-cors.json").write_text(json.dumps(cors))
-        (args.output_dir / "human-session-env.json").write_text(json.dumps(variables))
+        (args.output_dir / "user-session-cors.json").write_text(json.dumps(cors))
+        (args.output_dir / "user-session-env.json").write_text(json.dumps(variables))
     except (ValueError, KeyError, TypeError):
         sys.exit("Session deployment configuration is invalid or the owner-provisioned encryption key is missing/invalid; no credentials were created.")
 

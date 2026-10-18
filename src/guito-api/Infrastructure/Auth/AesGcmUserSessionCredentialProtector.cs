@@ -6,7 +6,7 @@ using GuitoApi.Repositories;
 
 namespace GuitoApi.Infrastructure.Auth;
 
-public sealed class AesGcmHumanSessionCredentialProtector(ISecretsProvider secrets) : IHumanSessionCredentialProtector
+public sealed class AesGcmUserSessionCredentialProtector(ISecretsProvider secrets) : IUserSessionCredentialProtector
 {
     public async Task<string> EncryptAsync(string credential, string handleHash, CancellationToken cancellationToken = default)
     {
@@ -35,14 +35,14 @@ public sealed class AesGcmHumanSessionCredentialProtector(ISecretsProvider secre
         var key = await ReadKeyAsync(cancellationToken);
         try { return Decrypt(encryptedCredential, handleHash, key); }
         catch (Exception exception) when (exception is FormatException or CryptographicException or ArgumentException)
-        { throw HumanSessionException.Unavailable(); }
+        { throw UserSessionException.Unavailable(); }
         finally { CryptographicOperations.ZeroMemory(key); }
     }
 
     private static string Decrypt(string encryptedCredential, string handleHash, byte[] key)
     {
         var parts = encryptedCredential.Split('.');
-        if (parts.Length != 4 || parts[0] != "v1") throw HumanSessionException.Unavailable();
+        if (parts.Length != 4 || parts[0] != "v1") throw UserSessionException.Unavailable();
         var ciphertext = Convert.FromBase64String(parts[3]);
         var plaintext = new byte[ciphertext.Length];
         try
@@ -58,11 +58,39 @@ public sealed class AesGcmHumanSessionCredentialProtector(ISecretsProvider secre
     {
         try
         {
-            var key = Convert.FromBase64String((await secrets.GetAsync(cancellationToken)).HumanSessionEncryptionKey);
-            if (key.Length == 32) return key;
-            CryptographicOperations.ZeroMemory(key);
-            throw HumanSessionException.Unavailable();
+            var payload = await secrets.GetAsync(cancellationToken);
+            var key = DecodeKey(payload.HasUserSessionEncryptionKey ? payload.UserSessionEncryptionKey : payload.HumanSessionEncryptionKey);
+            try
+            {
+                if (payload.HasUserSessionEncryptionKey && payload.HasLegacyUserSessionEncryptionKey)
+                    ValidateLegacyAlias(key, payload.HumanSessionEncryptionKey);
+                return key;
+            }
+            catch
+            {
+                CryptographicOperations.ZeroMemory(key);
+                throw;
+            }
         }
-        catch (FormatException) { throw HumanSessionException.Unavailable(); }
+        catch (FormatException) { throw UserSessionException.Unavailable(); }
+    }
+
+    private static byte[] DecodeKey(string? encoded)
+    {
+        if (encoded is null) throw new FormatException();
+        var key = Convert.FromBase64String(encoded);
+        if (key.Length == 32 && Convert.ToBase64String(key) == encoded) return key;
+        CryptographicOperations.ZeroMemory(key);
+        throw new FormatException();
+    }
+
+    private static void ValidateLegacyAlias(byte[] key, string? encoded)
+    {
+        var legacy = DecodeKey(encoded);
+        try
+        {
+            if (!CryptographicOperations.FixedTimeEquals(key, legacy)) throw new FormatException();
+        }
+        finally { CryptographicOperations.ZeroMemory(legacy); }
     }
 }
