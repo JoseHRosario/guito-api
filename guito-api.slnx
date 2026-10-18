@@ -33,6 +33,9 @@
     <File Path="docs/bank-manual-matching-contract.md" />
     <File Path="docs/bank-create-and-match-contract.md" />
     <File Path="docs/sheets-persistence-retirement.md" />
+    <File Path="docs/reconciliation-acceptance.md" />
+    <File Path="docs/evidence/136-staging-2026-10-18.md" />
+    <File Path="docs/evidence/136-ui-2026-10-18.md" />
     <File Path="docs/adr/0010-amounts-stored-positive.md" />
   </Folder>
   <Folder Name="/sit/">
