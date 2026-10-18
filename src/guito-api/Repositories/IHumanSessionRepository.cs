@@ -1,0 +1,13 @@
+using GuitoApi.Model;
+
+namespace GuitoApi.Repositories;
+
+public interface IHumanSessionRepository
+{
+    Task CreateAsync(HumanSession session, CancellationToken cancellationToken = default);
+    Task<HumanSession?> AcquireAsync(string handleHash, string lease, DateTimeOffset now, CancellationToken cancellationToken = default);
+    Task<bool> CompleteAsync(string handleHash, string lease, string encryptedCredential, DateTimeOffset now, DateTimeOffset expiresAt, CancellationToken cancellationToken = default);
+    Task ReleaseAsync(string handleHash, string lease, CancellationToken cancellationToken = default);
+    Task<bool> InvalidateAsync(string handleHash, string lease, CancellationToken cancellationToken = default);
+    Task DeleteAsync(string handleHash, CancellationToken cancellationToken = default);
+}

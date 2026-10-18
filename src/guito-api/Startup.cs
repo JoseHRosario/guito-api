@@ -57,8 +57,11 @@ namespace GuitoApi
                     builder.WithOrigins(allowedOrigins)
                            .AllowAnyMethod()
                            .AllowAnyHeader()
+                           .AllowCredentials()
                            .WithExposedHeaders(VersionHeaderMiddleware.HeaderName, "ETag");
                 });
+                o.AddPolicy("HumanSession", builder => builder.WithOrigins(allowedOrigins)
+                    .WithMethods("POST").WithHeaders("Content-Type", "X-Guito-Session").AllowCredentials());
             });
             // Defaults retain the Google SDK's production validation and certificate transport.
             services.AddSingleton(new Google.Apis.Auth.GoogleJsonWebSignature.ValidationSettings());
@@ -82,6 +85,15 @@ namespace GuitoApi
             services.AddSingleton<IHumanAuthSecretProvider>(sp => CreateHumanAuthSecretProvider(secretsLocation, sp));
             services.AddScoped<ITokenExchangeService, GoogleTokenExchangeService>();
             services.AddHttpClient(GoogleTokenExchangeService.HttpClientName);
+            services.AddHttpClient(GuitoApi.Infrastructure.Auth.GoogleSessionProvider.HttpClientName,
+                client => client.Timeout = TimeSpan.FromSeconds(20));
+            services.AddHttpClient("HumanSessionJwks", client => client.Timeout = TimeSpan.FromSeconds(20));
+            services.AddScoped<IGoogleSessionProvider, GuitoApi.Infrastructure.Auth.GoogleSessionProvider>();
+            services.AddScoped<IHumanSessionCredentialProtector, GuitoApi.Infrastructure.Auth.AesGcmHumanSessionCredentialProtector>();
+            services.AddScoped<IHumanSessionRepository, DataApiHumanSessionRepository>();
+            services.AddScoped<IEstablishHumanSessionService, EstablishHumanSessionService>();
+            services.AddScoped<IRefreshHumanSessionService, RefreshHumanSessionService>();
+            services.AddScoped<ILogoutHumanSessionService, LogoutHumanSessionService>();
 
             // Google token revocation on sign-out (issue #64): the session's access token → Google's revoke endpoint.
             services.AddScoped<IRevokeGoogleTokenService, RevokeGoogleTokenService>();
@@ -200,7 +212,8 @@ namespace GuitoApi
             {
                 app.UseSwagger();
                 app.UseSwaggerUI();
-                app.UseCors("AllowAll");
+                app.UseWhen(context => !HumanSessionBoundaryMiddleware.IsSessionPath(context.Request.Path), branch => branch.UseCors("AllowAll"));
+                app.UseWhen(context => HumanSessionBoundaryMiddleware.IsSessionPath(context.Request.Path), branch => branch.UseCors("HumanSession"));
             }
             else
             {
@@ -208,6 +221,7 @@ namespace GuitoApi
                 app.UseCors("AllowOnlyWebApp");
             }
             app.UseExceptionHandler();
+            app.UseMiddleware<HumanSessionBoundaryMiddleware>();
             // Build-version stamp on every response (issue #75) — before the auth
             // middlewares so rejected requests carry it too.
             app.UseMiddleware<VersionHeaderMiddleware>();

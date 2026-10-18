@@ -49,7 +49,7 @@ Lambda packaging happens in CI (Amazon.Lambda.Tools). Do not add local Lambda em
 - **Before any blanket `git add -A`, verify `.worktrees/` is ignored on the current branch** (`git check-ignore .worktrees/` — branch history may predate the ignore entry); otherwise prefer adding explicit paths. A branch without the ignore entry would stage an entire nested repo copy.
 - **Always run `git branch --show-current` before starting work** — the shared tree may have been switched by another session since you last looked.
 - Remove the worktree when its PR merges: `git worktree remove .worktrees/<name> && git worktree prune`.
-- **Commit attribution**: agent commits are authored as `Meireles <josehrosario@gmail.com>` (or amend with `--author`); José's commits stay under his name.
+- **Commit attribution**: agent commits are authored as `Meireles (Hermes Agent) <332697001+xungameireles@users.noreply.github.com>` (or amend with `--author`); José's commits stay under his name.
 - **AWS operations** assume the role `arn:aws:iam::497087877832:role/MinervaAIAgent` — never use the user identity directly.
 
 ## Architecture patterns
@@ -81,6 +81,11 @@ Request path: **Controller → Service → Data access**. Each layer has one job
     - API Gateway allows one CUSTOM authorizer per route, so the edge is a single function with two independent validators dispatching on its sole identity source, `Authorization` (raw value → agent logic, `Bearer <jwt>` → Google logic, nothing → Deny). Other headers (`X-Api-Key`, `x-google-idtoken`) are never forwarded to REQUEST authorizers and must not be dispatched on at the edge. Independence is per-validator and per in-app middleware, not per function; never let one path fall back into the other.
     - `/healthz` is public in both gates; its single definition is `ApiKeyMiddleware.PublicPathKey`.
 - Both paths read the same environment parameter (`/guito-api/prod` or `/guito-api/staging`). The contract between the sides is the secret's JSON shape (`ApiKeys` array and retained feature credentials; no Sheets service-account object); the API binds it as `SecretsPayload` (`src/guito-api/Configuration/Secrets.cs`), the authorizer parses the raw `ApiKeys` property — no shared type. Changing the payload shape requires deploying both functions.
+
+### Persistent human sessions (#156)
+- Exact POST `/Auth/session/token`, `/Auth/session/refresh` and `/Auth/session/logout` are public at the edge/in-app bearer gates but enforce their own explicit Origin, custom header, JSON and PKCE/Google identity or cookie authentication. The session cookie is **never business authorization**. Legacy `/Auth/token` and `/Auth/logout` remain unchanged; device logout must not call legacy Google revoke.
+- The RFC 6749 controller exception also applies to `HumanSessionController`: sanitized session errors use `error`/`error_description`; provider/configuration/storage failures are retryable 503 and preserve cookies. Permanent session failures are 401. No raw provider/secret exceptions may escape into logging handlers.
+- Sessions use existing Postgres/Data API with AES-GCM refresh credentials and an owner-provisioned **per-environment** key through `ISecretsProvider`. No fallback key or credential provisioning in deployment. Read [ADR-0019](docs/adr/0019-persistent-human-sessions.md) and [the gated runbook](docs/persistent-human-login.md) before changes or rollout. Push to `feature/**` auto-deploys shared staging: obtain its replacement approval first.
 
 ### Authorizer (`src/guito-api-authorizer/`)
 - Separate Lambda project/function, invoked by API Gateway before any route. Deploys independently from `src/guito-api/` (separate GitHub Actions job/zip).

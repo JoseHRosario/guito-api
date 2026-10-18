@@ -53,7 +53,8 @@ namespace GuitoApi.Middleware
         {
             if (_options.Authentication.ValidateApiKey && !httpContext.Items.ContainsKey(SheetsReportingAuthenticationMiddleware.AuthedKey))
             {
-                if (httpContext.Request.Path.StartsWithSegments(PublicPath) ||
+                if (HumanSessionBoundaryMiddleware.IsSessionPath(httpContext.Request.Path) ||
+                    httpContext.Request.Path.StartsWithSegments(PublicPath) ||
                     httpContext.Request.Path.StartsWithSegments(PublicTokenExchangePathKey) ||
                     httpContext.Request.Path.StartsWithSegments(PublicWarmPathKey) ||
                     httpContext.Request.Path.StartsWithSegments(PublicBankAuthCallbackPathKey))

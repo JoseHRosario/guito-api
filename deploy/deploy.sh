@@ -52,6 +52,10 @@ trap 'rm -rf "$DEPLOY_WORK_DIR"' EXIT
 python3 "$REPO_ROOT/deploy/sheets-reporting-config.py" --region "$REGION" \
   --api "$API_NAME" --authorizer "$AUTH_NAME" --environment "$ENV" --output-dir "$DEPLOY_WORK_DIR"
 export DEPLOY_WORK_DIR
+# #156: all output is nonsecret. Shared staging replacement/key provisioning remain owner gates.
+python3 "$REPO_ROOT/deploy/human-session-config.py" --environment "$ASPNETCORE_ENV" --output-dir "$DEPLOY_WORK_DIR"
+aws --region "$REGION" ssm get-parameter --name "$SECRET_NAME" --with-decryption \
+  --query Parameter.Value --output text | python3 "$REPO_ROOT/deploy/human-session-config.py" --validate-key
 # Fail closed on missing parameters or denied access; never generate replacement
 # credentials during a deploy or overwrite an existing runtime payload.
 BANK_PARAMETER="/guito-api/eb-$([ "$ENV" = production ] && printf prod || printf staging)-pk"
@@ -179,7 +183,7 @@ apply_env () { # function-name vars-json-file
   local cur
   cur=$(aws --region "$REGION" lambda get-function-configuration --function-name "$1" \
     --query 'Environment.Variables' --output json)
-  python3 -c "import json,sys; d=json.loads(sys.argv[1]) or {}; d={k:v for k,v in d.items() if k != 'AppConfiguration__ExpenseStore' and not k.lower().startswith('appconfiguration__googlesheets__')}; d.update(json.load(open(sys.argv[2]))); print(json.dumps({'Variables': d}))" \
+  python3 -c "import json,sys; d=json.loads(sys.argv[1]) or {}; d={k:v for k,v in d.items() if k != 'AppConfiguration__ExpenseStore' and not k.lower().startswith('appconfiguration__googlesheets__') and not k.lower().startswith('appconfiguration__cors__allowedorigins')}; d.update(json.load(open(sys.argv[2]))); print(json.dumps({'Variables': d}))" \
     "$cur" "$2" > "$DEPLOY_WORK_DIR/guito-env-$1.json"
   aws --region "$REGION" lambda update-function-configuration --function-name "$1" \
     --environment "file://$DEPLOY_WORK_DIR/guito-env-$1.json" >/dev/null
@@ -214,6 +218,7 @@ if os.environ.get('GOOGLE_ALLOWED_EMAILS'):
     v['AppConfiguration__Authentication__AllowedLogins'] = json.dumps(
         [e.strip() for e in os.environ['GOOGLE_ALLOWED_EMAILS'].split(',')])
 v.update(json.load(open(os.path.join(os.environ['DEPLOY_WORK_DIR'], 'guito-reporting-api-env.json'))))
+v.update(json.load(open(os.path.join(os.environ['DEPLOY_WORK_DIR'], 'human-session-env.json'))))
 print(json.dumps(v))" > "$DEPLOY_WORK_DIR/guito-api-env.json"
 apply_env "$AUTH_NAME" "$DEPLOY_WORK_DIR/guito-auth-env.json"
 apply_env "$API_NAME" "$DEPLOY_WORK_DIR/guito-api-env.json"
@@ -229,12 +234,10 @@ fi
 FN_ARN=$(aws --region "$REGION" lambda get-function --function-name "$API_NAME" --query Configuration.FunctionArn --output text)
 AUTH_ARN=$(aws --region "$REGION" lambda get-function --function-name "$AUTH_NAME" --query Configuration.FunctionArn --output text)
 
-# Issue #52: API Gateway answers the browser's CORS PREFLIGHT itself (no route
-# reaches the Lambda), so edge-level CORS is required — the app's UseCors never
-# sees an OPTIONS. AllowOrigins * is safe here: every non-exchange route stays
-# auth-gated at the authorizer; the exchange is unauthenticated by design.
+# API Gateway answers browser preflights. Credentialed cookies require exact
+# environment origins, including X-Guito-Session; never swallow reconciliation failure.
 aws --region "$REGION" apigatewayv2 update-api --api-id "$API_ID" \
-  --cors-configuration '{"AllowOrigins":["*"],"AllowMethods":["GET","POST","PUT","DELETE","OPTIONS"],"AllowHeaders":["content-type","x-api-key","authorization","x-google-idtoken","if-match"],"ExposeHeaders":["x-api-version","etag"],"MaxAge":86400}' >/dev/null 2>&1 || true
+  --cors-configuration "file://$DEPLOY_WORK_DIR/human-session-cors.json" >/dev/null
 
 AUTH_ID=$(aws --region "$REGION" apigatewayv2 get-authorizers --api-id "$API_ID" --query "Items[?Name=='guito-key-authorizer'].AuthorizerId" --output text)
 [ -n "$AUTH_ID" ] || AUTH_ID=$(aws --region "$REGION" apigatewayv2 create-authorizer --api-id "$API_ID" --name guito-key-authorizer \
@@ -287,6 +290,20 @@ aws --region "$REGION" apigatewayv2 create-route --api-id "$API_ID" --route-key 
 # $default CUSTOM-authorizer route 401s the browser before the Lambda runs.
 aws --region "$REGION" apigatewayv2 create-route --api-id "$API_ID" --route-key 'ANY /BankAuth/callback' \
   --authorization-type NONE --target "integrations/$INT_ID" >/dev/null 2>&1 || true
+# #156: exact POST routes bypass ONLY the edge authorizer. The app enforces
+# origin, custom header, JSON, PKCE/Google identity or the opaque session cookie.
+for operation in token refresh logout; do
+  route="POST /Auth/session/$operation"
+  route_id=$(aws --region "$REGION" apigatewayv2 get-routes --api-id "$API_ID" \
+    --query "Items[?RouteKey=='$route'].RouteId" --output text)
+  if [ -n "$route_id" ] && [ "$route_id" != None ]; then
+    aws --region "$REGION" apigatewayv2 update-route --api-id "$API_ID" --route-id "$route_id" \
+      --authorization-type NONE --target "integrations/$INT_ID" >/dev/null
+  else
+    aws --region "$REGION" apigatewayv2 create-route --api-id "$API_ID" --route-key "$route" \
+      --authorization-type NONE --target "integrations/$INT_ID" >/dev/null
+  fi
+done
 # Browser CORS preflights (guito-api#9): OPTIONS must reach the app's CORS
 # middleware, not $default's authorizer (a targetless route 401s — the route
 # must carry the Lambda integration; the invoke permission above covers it).
