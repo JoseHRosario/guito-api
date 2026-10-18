@@ -150,40 +150,55 @@ internal sealed class HumanSessionTestHost(HumanSessionTestHost.State state) : C
             var values = parameters.ToDictionary(parameter => parameter.Name, parameter => parameter.Value.StringValue);
             var hash = values["hash"]!;
             _rows.TryGetValue(hash, out var row);
-            if (sql.StartsWith("INSERT"))
-            {
-                Assert.DoesNotContain("fake-refresh-credential", string.Join(" ", values.Values));
-                CredentialsWritten.Add(values["credential"]!);
-                _rows.Add(hash, new(values));
-                return Result(1);
-            }
-            if (sql.StartsWith("SELECT"))
-                return row is not null && Date(row, "expires") > Date(values, "now") ? Result(0, [hash]) : Result();
-            if (sql.StartsWith("DELETE"))
-            {
-                if (row is null || (sql.Contains("refresh_lease = :lease") && row.GetValueOrDefault("lease") != values["lease"])) return Result();
-                if (sql.Contains("expires_at <=") && Date(row, "expires") > Date(values, "now")) return Result();
-                _rows.Remove(hash);
-                return Result(1);
-            }
+            if (sql.StartsWith("INSERT")) return Insert(hash, values);
+            if (sql.StartsWith("SELECT")) return Select(hash, row, values);
+            if (sql.StartsWith("DELETE")) return Delete(sql, hash, row, values);
             if (row is null) return Result();
-            if (sql.Contains("RETURNING subject"))
-            {
-                if (sql.Contains("expires_at >") && Date(row, "expires") <= Date(values, "now")) return Result();
-                if (sql.Contains("refresh_lease IS NULL") && row.GetValueOrDefault("lease") is not null && Date(row, "lease_expires") > Date(values, "now")) return Result();
-                row["lease"] = values["lease"];
-                row["lease_expires"] = values["lease_expires"];
-                return Result(1, [row["subject"]!, row["email"]!, CorruptCredential ? "v1.corrupt" : row["credential"]!, row["expires"]!]);
-            }
+            if (sql.Contains("RETURNING subject")) return AcquireLease(sql, row, values);
             if (sql.Contains("refresh_lease = :lease") && row.GetValueOrDefault("lease") != values["lease"]) return Result();
-            if (sql.Contains("encrypted_credential = :credential"))
-            {
-                if (sql.Contains("expires_at >") && Date(row, "expires") <= Date(values, "now")) return Result();
-                if (sql.Contains("lease_expires_at >") && Date(row, "lease_expires") <= Date(values, "now")) return Result();
-                row["credential"] = values["credential"];
-                row["expires"] = values["expires"];
-                CredentialsWritten.Add(values["credential"]!);
-            }
+            return sql.Contains("encrypted_credential = :credential") ? CompleteLease(sql, row, values) : ReleaseLease(row);
+        }
+
+        private PostgresResult Insert(string hash, Dictionary<string, string?> values)
+        {
+            Assert.DoesNotContain("fake-refresh-credential", string.Join(" ", values.Values));
+            CredentialsWritten.Add(values["credential"]!);
+            _rows.Add(hash, new(values));
+            return Result(1);
+        }
+
+        private static PostgresResult Select(string hash, Dictionary<string, string?>? row, Dictionary<string, string?> values) =>
+            row is not null && Date(row, "expires") > Date(values, "now") ? Result(0, [hash]) : Result();
+
+        private PostgresResult Delete(string sql, string hash, Dictionary<string, string?>? row, Dictionary<string, string?> values)
+        {
+            if (row is null || (sql.Contains("refresh_lease = :lease") && row.GetValueOrDefault("lease") != values["lease"])) return Result();
+            if (sql.Contains("expires_at <=") && Date(row, "expires") > Date(values, "now")) return Result();
+            _rows.Remove(hash);
+            return Result(1);
+        }
+
+        private PostgresResult AcquireLease(string sql, Dictionary<string, string?> row, Dictionary<string, string?> values)
+        {
+            if (sql.Contains("expires_at >") && Date(row, "expires") <= Date(values, "now")) return Result();
+            if (sql.Contains("refresh_lease IS NULL") && row.GetValueOrDefault("lease") is not null && Date(row, "lease_expires") > Date(values, "now")) return Result();
+            row["lease"] = values["lease"];
+            row["lease_expires"] = values["lease_expires"];
+            return Result(1, [row["subject"]!, row["email"]!, CorruptCredential ? "v1.corrupt" : row["credential"]!, row["expires"]!]);
+        }
+
+        private PostgresResult CompleteLease(string sql, Dictionary<string, string?> row, Dictionary<string, string?> values)
+        {
+            if (sql.Contains("expires_at >") && Date(row, "expires") <= Date(values, "now")) return Result();
+            if (sql.Contains("lease_expires_at >") && Date(row, "lease_expires") <= Date(values, "now")) return Result();
+            row["credential"] = values["credential"];
+            row["expires"] = values["expires"];
+            CredentialsWritten.Add(values["credential"]!);
+            return ReleaseLease(row);
+        }
+
+        private static PostgresResult ReleaseLease(Dictionary<string, string?> row)
+        {
             row["lease"] = null;
             row["lease_expires"] = null;
             return Result(1);

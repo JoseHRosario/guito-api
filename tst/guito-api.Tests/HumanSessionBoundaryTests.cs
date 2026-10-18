@@ -64,26 +64,10 @@ public class HumanSessionBoundaryTests
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal(4, json.EnumerateObject().Count());
-        Assert.Equal(3600, json.GetProperty("expiresIn").GetInt32());
-        Assert.Equal("2030-01-08T12:00:00+00:00", json.GetProperty("sessionExpiresAt").GetString());
-        Assert.DoesNotContain("fake-refresh-credential", await response.Content.ReadAsStringAsync());
-        var cookie = Assert.Single(response.Headers.GetValues("Set-Cookie"));
-        Assert.StartsWith($"{HumanSessionController.CookieName}=", cookie);
-        Assert.Contains("max-age=604800", cookie);
-        Assert.Contains("path=/", cookie);
-        Assert.Contains("secure", cookie);
-        Assert.Contains("httponly", cookie);
-        Assert.Contains("samesite=strict", cookie);
-        Assert.DoesNotContain("domain=", cookie);
+        await AssertShortLivedTokenPayloadAsync(response);
+        AssertSecureSessionCookie(response);
         Assert.True(response.Headers.CacheControl!.NoStore);
-        var form = Assert.Single(state.Forms);
-        Assert.Equal("authorization_code", form["grant_type"]);
-        Assert.Equal(new string('a', 43), form["code_verifier"]);
-        Assert.Equal(HumanSessionTestHost.Origin + "/auth/callback", form["redirect_uri"]);
-        Assert.Equal(HumanSessionTestHost.ClientId, form["client_id"]);
-        Assert.Equal("fake-client-secret", form["client_secret"]);
+        AssertPkceProviderExchange(state);
         Assert.StartsWith("v1.", Assert.Single(state.Database.CredentialsWritten));
     }
 
@@ -459,6 +443,37 @@ public class HumanSessionBoundaryTests
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Contains("Missing API key", await response.Content.ReadAsStringAsync());
+    }
+
+    private static async Task AssertShortLivedTokenPayloadAsync(HttpResponseMessage response)
+    {
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(4, json.EnumerateObject().Count());
+        Assert.Equal(3600, json.GetProperty("expiresIn").GetInt32());
+        Assert.Equal("2030-01-08T12:00:00+00:00", json.GetProperty("sessionExpiresAt").GetString());
+        Assert.DoesNotContain("fake-refresh-credential", await response.Content.ReadAsStringAsync());
+    }
+
+    private static void AssertSecureSessionCookie(HttpResponseMessage response)
+    {
+        var cookie = Assert.Single(response.Headers.GetValues("Set-Cookie"));
+        Assert.StartsWith($"{HumanSessionController.CookieName}=", cookie);
+        Assert.Contains("max-age=604800", cookie);
+        Assert.Contains("path=/", cookie);
+        Assert.Contains("secure", cookie);
+        Assert.Contains("httponly", cookie);
+        Assert.Contains("samesite=strict", cookie);
+        Assert.DoesNotContain("domain=", cookie);
+    }
+
+    private static void AssertPkceProviderExchange(HumanSessionTestHost.State state)
+    {
+        var form = Assert.Single(state.Forms);
+        Assert.Equal("authorization_code", form["grant_type"]);
+        Assert.Equal(new string('a', 43), form["code_verifier"]);
+        Assert.Equal(HumanSessionTestHost.Origin + "/auth/callback", form["redirect_uri"]);
+        Assert.Equal(HumanSessionTestHost.ClientId, form["client_id"]);
+        Assert.Equal("fake-client-secret", form["client_secret"]);
     }
 
     private static void ChangeClaim(Dictionary<string, object> claims, string claim, DateTimeOffset now)
