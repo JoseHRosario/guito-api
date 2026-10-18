@@ -2,7 +2,7 @@
 
 ## Status and authority
 
-**Partial live functional acceptance; #136 and parent #126 remain open.**
+**Staging acceptance with explicit owner dispositions; #136 closes through the evidence PR on owner merge. Parent #126 remains open.**
 This is a repeatable manual procedure and an evidence index, not a deployed write
 runner, new CI project, retry framework, production approval or cleanup mechanism.
 Routine tests stay hermetic. Read the current [manual Match contract](bank-manual-matching-contract.md),
@@ -220,10 +220,11 @@ and Sheets persistence. Neither historical owner acceptance nor this staging run
 is a new production rollout, reporting-refresh or write approval.
 
 No production mutation, deployment, credential change, migration or reporting
-refresh is authorized by this procedure. Keep #126 open. #136 cannot be marked
-complete until the real uncertain-commit experiment has evidence or explicit
-owner deferral (dedicated concurrency is already owner-deferred). Live post-insert
-rollback passed; José accepted the recorded visual differences for this release.
+refresh is authorized by this procedure. Keep #126 open. Live post-insert rollback
+passed; José accepted the recorded visual differences and explicitly waived the
+live lost-response experiment for this release. Dedicated concurrency remains
+owner-deferred. Neither waiver is a test pass. #136 is ready for closure through
+the evidence PR on owner merge, not by claiming production readiness.
 Real human/agent history parity, read-only staging browser checks, local browser
 return-context tests and owner reporting security/reopen confirmation are recorded
 in the dated evidence. Owner manual Save/return confirmation remains distinct
