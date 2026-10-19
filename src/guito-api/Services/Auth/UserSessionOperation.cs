@@ -45,7 +45,6 @@ internal sealed class UserSessionOperation : IDisposable
     {
         OperationCanceledException when _caller.IsCancellationRequested => "client_cancelled",
         OperationCanceledException => "request_timeout",
-        UserSessionException { Error: "service_starting" } => "readiness_timeout",
         UserSessionException { IsConfigurationFailure: true } => "configuration_unavailable",
         UserSessionException { StatusCode: 401 } => "session_rejected",
         _ when stage is "credential_encrypt" or "credential_decrypt" => "configuration_unavailable",

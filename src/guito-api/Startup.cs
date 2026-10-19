@@ -1,4 +1,6 @@
 using Amazon.RDSDataService;
+using Amazon.DynamoDBv2;
+using GuitoApi.Infrastructure.DynamoDb;
 using Amazon.SimpleSystemsManagement;
 using GuitoApi.Configuration;
 using GuitoApi.Infrastructure.Postgres;
@@ -90,7 +92,16 @@ namespace GuitoApi
             services.AddHttpClient("UserSessionJwks", client => client.Timeout = TimeSpan.FromSeconds(20)).RemoveAllLoggers();
             services.AddScoped<IGoogleSessionProvider, GuitoApi.Infrastructure.Auth.GoogleSessionProvider>();
             services.AddScoped<IUserSessionCredentialProtector, GuitoApi.Infrastructure.Auth.AesGcmUserSessionCredentialProtector>();
-            services.AddScoped<IUserSessionRepository, DataApiUserSessionRepository>();
+            services.AddSingleton<IAmazonDynamoDB>(sp => new AmazonDynamoDBClient(new AmazonDynamoDBConfig
+            {
+                RegionEndpoint = Amazon.RegionEndpoint.GetBySystemName(
+                    sp.GetRequiredService<IOptions<AppConfigurationOptions>>().Value.UserSessions.Region is { Length: > 0 } region ? region : "eu-west-1"),
+                MaxErrorRetry = 0,
+                DisableLogging = true,
+                LogResponse = false,
+                LogMetrics = false
+            }));
+            services.AddScoped<IUserSessionRepository, DynamoDbUserSessionRepository>();
             services.AddScoped<IEstablishUserSessionService, EstablishUserSessionService>();
             services.AddScoped<IRefreshUserSessionService, RefreshUserSessionService>();
             services.AddScoped<ILogoutUserSessionService, LogoutUserSessionService>();

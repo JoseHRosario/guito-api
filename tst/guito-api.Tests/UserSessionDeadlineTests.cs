@@ -1,7 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
-using Amazon.RDSDataService.Model;
+using Amazon.DynamoDBv2.Model;
+using Amazon.Runtime;
 using static GuitoApi.Tests.UserSessionBoundaryTests;
 
 namespace GuitoApi.Tests;
@@ -76,17 +77,15 @@ public class UserSessionDeadlineTests
     }
 
     [Fact]
-    public async Task Refresh_ShouldPreserveCookieAndCredential_WhenReadinessStartupBudgetExhausts()
+    public async Task Refresh_ShouldPreserveCookieAndCredential_WhenReadinessFails()
     {
         using var scenario = await ArrangeReadinessFailureAsync();
 
         var pending = Send(scenario.Client, "refresh", scenario.Cookie);
-        await scenario.State.Clock.WaitForTimerAsync(1);
-        scenario.State.Clock.Advance(TimeSpan.FromSeconds(18));
         var failed = await pending.WaitAsync(TimeSpan.FromSeconds(10));
 
         await AssertRefreshReadinessExhaustedAsync(scenario.State, failed);
-        scenario.State.BeforeStatement = null;
+        scenario.State.BeforeDynamoRequest = null;
 
         var recovered = await Send(scenario.Client, "refresh", scenario.Cookie);
 
@@ -104,7 +103,7 @@ public class UserSessionDeadlineTests
 
         var pending = Login(scenario.Client);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        scenario.State.Clock.Advance(TimeSpan.FromSeconds(stage == "readiness" ? 18 : 25));
+        scenario.State.Clock.Advance(TimeSpan.FromSeconds(25));
         var failed = await pending.WaitAsync(TimeSpan.FromSeconds(10));
 
         await AssertEstablishDeadlineAsync(scenario.State, failed, stage);
@@ -120,9 +119,9 @@ public class UserSessionDeadlineTests
     private static TaskCompletionSource ArrangeCancellationStage(UserSessionTestHost.State state, string stage)
     {
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        state.BeforeStatement = async (request, token) =>
+        state.BeforeDynamoRequest = async (request, token) =>
         {
-            if (!IsBlockedRefreshStatement(stage, request.Sql)) return;
+            if (!IsBlockedRefreshStatement(stage, request)) return;
             entered.TrySetResult();
             await Task.Delay(Timeout.Infinite, token);
         };
@@ -146,11 +145,10 @@ public class UserSessionDeadlineTests
     private static TaskCompletionSource ArrangeLaterStageStall(UserSessionTestHost.State state, string stage)
     {
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var readinessAttempts = 0;
-        state.BeforeStatement = async (request, token) =>
+        state.BeforeDynamoRequest = async (request, token) =>
         {
-            if (request.Sql == "SELECT 1" && ++readinessAttempts == 1) throw new DatabaseUnavailableException("fake-sensitive-db-secret");
-            if (stage != "completion" || !request.Sql.Contains("SET encrypted_credential")) return;
+            if (request is GetItemRequest) await Task.Delay(TimeSpan.FromSeconds(1), state.Clock, token);
+            if (stage != "completion" || request is not UpdateItemRequest update || !update.UpdateExpression.StartsWith("SET encrypted_credential")) return;
             entered.TrySetResult();
             await Task.Delay(Timeout.Infinite, token);
         };
@@ -163,9 +161,9 @@ public class UserSessionDeadlineTests
         state.Entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
         state.Continue = new(TaskCreationOptions.RunContinuationsAsynchronously);
         var cleanup = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        state.BeforeStatement = async (request, token) =>
+        state.BeforeDynamoRequest = async (request, token) =>
         {
-            if (!request.Sql.StartsWith("UPDATE user_sessions SET refresh_lease = NULL")) return;
+            if (request is not UpdateItemRequest update || !update.UpdateExpression.StartsWith("REMOVE")) return;
             cleanup.TrySetResult();
             await Task.Delay(Timeout.Infinite, token);
         };
@@ -175,9 +173,9 @@ public class UserSessionDeadlineTests
     private static TaskCompletionSource ArrangeEstablishStall(UserSessionTestHost.State state, string stage)
     {
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        state.BeforeStatement = async (request, token) =>
+        state.BeforeDynamoRequest = async (request, token) =>
         {
-            if (!(stage == "readiness" && request.Sql == "SELECT 1") && !(stage == "persistence" && request.Sql.StartsWith("INSERT"))) return;
+            if (!(stage == "readiness" && request is GetItemRequest) && !(stage == "persistence" && request is PutItemRequest)) return;
             entered.TrySetResult();
             await Task.Delay(Timeout.Infinite, token);
         };
@@ -215,7 +213,7 @@ public class UserSessionDeadlineTests
     private static async Task AssertRefreshReadinessExhaustedAsync(UserSessionTestHost.State state, HttpResponseMessage failed)
     {
         Assert.Equal(HttpStatusCode.ServiceUnavailable, failed.StatusCode);
-        Assert.Equal("service_starting", (await failed.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString());
+        Assert.Equal("temporarily_unavailable", (await failed.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString());
         Assert.False(failed.Headers.Contains("Set-Cookie"));
         Assert.Single(state.Forms);
         Assert.Single(state.Database.CredentialsWritten);
@@ -230,11 +228,11 @@ public class UserSessionDeadlineTests
         Assert.Empty(state.LoggedExceptions);
     }
 
-    private static bool IsBlockedRefreshStatement(string stage, string sql) => stage switch
+    private static bool IsBlockedRefreshStatement(string stage, AmazonWebServiceRequest request) => stage switch
     {
-        "readiness" => sql == "SELECT 1",
-        "acquire" => sql.Contains("RETURNING subject"),
-        "completion" => sql.Contains("SET encrypted_credential"),
+        "readiness" => request is GetItemRequest,
+        "acquire" => request is UpdateItemRequest { ReturnValues.Value: "ALL_NEW" },
+        "completion" => request is UpdateItemRequest update && update.UpdateExpression.StartsWith("SET encrypted_credential"),
         _ => false
     };
 
@@ -266,13 +264,13 @@ public class UserSessionDeadlineTests
     {
         var scenario = new Scenario();
         scenario.Cookie = Cookie(await Login(scenario.Client));
-        scenario.State.BeforeStatement = (_, _) => throw new DatabaseUnavailableException("fake-sensitive-db-secret");
+        scenario.State.BeforeDynamoRequest = (_, _) => throw new ProvisionedThroughputExceededException("fake-sensitive-db-secret");
         return scenario;
     }
 
     private static void ArrangeRecovery(UserSessionTestHost.State state)
     {
-        state.BeforeStatement = null;
+        state.BeforeDynamoRequest = null;
         state.Entered = null;
     }
 
@@ -304,7 +302,7 @@ public class UserSessionDeadlineTests
 
     private sealed class Scenario : IDisposable
     {
-        public UserSessionTestHost.State State { get; } = new() { SharedTransport = true };
+        public UserSessionTestHost.State State { get; } = new();
         public UserSessionTestHost Host { get; }
         private HttpClient? _client;
         public HttpClient Client => _client ??= UserSessionBoundaryTests.Client(Host);

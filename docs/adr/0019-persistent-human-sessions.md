@@ -2,130 +2,170 @@
 
 ## Status
 
-Accepted design for #156; API version 0.27.0; companion UI 0.12.0. Initial
-staging key provisioning and paired staging deployment were owner-approved.
-The naming correction was deployed to staging; this one-migration simplification
-and canonical-only key binding are local-only until the separately approved
-staging JSON field rename and next approved staging deployment;
-real Google/browser acceptance, Android persistence and production remain separate
-unverified gates. Existing ADR/runbook filenames are stable links, not domain names.
+Accepted design for #156; API 0.27.0, companion UI 0.12.0. This unmerged ADR
+was amended after José approved replacing Postgres session persistence with
+DynamoDB. The previous Postgres-backed staging implementation demonstrated that
+Aurora resume could exceed the 18-second readiness budget and prevent login.
+Authentication must not wait for the financial database to resume.
+
+José approved the DynamoDB dependency, fixed-capacity design, narrowly scoped
+IAM changes, one fresh staging sign-in at cutover and the corresponding targeted
+AGENTS.md update. This does not authorize production deployment, production key
+setup, financial writes, Postgres session deletion or changes under ~/.aws.
+Source/hermetic evidence, deployed staging evidence and owner Android acceptance
+remain separate. See [the rollout runbook](../persistent-human-login.md).
 
 ## Decision
 
-Every successful browser login establishes an independent persistent server
-session. Seven days of **inactivity**, measured with the server clock, expires it;
-successful foreground renewal extends it seven days. There is no absolute maximum.
-The UI coalesces foreground/bootstrap renewal and must not run a background
-keepalive. No draft persistence and no replay of financial requests are introduced.
+Each successful browser login establishes an independent server session. Seven
+days of inactivity, measured with the server clock, expires it; successful
+foreground renewal extends it seven days without an absolute maximum. The UI
+coalesces foreground/bootstrap renewal and must not run a background keepalive.
+No draft persistence or replay of financial requests is introduced.
 
-The browser holds a 256-bit opaque capability in a persistent `__Host-guito-session`
-cookie: HttpOnly, Secure, SameSite=Strict, Path=/, no Domain, Max-Age=604800.
-The Data API persists only its SHA-256 hash, the bound Google subject/email, idle
-expiry, and an AES-256-GCM encrypted Google refresh credential. A random 96-bit
-nonce and 128-bit tag accompany each encrypted credential. The handle hash is
-authenticated additional data, preventing credential-envelope substitution between
-sessions. Plaintext refresh credentials exist only in bounded request memory and
-Google's TLS token form; they never cross an HTTP response or logging boundary.
+The browser holds a 256-bit opaque capability in a persistent
+`__Host-guito-session` cookie: HttpOnly, Secure, SameSite=Strict, Path=/, no Domain,
+Max-Age=604800. Storage retains only its SHA-256 hash, bound Google subject/email,
+idle expiry and an AES-256-GCM encrypted Google refresh credential. The existing
+96-bit nonce, 128-bit tag, `v1` envelope and handle-hash authenticated additional
+data remain unchanged. Plaintext credentials exist only in bounded process memory
+and Google's TLS token form, never responses, browser storage or logs.
 
-`SecretsPayload.UserSessionEncryptionKey` is a base64 32-byte key in the existing
-**per-environment** SSM SecureString runtime parameter, accessed through
-`ISecretsProvider`. It is not added to the shared human OAuth client secret and is
-not placed in Lambda environment variables. No new dependency, IAM permission,
-service or plaintext fallback is introduced. Missing keys, wrong keys, unavailable
-secrets and damaged envelopes fail closed with a retryable error, not session loss.
-Provisioning is an explicitly owner-approved operation, never a deployment side effect.
-The typed property exists to deserialize the JSON retrieved from SSM, not to store
-a key literal in source. Runtime and deployment validation require this canonical
-field only: missing, null, empty, noncanonical base64 or a decoded length other than
-32 bytes fails closed. Old-only payloads are rejected. Before pushing/deploying
-this source, José must separately approve renaming the existing staging JSON field
-to the canonical name, retaining its exact value and removing the old field.
-This is not rotation; unrelated payload fields/settings must remain unchanged.
-The runbook defines private readback, deployed-consumer and rollback compatibility,
-cache coordination and shared-staging replacement gates. Source changes do not
-authorize a live credential read or write.
+### Storage and access patterns
 
-New exact POST routes `/Auth/session/token`, `/Auth/session/refresh` and
-`/Auth/session/logout` bypass the edge and in-app bearer/API-key gates, but enforce
-an explicit trusted Origin, `X-Guito-Session: 1`, JSON, and their own PKCE/Google or
-cookie authentication. Credentialed CORS is restricted to the same exact
-per-environment UI origins. Redirect URI must be an allowed origin plus
-`/auth/callback`. The UI still owns OAuth state/PKCE generation and callback state
-validation; the server never claims an unvalidated browser state is server-owned.
+`IUserSessionRepository` remains the storage-agnostic aggregate port. Its adapter
+uses the official AWS DynamoDB SDK, not Postgres or the shared financial Data API
+transport. Every access addresses one session by `handle_hash` (String partition
+key); no sort key, index, Scan, Query, transaction, Streams or operation ledger is
+needed. Table keys are server-generated capability hashes, not client-selected
+user or financial record identifiers. This is not a multi-user ownership model.
 
-New tokens are RS256/signature/JWKS, Google issuer, exact configured human client
-and expiry validated, with nonempty subject, verified email and the existing human
-allowlist. Refresh must preserve both subject and email. The new adapter reuses
-the existing Google JWT verifier, with fresh request-bounded JWKS transport; the
-reporting verifier/cache and business middleware validation are unchanged.
-**A session cookie never authorizes business routes.** Humans still send Google's
-short-lived ID token to both existing authorization layers. Agent and reporting
-identities remain independent. Legacy `/Auth/token` and `/Auth/logout` remain
-compatible; persistent-device logout never calls legacy revoke.
+| Access pattern | DynamoDB operation and correctness boundary |
+|---|---|
+| Pre-exchange availability check | Non-mutating strongly consistent GetItem for a reserved non-session key; never an Aurora probe |
+| Establish session | PutItem with attribute-not-exists condition; never overwrite an existing handle |
+| Acquire refresh ownership | Conditional UpdateItem on an existing, unexpired item with no live lease; return updated item |
+| Classify failed acquisition | Strongly consistent GetItem distinguishes missing/expired from a busy valid session |
+| Complete renewal | UpdateItem only when item, exact lease, lease expiry and idle expiry remain valid |
+| Release or invalidate | Conditional UpdateItem/DeleteItem bound to the exact lease identity |
+| Device logout | Idempotent DeleteItem for that handle only |
+| Remove abandoned expired records | Native TTL; eventual cleanup is never the authorization decision |
+
+Expiry and lease comparisons retain UTC tick precision in numeric
+`expires_at_ticks` / `lease_expires_at_ticks` attributes. Separate numeric `ttl`
+is UNIX seconds derived from idle expiry and refreshed only after successful
+establishment/renewal. Expired records must be rejected even while TTL deletion
+is pending. Application credentials remain encrypted in `encrypted_credential`;
+identity attributes are `subject` and `email`; ownership is `refresh_lease`.
+
+### Isolation, permissions and cost
+
+Region is Ireland (`eu-west-1`). Tables are `guito-api-user-sessions-staging` and
+`guito-api-user-sessions`; `AppConfiguration:UserSessions` carries explicit
+`TableName` and `Region`. No fallback to Postgres or implicit production table is
+allowed. Financial-data persistence stays Postgres/Data API and may still incur
+Aurora resume latency after authentication completes.
+
+Each table uses Standard class and fixed provisioned capacity of one RCU and one
+WCU. No autoscaling, indexes, global replication, PITR, customer-managed KMS key,
+new log/audit subscription or other paid add-on is introduced. AWS-owned at-rest
+encryption is retained, in addition to application-level AES-GCM. Deletion
+protection is enabled. These are rebuildable login sessions, so requiring sign-in
+again is preferable to a paid session-backup mechanism for this product.
+
+AWS publishes an ongoing allowance of 25 provisioned RCUs, 25 provisioned WCUs
+and 25 GB Standard storage, shared per Region/payer account. The approved tiny
+configuration is expected to incur no DynamoDB capacity/storage charge while
+within that allowance; this is not an unconditional whole-account billing
+promise. José confirmed the empty table list was Ireland. The agent could not
+inspect payer-level free-tier usage with its role. On-demand mode would charge
+for requests and is deliberately not selected. See the runbook for primary
+regional pricing sources and the distinction from temporary signup credits.
+
+Runtime permissions are only GetItem, PutItem, UpdateItem and DeleteItem on the
+two named table ARNs. The existing shared Lambda execution role also serves both
+authorizers; this retains the current role topology rather than claiming that
+shared-role IAM provides per-function isolation. Configuration chooses the table;
+application boundaries and tests protect environment selection. Deployment has
+only the named-table create/describe/TTL/backup-status permissions it needs. It
+has no DeleteTable, Scan, UpdateTable or backup-enablement permission for sessions.
+Provisioning runs through the existing approved Actions lane, not a local deploy.
+
+### Encryption and authentication boundaries
+
+`SecretsPayload.UserSessionEncryptionKey` remains the canonical base64 32-byte
+key in each environment's existing SSM SecureString, through `ISecretsProvider`.
+The staging canonical-field rename was separately approved and verified without
+rotation; this store migration does not read/copy/rotate/provision a key. Missing
+or damaged key/envelope fails closed with retryable 503, not silent session loss.
+Production key provisioning remains a distinct owner operation.
+
+Exact POST `/Auth/session/token`, `/Auth/session/refresh` and
+`/Auth/session/logout` bypass edge/in-app bearer/API-key gates but enforce their
+own exact trusted Origin, `X-Guito-Session: 1`, JSON and PKCE/Google or cookie
+authentication. Credentialed CORS allows only the explicit environment UI origins.
+The UI owns state/PKCE generation and callback-state validation. Redirect URI
+must be an allowed origin plus `/auth/callback`.
+
+Google RS256 signature/JWKS, issuer, client/audience, expiry, subject, verified
+email and existing allowlist checks remain. Renewal must preserve subject and
+email. A session cookie never authorizes business routes: humans still use
+Google's short-lived ID token at both gates. Agent/reporting paths and legacy
+`/Auth/token` / `/Auth/logout` remain unchanged. Device logout never calls legacy
+Google grant revocation.
 
 ## Failure and concurrency semantics
 
-Only missing/expired/deleted sessions, a validated identity change/rejection, or an
-actual Google HTTP 400 `invalid_grant` on refresh are permanent 401
-`session_expired` failures. Provider network/timeout/JWKS failures, invalid-client
-configuration, 429/5xx, malformed/incomplete or unverifiable/wrong-audience/expired
-renewed provider tokens, unavailable
-storage/secrets and concurrency contention are retryable 503
-`temporarily_unavailable`. They do not clear the cookie or extend idle expiry.
-Code exchange retains the RFC 6749 response shape and upstream 4xx status; new
-session endpoints sanitize descriptions/error codes instead of reflecting provider
-text that could include credentials. Missing refresh permission is explicit 400
-`refresh_token_required`, not pretend persistence. Existing sessions survive a
-failed new login.
+Missing/expired/deleted sessions, validated identity rejection/change and actual
+Google HTTP 400 `invalid_grant` during refresh are permanent 401
+`session_expired` failures. Provider, configuration, secrets, invalid or
+unverifiable renewed tokens, storage/throttling/network/permission failures and
+refresh contention are retryable 503 `temporarily_unavailable`; they do not clear
+the cookie or extend expiry. Code-exchange errors retain the sanitized RFC 6749
+shape; missing refresh permission is explicit 400 `refresh_token_required`.
 
-An atomic conditional Data API UPDATE acquires a two-minute per-session lease,
-without an operation ledger or long database transaction across Google HTTP.
-Establishment and refresh share one 25-second operation deadline including initial
-readiness, lease acquisition, provider/crypto work and completion. Read-only session
-readiness has an 18-second subbudget and precedes consumption of a one-use Google
-code. Only known typed database resume/unavailable errors are eligible for that
-readiness retry; known startup exhaustion is 503 `service_starting` with safe retry
-wording, while other faults remain `temporarily_unavailable`. Existing shared
-Data API mutation retry semantics are unchanged. Refresh has at most two seconds
-of independent awaited lease cleanup (27 seconds combined, below the observed
-30-second host/gateway bounds); abandoned leases recover after two minutes.
-The [runbook](../persistent-human-login.md) pins exact budgets and evidence limits.
-A competing tab receives a
-retryable 503 without issuing another Google refresh. Completion and invalidation
-are conditional on the exact lease; completion additionally checks lease and idle
-expiry and is UPDATE-only. Logout deletes the row. A late worker cannot insert it
-again or delete a newer lease. If logout races completion, no valid server session
-can be resurrected, even if an already-issued cookie response arrives late. The UI
-must independently suppress stale in-flight results after local signout.
+A two-minute durable lease serializes provider refresh without holding a database
+transaction across Google HTTP. Establishment/renewal have one caller-linked
+25-second operation budget; awaited refresh cleanup has an independent two-second
+maximum. No 18-second Aurora readiness loop remains on session paths. SDK retries
+must not silently replay uncertain session mutations. Lease cleanup/invalidation
+must match the exact owner; completion also checks live lease/idle expiry and
+must never upsert. Logout deletes the item; a late worker cannot resurrect it or
+delete a newer worker's session. UI epoch/sign-out safeguards remain necessary
+when responses arrive late.
 
-Successful refresh preserves the old credential when Google omits refresh_token
-and stores a newly encrypted credential when Google rotates it. Google HTTP and
-database commit cannot be one atomic transaction: a lost rotated-token response
-or failed database write can ultimately require consent again. No artificial
-provider continuity or indefinite login guarantee is claimed.
+Refresh may retain the existing encrypted credential when Google omits a new
+refresh token or store a new encrypted credential on rotation. Google renewal
+and DynamoDB writes cannot be one atomic transaction; lost rotation responses or
+ambiguous completion may eventually need fresh consent. Neither indefinite
+provider validity nor automatic retry of a one-use code/financial mutation is
+promised. Logs retain categories/type names and correlation only, never raw
+provider/storage exception payloads, tokens, cookies, identity or key material.
 
-## Consequences
+## Cutover and consequences
 
-Device logout deletes only that server session and cookie, never Google's shared
-grant. Already-issued short-lived ID tokens remain valid until their Google expiry;
-o global bearer revocation list is added. Other devices remain signed in. Offline
-logout cannot promise server deletion until a successful request; the UI immediately
-signs out locally and suppresses cookie bootstrap with its local signed-out marker.
+José chose one fresh staging sign-in rather than copying live refresh credentials.
+There is no SQL-to-DynamoDB fallback, lazy import, dual write or migration sweep.
+The unmerged `011_user_sessions.sql` is removed from source and solution; its
+previously applied staging table and ledger entries remain untouched. No DROP,
+ledger edit or automatic broad cleanup is part of deployment. Their eventual
+removal is an explicit separate owner operation.
 
-José explicitly chose one direct table migration while this feature is unmerged:
-`011_user_sessions.sql` creates `user_sessions` and its expiry index with
-`IF NOT EXISTS`, retaining the same hash/envelope checks and paired lease fields.
-There is no rename/ALTER migration or special DO-block runner support. No
-user/account model is introduced. The simple statement runner records the filename
-only after both statements succeed.
-Staging previously applied `011_human_sessions.sql` and `012_user_sessions.sql`;
-their historical ledger entries may stay. The new filename runs on the existing
-renamed `user_sessions` table without changing rows when its schema/indexes match.
-`IF NOT EXISTS` does not validate or repair a mismatched existing schema. Any
-necessary cleanup is José's manual decision; no table drop, ledger deletion or
-automatic repair is authorized. Migrations precede code swap; old-table API builds
-remain incompatible, so roll back only to reviewed `user_sessions`-compatible code.
-Hermetic HTTP tests use signed
-fake Google responses/JWKS, fake Data API and clock. They are not live PostgreSQL
-locking, Google consent, cross-origin browser-cookie or Android restart acceptance.
-See [provisioning and acceptance runbook](../persistent-human-login.md).
+Rollback is not a seamless store conversion: the two stores do not share renewal
+or logout state. Do not re-enable old Postgres session code blindly; it could
+accept a stale session deleted only in DynamoDB. Keep the DynamoDB table/key and
+review any rollback/invalidation plan with José. Financial migrations and
+financial records remain unchanged.
+
+Device logout affects only that session and cookie, never Google's shared grant.
+Already-issued short-lived ID tokens keep normal validity until expiry. Offline
+logout suppresses local bootstrap but cannot guarantee server deletion before a
+successful request. Provider revocation/inactivity/token-count limits remain
+independent of Guito's seven-day idle policy.
+
+Hermetic HTTP tests use signed fake Google responses/JWKS, predicate-aware fake
+DynamoDB transport and a controlled clock; a regression must make every financial
+Data API call fail while login, renewal and logout still succeed. Fake tests do
+not prove live DynamoDB conditions, Google consent, Secure/Strict browser-cookie
+or installed Android retention. Staging and owner acceptance remain separate
+verified gates, not conclusions inferred from the selected architecture.

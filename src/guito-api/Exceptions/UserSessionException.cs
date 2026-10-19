@@ -7,7 +7,7 @@ public sealed class UserSessionException(int statusCode, string error, string de
     public bool IsConfigurationFailure { get; private set; }
     public static UserSessionException Expired() => new(401, "session_expired", "Sign in again to continue.");
     public static UserSessionException Unavailable() => new(503, "temporarily_unavailable", "Session renewal is temporarily unavailable. Please retry.");
-    public static UserSessionException Starting() => new(503, "service_starting", "The service is starting. Please try again.");
+
     public static UserSessionException ConfigurationUnavailable()
     {
         var failure = Unavailable();

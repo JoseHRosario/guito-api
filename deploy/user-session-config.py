@@ -47,6 +47,13 @@ def configuration(root, environment):
             "AllowHeaders": ["content-type", "x-api-key", "authorization", "x-google-idtoken", "if-match", "x-guito-session"],
             "ExposeHeaders": ["x-api-version", "etag"], "MaxAge": 600}
     variables = {f"AppConfiguration__Cors__AllowedOrigins__{index}": origin for index, origin in enumerate(origins)}
+    sessions = dict(base["AppConfiguration"].get("UserSessions", {}))
+    sessions.update(overlay["AppConfiguration"].get("UserSessions", {}))
+    expected = {"TableName": "guito-api-user-sessions" + ("-staging" if environment == "Staging" else ""),
+                "Region": "eu-west-1"}
+    if sessions != expected:
+        raise ValueError("Explicit environment-isolated DynamoDB session configuration required")
+    variables.update({f"AppConfiguration__UserSessions__{key}": value for key, value in sessions.items()})
     return cors, variables
 
 

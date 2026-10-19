@@ -1,4 +1,13 @@
-# User-session cold-start follow-up — local evidence (#156)
+# User-session cold-start follow-up — historical Postgres evidence (#156)
+
+> Superseded implementation: this document records the earlier Postgres readiness
+> attempt at the pinned revisions below, not the current session-store contract.
+> Later staging diagnostics confirmed `DatabaseResumingException` exhausting the
+> 18-second readiness budget before Google exchange. José rejected waiting for
+> Aurora during authentication and approved DynamoDB with fixed provisioned
+> capacity. See [ADR-0019](adr/0019-persistent-human-sessions.md) and the
+> [current rollout runbook](persistent-human-login.md). The original test counts
+> remain evidence for those historical revisions, not results for the new adapter.
 
 ## Scope and incident attribution
 

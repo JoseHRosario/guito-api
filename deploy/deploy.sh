@@ -64,6 +64,13 @@ for parameter in "$SECRET_NAME" /guito-api/human-auth "$BANK_PARAMETER"; do
     --with-decryption >/dev/null
 done
 
+# --- User-session DynamoDB preflight ---
+# Validate/provision only the selected environment before any Lambda code update.
+# Deployment authority is separately owner-approved; this never grants agent rights.
+python3 "$REPO_ROOT/deploy/user-session-dynamodb.py" --environment "$ENV" \
+  --account-id "$ACCOUNT_ID" --region "$REGION" --output-dir "$DEPLOY_WORK_DIR"
+# --- End user-session DynamoDB preflight ---
+
 # --- 0.1 Database migrations (issue #114): pending migrations run as part of the
 # deploy — never a manual step. Applied BEFORE the new code serves traffic; a
 # migration failure aborts the deploy (fail-closed, same as the version guard).
@@ -87,6 +94,14 @@ aws --region "$REGION" iam attach-role-policy --role-name "$ROLE" \
 # with deploy/reconcile-iam.py; a staging deploy must not delete shared policies.
 aws --region "$REGION" iam put-role-policy --role-name "$ROLE" --policy-name guito-api-ssm-read \
   --policy-document "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"ssm:GetParameter\",\"Resource\":\"arn:aws:ssm:$REGION:$ACCOUNT_ID:parameter/guito-api/*\"}]}" >/dev/null
+
+# --- User-session runtime IAM ---
+# Shared API/authorizer role: preserve every other policy, allow only item operations
+# on the two canonical tables. The operator reads this policy back after deployment;
+# CI intentionally has PutRolePolicy, not new IAM inspection/agent-grant authority.
+aws --region "$REGION" iam put-role-policy --role-name "$ROLE" --policy-name guito-api-user-sessions \
+  --policy-document "file://$DEPLOY_WORK_DIR/user-session-runtime-policy.json" >/dev/null
+# --- End user-session runtime IAM ---
 
 # Data API requires database credentials in Secrets Manager; bank keys use SSM.
 cat > "$DEPLOY_WORK_DIR/guito-data-api.json" <<'EOF'
@@ -183,7 +198,7 @@ apply_env () { # function-name vars-json-file
   local cur
   cur=$(aws --region "$REGION" lambda get-function-configuration --function-name "$1" \
     --query 'Environment.Variables' --output json)
-  python3 -c "import json,sys; d=json.loads(sys.argv[1]) or {}; d={k:v for k,v in d.items() if k != 'AppConfiguration__ExpenseStore' and not k.lower().startswith('appconfiguration__googlesheets__') and not k.lower().startswith('appconfiguration__cors__allowedorigins')}; d.update(json.load(open(sys.argv[2]))); print(json.dumps({'Variables': d}))" \
+  python3 -c "import json,sys; d=json.loads(sys.argv[1]) or {}; d={k:v for k,v in d.items() if k != 'AppConfiguration__ExpenseStore' and not k.lower().startswith('appconfiguration__googlesheets__') and not k.lower().startswith('appconfiguration__cors__allowedorigins') and not k.lower().startswith('appconfiguration__usersessions') and k.lower() != 'appconfiguration__usersessionstore'}; d.update(json.load(open(sys.argv[2]))); print(json.dumps({'Variables': d}))" \
     "$cur" "$2" > "$DEPLOY_WORK_DIR/guito-env-$1.json"
   aws --region "$REGION" lambda update-function-configuration --function-name "$1" \
     --environment "file://$DEPLOY_WORK_DIR/guito-env-$1.json" >/dev/null

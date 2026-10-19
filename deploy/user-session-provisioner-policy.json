@@ -1,0 +1,20 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ManageGuitoUserSessionTables",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:CreateTable",
+        "dynamodb:DescribeTable",
+        "dynamodb:DescribeTimeToLive",
+        "dynamodb:UpdateTimeToLive",
+        "dynamodb:DescribeContinuousBackups"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:eu-west-1:497087877832:table/guito-api-user-sessions-staging",
+        "arn:aws:dynamodb:eu-west-1:497087877832:table/guito-api-user-sessions"
+      ]
+    }
+  ]
+}

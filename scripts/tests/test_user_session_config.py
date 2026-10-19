@@ -28,7 +28,42 @@ class UserSessionDeploymentTests(unittest.TestCase):
                 self.assertIn("x-guito-session", cors["AllowHeaders"])
                 self.assertIn("if-match", cors["AllowHeaders"])
                 self.assertIn("DELETE", cors["AllowMethods"])
-                self.assertEqual({"AppConfiguration__Cors__AllowedOrigins__0": expected}, variables)
+                self.assertEqual({
+                    "AppConfiguration__Cors__AllowedOrigins__0": expected,
+                    "AppConfiguration__UserSessions__TableName": "guito-api-user-sessions" + ("-staging" if environment == "Staging" else ""),
+                    "AppConfiguration__UserSessions__Region": "eu-west-1",
+                }, variables)
+
+    def test_source_session_configuration_should_reject_wrong_or_missing_environment_settings(self):
+        import shutil
+        with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR", os.environ.get("RUNNER_TEMP"))) as directory:
+            root = Path(directory)
+            (root / 'deploy').mkdir()
+            source = root / 'src/guito-api'
+            source.mkdir(parents=True)
+            shutil.copyfile(HELPER, root / 'deploy/user-session-config.py')
+            (source / 'appsettings.json').write_text(json.dumps({'AppConfiguration': {'Cors': {'AllowedOrigins': ['https://test.example']}}}))
+            for settings in (None, {}, {'TableName': 'guito-api-user-sessions', 'Region': 'eu-west-1'},
+                             {'TableName': 'guito-api-user-sessions-staging', 'Region': 'us-east-1'},
+                             {'TableName': 'guito-api-user-sessions-staging', 'Region': 'eu-west-1', 'Store': 'Postgres'}):
+                with self.subTest(settings=settings):
+                    overlay = {'AppConfiguration': {}}
+                    if settings is not None:
+                        overlay['AppConfiguration']['UserSessions'] = settings
+                    (source / 'appsettings.Staging.json').write_text(json.dumps(overlay))
+                    result = subprocess.run([sys.executable, str(root / 'deploy/user-session-config.py'),
+                                             '--environment', 'Staging', '--output-dir', directory], capture_output=True, text=True)
+                    self.assertNotEqual(0, result.returncode)
+                    self.assertFalse((root / 'user-session-env.json').exists())
+            for environment, table in (('Staging', 'guito-api-user-sessions-staging'), ('Production', 'guito-api-user-sessions')):
+                (source / f'appsettings.{environment}.json').write_text(json.dumps({'AppConfiguration': {
+                    'UserSessions': {'TableName': table, 'Region': 'eu-west-1'}}}))
+                result = subprocess.run([sys.executable, str(root / 'deploy/user-session-config.py'),
+                                         '--environment', environment, '--output-dir', directory], capture_output=True, text=True)
+                self.assertEqual(0, result.returncode, result.stderr)
+                variables = json.loads((root / 'user-session-env.json').read_text())
+                self.assertEqual(table, variables['AppConfiguration__UserSessions__TableName'])
+                self.assertEqual('eu-west-1', variables['AppConfiguration__UserSessions__Region'])
 
     def test_key_validation_should_accept_only_base64_32_byte_fake_key_without_output(self):
         payload = json.dumps({"UserSessionEncryptionKey": base64.b64encode(bytes(range(32))).decode()})

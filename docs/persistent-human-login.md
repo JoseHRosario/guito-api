@@ -1,256 +1,235 @@
-# Persistent human login — configuration and rollout gates (#156)
+# Persistent user login — DynamoDB configuration and rollout (#156)
 
-## Current scope
+## Scope, decisions and approval boundaries
 
-API 0.27.0 adds server-managed user sessions; it does not replace Google business
-authorization, agent keys or reporting identity. Source/test completion is not
-provisioning or rollout approval. **Do not push this feature without José's shared
-staging replacement approval:** `.github/workflows/ci-cd.yml` auto-deploys
-`feature/**` to staging. Do not run deployment/migrations locally to test this guide.
+API 0.27.0 implements server-managed device sessions; Google remains the business
+request authority. [ADR-0019](adr/0019-persistent-human-sessions.md) defines the
+current design. The earlier Postgres-backed attempt and resume-budget regressions
+are retained as [historical evidence](user-session-cold-start-verification.md),
+not instructions to retain Aurora in login.
 
-## Wire contract
+José approved replacing session persistence with DynamoDB, the official SDK,
+fixed provisioned capacity, narrowly scoped deployment/runtime IAM changes, one
+fresh staging sign-in at cutover, and the targeted AGENTS.md session update.
+The existing feature staging lane is the rollout path. Feature pushes automatically
+replace shared staging, so compare its served revision and confirm that replacement
+is still within the owner's approved scope before publishing. Production deployment,
+production key setup, live financial writes, personal session migration/destruction
+and modifications under ~/.aws are not authorized by this change.
 
-All new routes are POST on the API origin, use `credentials: include`,
-`Content-Type: application/json`, exact trusted Origin and `X-Guito-Session: 1`.
-Missing/untrusted Origin or wrong/missing header is 403; unsupported content types
-are 415. Responses, including errors, are `Cache-Control: no-store`.
+## Wire and security contract — unchanged
+
+All session routes are POST on the API origin with `credentials: include`,
+`Content-Type: application/json`, an exact trusted Origin and `X-Guito-Session: 1`.
+Missing/untrusted Origin or wrong/missing header is 403; unsupported content type
+is 415. All responses, including errors, are `Cache-Control: no-store`.
 
 | Route | Body | Successful behavior |
 |---|---|---|
-| `/Auth/session/token` | `{code, codeVerifier, redirectUri}` | Validated PKCE exchange/Google identity; persist encrypted refresh credential; 200 short-lived tokens and cookie |
-| `/Auth/session/refresh` | `{}` | Cookie authenticates its server session; validated Google renewal; 200 tokens and renewed idle expiry/cookie |
-| `/Auth/session/logout` | `{}` | Idempotent 204; delete this cookie/session only; no ID token needed and no Google revoke call |
+| `/Auth/session/token` | `{code, codeVerifier, redirectUri}` | Validate PKCE/Google identity; persist encrypted refresh permission; return tokens/cookie |
+| `/Auth/session/refresh` | `{}` | Authenticate cookie/session; renew Google tokens; slide seven-day idle expiry |
+| `/Auth/session/logout` | `{}` | Idempotent 204; delete this device's session; clear cookie; never revoke Google grant |
 
-Both token responses have exactly `{idToken, accessToken, expiresIn,
-sessionExpiresAt}`. `expiresIn` is seconds, `sessionExpiresAt` is an ISO-8601 UTC
-time. `__Host-guito-session` has Max-Age 604800, Path=/, Secure, HttpOnly,
-SameSite=Strict, no Domain. Google refresh tokens are never returned. The cookie
-is bound to the API hostname: production and staging API hostnames keep separate
-cookies even though both are under the same site. Browser same-site delivery is
-not a substitute for the explicit Origin/header checks.
+Token responses contain exactly `{idToken, accessToken, expiresIn,
+sessionExpiresAt}`. `expiresIn` is seconds; `sessionExpiresAt` is UTC ISO-8601.
+`__Host-guito-session` has Max-Age 604800, Path=/, Secure, HttpOnly,
+SameSite=Strict and no Domain. Staging and production API hostnames keep cookies
+separate. SameSite is not a substitute for Origin/header validation.
 
-Permanent 401 is `{error:"session_expired",error_description:...}` and clears the
-cookie; login returns to the requested route (no draft restoration). Retryable
-provider/configuration/network/storage/concurrency failures are 503
-`{error:"temporarily_unavailable",error_description:...}` with no cookie clearing
-or idle renewal. Busy tabs should show/retry connection state, not redirect to
-Google. A late refresh that lost a logout race returns retryable 503 and cannot
-recreate the row; the next refresh sees 401. Only actual Google 400 invalid_grant
-is classified as revoked refresh permission; even a 5xx body saying invalid_grant
-is transient. Unverifiable, wrong-audience or expired renewed provider ID tokens
-also preserve the session with 503; a cryptographically validated subject/email
-binding or identity-policy failure is permanent. Missing refresh_token on establishment is 400
-`refresh_token_required`; refresh may omit it and retain the encrypted stored one.
-Code-exchange Google errors retain RFC 6749 shape/status but are sanitized, not
-verbatim reflected text. Old token-only installations need a fresh explicit consent.
-Legacy token/logout endpoints remain for existing clients; **new device signout
-must never call `/Auth/logout`**, which revokes Google's grant.
+Session cookies never authorize business routes. Existing Google signature,
+issuer, audience, expiry and identity checks at both gates remain unchanged;
+agent and reporting paths remain independent. Legacy `/Auth/token` and
+`/Auth/logout` remain available, but persistent-device sign-out never calls
+legacy Google revoke. Request only `openid email profile`; no scope broadening.
 
-### Cold-start readiness and deadlines
+Permanent missing/idle-expired/deleted/definitively revoked sessions return 401
+`session_expired` and clear the cookie. Transient storage/provider/key/configuration,
+network and lease-contention failures return 503 `temporarily_unavailable`,
+without cookie clearing or expiry extension. Only actual Google HTTP 400
+`invalid_grant` is a revoked refresh permission, not a 5xx body containing that
+text. A validated identity change/policy rejection is permanent; an unverifiable,
+wrong-audience or expired renewed ID token is transient. Missing refresh permission
+at establishment is 400 `refresh_token_required`.
 
-Establishment and renewal share a **25-second operation budget**, linked to caller
-cancellation, starting before readiness (and before refresh lease acquisition).
-Readiness uses `IUserSessionRepository.EnsureReadyAsync`: the existing Data API
-transport executes read-only `SELECT 1` within an **18-second subbudget**, also
-bounded by the operation/caller. No Google authorization-code exchange is attempted
-until this read succeeds. This probe does not validate the session schema, encryption
-key or future write availability; later failures can still follow code consumption.
+Never log session handles/hashes, identity, credentials, encryption keys,
+OAuth code/verifier, request/response bodies or raw exception messages/objects.
+Session diagnostics are categorical stage/type/correlation/timing only.
 
-Only typed `DatabaseResumingException` / `DatabaseUnavailableException` are eligible
-for the readiness loop's one-second retry. The shared Data API client's existing
-`DatabaseResumingException` schedule (one and five seconds) remains unchanged and
-counts inside readiness. No extra retry is applied to lease writes, completion,
-session creation, SQL/programming/credential/network errors or financial mutations.
-Readiness exhaustion after a known startup/availability failure returns sanitized
-503 `{error:"service_starting",error_description:"The service is starting. Please try again."}`.
-It is not a generic 503 label or proof that Aurora was auto-paused. Other failures
-remain `temporarily_unavailable`; a stalled probe with no known startup error is
-not relabeled startup. Caller cancellation never becomes `service_starting`.
+## Runtime and table configuration
 
-The **same 25 seconds** covers readiness, lease acquire, secret/crypto work, Google
-HTTP/JWKS validation and database completion, not a fresh budget for each stage.
-The existing Google HTTP clients retain their shorter 20-second transport limit.
-Refresh cleanup is awaited with an independent **two-second maximum**, including
-after cancellation or an uncertain acquire response: at most **27 seconds** of
-application operation plus cleanup, leaving headroom below the observed 30-second
-Lambda/gateway limits. Conditional lease cleanup cannot change another worker's
-lease. If cleanup fails or Lambda dies, the existing two-minute durable lease
-recovers; no scheduler/background cleanup is added. A transient response neither
-clears the cookie nor extends idle expiry. A lost provider rotation or ambiguous
-write still cannot be atomically recovered across Google and Postgres.
+| Environment | Region | Table |
+|---|---|---|
+| Staging | `eu-west-1` | `guito-api-user-sessions-staging` |
+| Production — separate rollout gate | `eu-west-1` | `guito-api-user-sessions` |
 
-Logs contain bounded categorical stage/failure, exception **type name only**, trace
-correlation and elapsed timing where available. Known resume/unavailable events
-are distinct from readiness timeout, provider unavailability, configuration failure
-and request timeout/client cancellation. No exception object, Message/stack, SQL
-parameters, email, headers, request/response bodies, tokens, code/verifier, cookie
-or key is logged. Default HttpClient logging is disabled specifically for the
-session Google/JWKS clients because it can otherwise log raw transport exceptions.
-Legacy auth clients and public authentication boundaries are unchanged.
+Configuration is `AppConfiguration:UserSessions:TableName` and `Region`; deployment
+emits the corresponding `AppConfiguration__UserSessions__*` environment variables.
+Never substitute a production table during local/staging testing. Missing or
+invalid configuration fails sessions closed; there is no SQL fallback.
 
-Only an explicitly readiness-gated failure **before** exchange permits manually
-retrying the same pending callback; never automatically replay a one-use code or
-financial mutation after a timeout/uncertain result. The paired UI's session-only
-HTTP deadline is 35 seconds (above API 25/gateway 30), not the former 15 seconds;
-this API change alone does not establish deployed/browser behavior.
-See [local regression and incident evidence](user-session-cold-start-verification.md).
+- Standard table, String HASH key `handle_hash`, no sort key or indexes.
+- Fixed provisioned **1 RCU / 1 WCU per table**, no autoscaling.
+- Existing AES-GCM `v1` encrypted credential envelope and handle-hash AAD unchanged.
+- Numeric UTC-tick fields `expires_at_ticks` and `lease_expires_at_ticks` retain
+  application comparison precision; `refresh_lease` identifies the owner.
+- Numeric `ttl` is UNIX seconds derived from idle expiry. Update it after successful
+  establishment/renewal only. DynamoDB deletion is eventual: expired items must be
+  rejected immediately by application predicates even if the item still exists.
+- AWS-owned at-rest encryption, deletion protection on; no customer-managed KMS
+  key, Streams, PITR, global replication, paid backup or new audit subscription.
+  Losing a session requires sign-in, not financial-data recovery.
 
-## Encryption key configuration and separately gated field-name transition
+### Access and timing
 
-Initial staging provisioning/deployment was owner-approved; staging currently has
-`HumanSessionEncryptionKey` (historical deployed field, not supported by this
-source). This review changes source only: it does **not** read or modify that
-payload, rotate its value, provision another key, run migrations or deploy.
+`IUserSessionRepository.EnsureReadyAsync` uses a non-mutating strongly consistent
+GetItem before consuming a Google authorization code. It does not query Postgres,
+DescribeTable or wake Aurora. Table/schema/settings checks belong to deployment.
+No old 18-second database-resume retry loop remains on session paths.
 
-Runtime and deployment validation require **only `UserSessionEncryptionKey`**:
-canonical base64 for exactly 32 bytes. The typed `SecretsPayload` property
-deserializes JSON retrieved/decrypted by `ISecretsProvider` from SSM; it is not a
-key literal or a second secret store. Missing, null, empty or invalid canonical
-input fails closed (runtime 503 and deployment rejection). An old-only payload
-is rejected. No key value is logged.
+Establishment/renewal retain one caller-linked **25-second operation budget** across
+readiness, lease, secret/crypto, Google and completion. Refresh cleanup is awaited
+under a separate **two-second maximum**; durable leases expire after **two minutes**.
+These are ceilings, not accepted normal login latency. Google transport deadlines
+remain shorter; observed Lambda/gateway limits are 30 seconds and the UI session
+HTTP limit is 35 seconds. No keep-warm scheduler or provisioned concurrency.
 
-**Before any push or deployment of this source**, ask José to authorize renaming
-the JSON field in the existing `/guito-api/staging` SecureString from
-`HumanSessionEncryptionKey` to `UserSessionEncryptionKey`, retaining the **exact
-same value** and removing the old field. Preserve every unrelated payload field,
-parameter metadata and encryption settings. This is a rename, not key rotation.
-Under that separate approval, first verify the currently deployed consumers and
-rollback target can read the canonical field; otherwise stop for coordination.
-Privately read back the exact parameter and verify the canonical value equals the
-pre-change value, the old field is absent and unrelated fields/settings are
-unchanged. Never print either value. Only after that gate and shared-staging
-replacement approval may source be pushed/deployed. Account for the five-minute
-secret cache and verify canonical-field consumers after deployment. No production
-parameter change is authorized by this staging gate.
+Atomic item conditions enforce creation without overwrite; active idle expiry and
+lease availability on acquire; exact lease plus live idle/lease expiry on completion;
+and same-owner cleanup/invalidation. Completion/release never create a missing item.
+An acquire conflict uses a strongly consistent read to distinguish busy valid
+sessions (503) from expired/missing sessions (401). Lazy expiry deletion must not
+remove a session concurrently renewed since that read. Logout is handle-local;
+a late refresh must not recreate it. The SDK must not silently retry uncertain
+mutations. A failed financial request or uncertain one-use code exchange is never
+automatically replayed.
 
-For any future owner-authorized provisioning (not authorized by this review):
+Google refresh and DynamoDB completion cannot be atomic together. Lost rotated
+credentials or ambiguous completion can ultimately require consent again. Do not
+promise indefinite Google permission or zero provider/Lambda latency. Subsequent
+Expense/Category/Bank reads still use Aurora and can wait for its resume.
 
-1. Ask José to approve a new distinct encryption key for **each** environment. Do
-   not read, create, generate, copy or provision live keys without that approval.
-   Retain all unrelated runtime payload fields, Google human client credentials,
-   bank/agent/API credentials and Data API database secrets.
-2. Approved owner setup supplies a cryptographically random 32-byte AES key through
-   the existing secure delivery process, base64 encoded into
-   `UserSessionEncryptionKey` in `/guito-api/staging` or `/guito-api/prod`
-   SecureString respectively. Never reuse a staging key in production. Placeholder
-   schema only: `"UserSessionEncryptionKey": "<owner-provisioned-base64-32-byte-key>"`.
-   The placeholder intentionally fails validation. Check SecureString type and the
-   complete payload's 4096-byte standard-tier limit privately. No key goes in git,
-   chat, shell arguments, screenshots, Lambda environment variables or this guide.
-3. Read back the exact approved destination privately and validate decoded length
-   without printing it. Existing `ISecretsProvider` SSM decryption/cache is reused;
-   application parameter names/backend and IAM do not change. Local development
-   setup is a **separate** owner operation using an ignored protected file and a
-   local-only key, not a reason to copy production secrets. Fake keys exist only
-   in tests. Build/hermetic tests require no credentials.
-4. Missing/malformed key blocks deployment in the offline validation helper and
-   fails runtime sessions closed with 503. Secret-provider cache lasts five
-   minutes. There is one active key, not a multi-key rotation service: changing it
-   makes existing credentials unreadable. Plan any approved rotation with session
-   invalidation/re-login and deployment/cache coordination; never discard the
-   old key or pretend an unreadable credential is a Google revocation.
+## Encryption key — retain existing canonical configuration
 
-## Next approved staging deployment gate (not executed by this simplification)
+`SecretsPayload.UserSessionEncryptionKey` is a typed field deserialized from the
+existing per-environment SSM SecureString through `ISecretsProvider`, not a key
+literal or second secret store. Require canonical base64 of exactly 32 bytes;
+missing/null/invalid/old-only input fails closed. No `HumanSessionEncryptionKey`
+compatibility alias remains.
 
-Before permitting any push, inspect staging's current deployed ref and migration
-ledger through the approved identity; a sibling feature may already own shared
-staging. Confirm José approves replacing that exact revision and the schema/key
-changes. Migrations run through Actions before code replacement. José explicitly
-requested one table migration while the feature is unmerged: the source now has
-only `011_user_sessions.sql`, directly creating `user_sessions` and its expiry
-index with `IF NOT EXISTS`. Hash/envelope checks, paired nullable lease fields,
-AES-GCM envelopes/AAD and cookie/wire contracts are unchanged. The runner retains
-its simple semicolon-separated statements and records the filename after success;
-there is no rename/ALTER migration or DO-block support.
+The staging field rename to canonical `UserSessionEncryptionKey` was separately
+approved and privately verified with the exact value and unrelated fields/settings
+preserved. The DynamoDB migration neither renames nor rotates it and needs no
+SSM payload mutation. Never copy staging encryption material to production.
 
-Earlier staging deployments applied `011_human_sessions.sql` and
-`012_user_sessions.sql`, leaving the renamed `user_sessions` table. Those historical
-ledger entries may stay: the new `011_user_sessions.sql` filename is not in that
-ledger, so Actions runs its CREATE statements and records it. On a matching table
-and index this is a no-op; dropping tables is not required. `IF NOT EXISTS` does
-not validate/repair existing columns, constraints or index definitions. If staging
-instead has an incompatible table/index or only the old `human_sessions` table,
-pause for José's manual decision; do not automatically rename, copy or delete old
-sessions. José reserves any needed staging cleanup. Do not automate table drops,
-ledger deletion or arbitrary repair. No account/user ownership model, AWS resource
-or IAM permission is introduced, and financial records must remain untouched.
+Any future key generation, provisioning, rotation or production setup is a separate
+owner gate. Keep key values out of source, chat, argv, Lambda environment variables,
+logs, screenshots and recovery files. Deployment validates an existing value and
+never supplies a fallback. A key change can make existing credentials unreadable;
+plan consent/session invalidation deliberately instead of treating decryption
+failure as Google revocation. Build/hermetic tests use fake keys and need no secrets.
 
-`deploy/user-session-config.py` derives exact HTTPS UI origins from the base and
-environment appsettings, emits nonsecret edge CORS and indexed app origin
-configuration, and rejects empty/wildcard/path origins. Deployment removes stale
-origin overrides before merging these values. It validates the existing key
-without printing it and never provisions a missing value. The edge update is
-fail-closed, with AllowCredentials true, custom session header allowed and no
-wildcard origin. Exact POST session routes are reconciled as NONE **with** the API
-integration target on both new and existing routes. All other business routes keep
-the CUSTOM authorizer. Verify actual route selectors, CORS and integration targets
-after deployment; source syntax checks are not deployed-state evidence.
+## Infrastructure and IAM
 
-## Owner-approved real-browser/Google acceptance gate (not executed)
+Routine provisioning/code rollout runs through the existing GitHub Actions lane,
+not a local `deploy.sh` invocation. The session helper must treat only typed
+ResourceNotFound as missing, bound its ACTIVE/TTL waits, read exact settings back,
+and fail closed on access denial, malformed schema, wrong mode/class/capacity,
+indexes, customer-managed encryption or paid-backup drift. It must not quietly
+switch an existing table's billing mode/capacity or repair unrelated resources.
 
-Use only the approved staging environment and test identity; no Expense mutation
-is necessary. Keep token/cookie/key values out of reports and screenshots.
+The reviewed `deploy/user-session-provisioner-policy.json` grants the existing
+`guito-api-deploy` role only CreateTable, DescribeTable, DescribeTimeToLive,
+UpdateTimeToLive and DescribeContinuousBackups on the two fixed table ARNs.
+José approved that narrow addition; the parent applied and readback-verified it
+before publication. No agent identity DynamoDB grants, broad List/Scan/DeleteTable,
+financial permissions or unrelated policy changes are required.
 
-1. Confirm the staging UI/API origins, certificate, configured Google client and
-   redirect URI. Request only `openid email profile`, PKCE/state and offline access;
-   ask for consent where required to obtain a refresh token. Do not accidentally
-   add `include_granted_scopes=true` or broader grant scopes.
-2. Verify actual browser preflight allows only that UI with credentials and
-   X-Guito-Session, then login. Verify cookie **attributes only**, never its value.
-   An untrusted/missing Origin request must be rejected without deleting a session.
-3. Close/reopen the browser/PWA, then reboot the phone. After short-lived token
-   expiry, reopen and confirm cookie renewal restores the requested route. A fake
-   HTTP-host restart test does not establish real Android storage retention.
-4. On a second browser/device establish another session. Sign out on the first
-   after its ID token expires; the second must continue. Confirm no Google revoke
-   call. Existing already-issued ID tokens can still pass their normal expiry
-   checks; no immediate global revocation is promised.
-5. Under separately approved safe fault conditions verify retryable network/provider
-   failure preserves the session, no forced login, no expiry extension and no
-   financial request replay. Genuine revoked/idle-expired sessions require login
-   and return to the intended route, discarding unsaved form fields by design.
-6. Verify the seven-day boundary via an explicitly approved isolated staging test
-   arrangement or elapsed real time, not modifications of personal records or a
-   production clock override. Verify schema constraints/conditional lease behavior
-   on real Postgres separately from fake Data API tests. Record unperformed cases
-   as unperformed; do not turn an owner waiver into a pass.
+The normal deployment installs a separate `guito-api-user-sessions` runtime policy
+on `guito-api-lambda-role` containing only GetItem, PutItem, UpdateItem and DeleteItem
+on the two named table ARNs. Preserve all other inline/attached policies. The role
+is already shared by API/authorizer and both environments: this design does not
+claim IAM isolation between those functions. The authorizer does not acquire a
+session consumer; application configuration and path boundaries remain explicit.
+After rollout, read back the exact runtime policy with the approved operator role.
 
-Production deployment, production key provisioning and Android owner acceptance
-remain distinct approvals after staging evidence. No such operations are performed
-by this implementation.
+## Cost contract
 
-## Operational limits and rollback
+Checked public Ireland pricing on 19 October 2026. AWS publishes an ongoing
+allowance of **25 provisioned RCUs, 25 provisioned WCUs and 25 GB Standard storage**,
+shared per Region/payer account, not per table. Staging and production's tiny fixed
+capacities are expected to remain free within that allowance. José confirmed the
+console's empty table list was Ireland; payer-level quota consumption in linked
+accounts was not inspected. This is not a promise that the entire AWS bill is zero.
 
-- Seven days is a Guito **idle** limit, not a Google credential guarantee. Google's
-  [OAuth token-expiration guidance](https://developers.google.com/identity/protocols/oauth2#expiration)
-  permits Testing-mode refresh credentials with only name/email/profile/openid
-  scopes beyond the otherwise seven-day Testing cap. Provider revocation,
-  inactivity policies, account changes and the 100-refresh-token per account/client
-  limit (oldest token invalidated) still apply. Many device logins may invalidate
-  older Google refresh credentials independently of Guito's active-session policy.
-- Google's [revocation guidance](https://developers.google.com/identity/protocols/oauth2/web-server#tokenrevoke)
-  says revoking an access token can revoke its corresponding refresh token. This
-  is why new logout deletes only the server session. It does not sign out Google
-  or every other device. Offline logout must suppress UI bootstrap locally until
-  a deliberate new login, even when server logout could not complete.
-- Rotation/lost provider responses cannot be atomically committed with Postgres;
-  ambiguous refresh-token rotation can eventually need new consent. No financial
-  mutation is retried, and no operation ledger is introduced for this limitation.
-- Refresh has a shared 25-second operation budget plus at most two seconds of awaited cleanup; leases
-  last two minutes to recover killed Lambda workers. No refresh transaction holds
-  database locks across Google HTTP. Session completion/invalidation is conditional
-  on lease identity; logout deletion is final for that handle.
-- Expired credentials are lazily deleted on attempted renewal. Abandoned rows
-  otherwise remain encrypted until an owner-approved expiry cleanup; there is no
-  new scheduler or automatic broad cleanup. Never delete active sessions merely
-  to make a test pass. Do not expose row contents in support logs.
-- Do not roll back to API builds querying `human_sessions`; they cannot
-  use the current table. Roll back API/UI only to a reviewed `user_sessions`-compatible
-  build that still accepts the deployed key field. Do not reverse DDL, add a second
-  session store or alter migration history to make rollback appear safe. Keep the table/key
-  intact. Legacy UI rollback may need explicit Google
-  login and its legacy logout has grant-wide effects. Removing the key/table or
-  rotating credentials is a separate owner-approved destructive operation.
-- No-store responses, sanitized RFC errors and no body/header credential logging
-  are required. Existing access logs may record path/status only, never token
-  request bodies, cookies or OAuth parameters in URLs.
+Beyond the allowance Ireland rates are $0.000147/RCU-hour,
+$0.000735/WCU-hour and $0.283/GB-month. On-demand request charges are not covered
+by the provisioned throughput allowance; temporary signup credits are not the
+basis for this design. Do not enable autoscaling or paid extras to fix throttling
+without discussing the cost impact with José. Bursts may be throttled at the fixed
+limit; preserve the session and return retryable failure rather than forced login.
+
+Sources: [official pricing](https://aws.amazon.com/dynamodb/pricing/),
+[Ireland regional price file](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonDynamoDB/current/eu-west-1/index.json),
+[always-free allowance](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Introduction.html#Intro.Pricing),
+[TTL semantics](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/TTL.html).
+
+## Staging cutover and retained Postgres state
+
+José explicitly selected **one fresh staging sign-in**, not migration of live
+refresh credentials. There is no import, dual write or read fallback. A previous
+Postgres-only cookie will get the normal missing-session result and need a new
+Google sign-in; new logins then establish DynamoDB sessions.
+
+Remove unmerged `011_user_sessions.sql` from source and solution. Do not execute
+DROP/DELETE/TRUNCATE, rewrite historical staging ledger rows or modify any live
+Postgres session/financial table. Applied historical session migration names may
+remain in staging's ledger. Stale table/row removal is José's later separate
+operation, not automatic deployment cleanup. Existing financial migration runner
+semantics are unchanged.
+
+Before a staging push, verify PR #157 remains open, the intended remote/local heads
+and staging's served stamp; ensure no unmerged sibling is being overwritten outside
+approval. Preserve paired UI #76; no session wire or frontend behavior change is
+required by this store replacement. Keep the PR draft until outstanding live gates
+are disposed of. A source push does not approve production.
+
+## Verification gates
+
+1. **Hermetic:** build and run `dotnet test --filter 'Category!=Integration'`, Python
+   deployment/IAM tests and retained Apps Script tests. Use real HTTP session
+   controller/service/repository composition with a predicate-aware fake DynamoDB
+   client, signed fake Google/JWKS and clock. Cover expiry before eventual TTL deletion,
+   busy/stale leases, logout races, transient errors, crypto/identity, cancellation,
+   shared deadlines, awaited cleanup and no sensitive logging. Make every financial
+   Data API call throw while login/renewal/logout still work; prove that test failed
+   before replacing the Postgres adapter. No credentials/network/live database in CI.
+2. **Deployment:** record exact-head workflow, table ACTIVE/mode/class/schema/capacity,
+   deletion protection, TTL, no paid extras and exact runtime IAM policy readbacks.
+   Check the served API stamp and actual session CORS/boundaries. Health alone
+   does not prove DynamoDB, Google or cold-path acceptance.
+3. **Real staging owner acceptance:** use staging UI/PWA and test identity. Sign in
+   afresh after cutover. Verify restart/reopen, renewal after short-lived token expiry
+   and sign-out without Google grant revocation; other devices remain usable.
+   Confirm sign-in/renewal/logout do not depend on Aurora being awake. Do not force
+   financial writes or modify DB contents merely to induce coldness.
+4. **Remaining explicit tests:** distinguish hermetic race/expiry evidence from live
+   DynamoDB conditional behavior, real Google consent/cookies, installed Android
+   reboot retention and seven-day inactivity. Document each unperformed/waived
+   experiment honestly. Any live fake-session writes require a separately approved
+   exact staging table/record plan; financial writes are not needed.
+5. **Production:** separate owner review/merge, production key/readiness and rollout.
+   Staging success is not production execution authority.
+
+## Rollback and operational limits
+
+Do not blindly roll back to the Postgres session adapter: stores do not share
+renewals or logout, and stale Postgres sessions could become accepted again. Keep
+DynamoDB tables, key and IAM intact; prefer a reviewed DynamoDB-compatible build.
+Any return to another session authority requires an owner-approved invalidation
+or migration plan. No destructive rollback or duplicate-store fallback is supplied.
+
+Device logout does not invalidate already-issued Google ID tokens before their
+normal expiry. Offline logout blocks local bootstrap but cannot prove server
+deletion until the request succeeds. Google's grant revocation, inactivity and
+per-account/client token-count policies remain independent of Guito's idle policy.
+Never expose stored session contents to diagnose those cases.

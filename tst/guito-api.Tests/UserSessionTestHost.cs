@@ -1,6 +1,8 @@
 using System.Net;
 using System.Text.Json;
 using Amazon.RDSDataService;
+using Amazon.DynamoDBv2;
+using Amazon.Runtime;
 using Amazon.RDSDataService.Model;
 using GuitoApi.Configuration;
 using GuitoApi.Infrastructure.Auth;
@@ -40,6 +42,8 @@ internal sealed class UserSessionTestHost(UserSessionTestHost.State state) : Cus
                 options.Authentication.OAuthAudience = state.InvalidGoogleConfiguration ? "wrong-client" : ClientId;
                 options.Authentication.AllowedLogins = [Email];
                 options.Cors.AllowedOrigins = [Origin];
+                options.UserSessions.TableName = state.TableName;
+                options.UserSessions.Region = state.Region;
             });
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(state.Clock);
@@ -48,11 +52,11 @@ internal sealed class UserSessionTestHost(UserSessionTestHost.State state) : Cus
             services.RemoveAll<IHumanAuthSecretProvider>();
             services.AddSingleton<IHumanAuthSecretProvider>(new FakeHumanAuthSecretProvider());
             services.RemoveAll<IPostgresDataApiClient>();
+            services.RemoveAll<IAmazonDynamoDB>();
+            services.AddSingleton<IAmazonDynamoDB>(state.Database);
             services.AddSingleton<SessionSdk>(_ => new SessionSdk(state));
-            services.AddScoped<IPostgresDataApiClient>(provider => state.SharedTransport
-                ? new DataApiClient(provider.GetRequiredService<SessionSdk>(), Options.Create(new DatabaseOptions()), new PostgresTransactionContext(),
-                    clock: state.Clock, logger: provider.GetRequiredService<ILogger<DataApiClient>>())
-                : state.Database);
+            services.AddScoped<IPostgresDataApiClient>(provider => new DataApiClient(provider.GetRequiredService<SessionSdk>(), Options.Create(new DatabaseOptions()), new PostgresTransactionContext(),
+                    clock: state.Clock, logger: provider.GetRequiredService<ILogger<DataApiClient>>()));
             services.AddHttpClient(GoogleSessionProvider.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => new TokenTransport(state));
             services.AddHttpClient(GuitoApi.Services.Auth.RevokeGoogleTokenService.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => new RejectLegacyGoogleTransport(state));
             services.AddHttpClient(GuitoApi.Services.Auth.GoogleTokenExchangeService.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => new RejectLegacyGoogleTransport(state));
@@ -63,14 +67,18 @@ internal sealed class UserSessionTestHost(UserSessionTestHost.State state) : Cus
 
     internal sealed class State
     {
+        public State() => Database = new(this);
+        public SessionDynamoDbClient Database { get; }
+        public List<AmazonWebServiceRequest> DynamoRequests { get; } = [];
+        public Func<AmazonWebServiceRequest, CancellationToken, Task>? BeforeDynamoRequest { get; set; }
+        public Func<AmazonWebServiceRequest, CancellationToken, Task>? AfterDynamoRequest { get; set; }
+        public string TableName { get; set; } = "hermetic-user-sessions";
+        public string Region { get; set; } = "eu-west-1";
         public SessionTestClock Clock { get; } = new();
-        public bool SharedTransport { get; set; }
         public bool InvalidGoogleConfiguration { get; set; }
-        public Func<ExecuteStatementRequest, CancellationToken, Task>? BeforeStatement { get; set; }
         public List<string> Statements { get; } = [];
         public ConcurrentQueue<string> Logs { get; } = new();
         public ConcurrentQueue<Exception> LoggedExceptions { get; } = new();
-        public Database Database { get; } = new();
         public ReportingTokenFixture Keys { get; } = new();
         public string Key { get; set; } = Convert.ToBase64String(Enumerable.Range(1, 32).Select(number => (byte)number).ToArray());
         public string? KeyPayload { get; set; }
@@ -99,14 +107,10 @@ internal sealed class UserSessionTestHost(UserSessionTestHost.State state) : Cus
     private sealed class SessionSdk(State state) : AmazonRDSDataServiceClient(
         new Amazon.Runtime.BasicAWSCredentials("hermetic", "hermetic"), new AmazonRDSDataServiceConfig { RegionEndpoint = Amazon.RegionEndpoint.EUWest1 })
     {
-        public override async Task<ExecuteStatementResponse> ExecuteStatementAsync(ExecuteStatementRequest request, CancellationToken cancellationToken = default)
+        public override Task<ExecuteStatementResponse> ExecuteStatementAsync(ExecuteStatementRequest request, CancellationToken cancellationToken = default)
         {
             lock (state.Statements) state.Statements.Add(request.Sql);
-            if (state.BeforeStatement is not null) await state.BeforeStatement(request, cancellationToken);
-            var result = await state.Database.ExecuteAsync(request.Sql, request.Parameters?.Select(parameter =>
-                new PostgresParameter(parameter.Name, PostgresValue.FromString(parameter.Value.StringValue))).ToArray(), cancellationToken: cancellationToken);
-            return new ExecuteStatementResponse { NumberOfRecordsUpdated = result.NumberOfRecordsUpdated,
-                Records = result.Rows.Select(row => row.Select(value => new Field { StringValue = value.StringValue }).ToList()).ToList() };
+            throw new DatabaseResumingException("fake-sensitive-aurora-secret");
         }
     }
 
@@ -167,10 +171,12 @@ internal sealed class UserSessionTestHost(UserSessionTestHost.State state) : Cus
             var timeoutFailure = state.TimeoutFailure;
             var body = state.Body ?? JsonSerializer.Serialize(new { id_token = state.Token(), access_token = "fake-access-token",
                 expires_in = 3600, refresh_token = state.RefreshCredential });
-            if (state.Entered is not null)
+            var entered = state.Entered;
+            var continuation = state.Continue;
+            if (entered is not null)
             {
-                state.Entered.TrySetResult();
-                await state.Continue!.Task.WaitAsync(cancellationToken);
+                entered.TrySetResult();
+                await continuation!.Task.WaitAsync(cancellationToken);
             }
             if (timeoutFailure) throw new TaskCanceledException("fake Google timeout");
             if (networkFailure) throw new HttpRequestException("fake network outage with fake-refresh-credential");
@@ -178,85 +184,4 @@ internal sealed class UserSessionTestHost(UserSessionTestHost.State state) : Cus
         }
     }
 
-    internal sealed class Database : IPostgresDataApiClient
-    {
-        private readonly Dictionary<string, Dictionary<string, string?>> _rows = [];
-        public List<string> CredentialsWritten { get; } = [];
-        public bool Fail { get; set; }
-        public bool CorruptCredential { get; set; }
-
-        public Task<PostgresResult> ExecuteAsync(string sql, IReadOnlyList<PostgresParameter>? parameters = null,
-            string? transactionId = null, CancellationToken cancellationToken = default)
-        {
-            lock (_rows) return Task.FromResult(Execute(sql, parameters!));
-        }
-
-        private PostgresResult Execute(string sql, IReadOnlyList<PostgresParameter> parameters)
-        {
-            if (Fail) throw new InvalidOperationException("fake database outage fake-refresh-credential");
-            if (sql == "SELECT 1") return Result(0, ["1"]);
-            Assert.Contains("user_sessions", sql);
-            var values = parameters.ToDictionary(parameter => parameter.Name, parameter => parameter.Value.StringValue);
-            var hash = values["hash"]!;
-            _rows.TryGetValue(hash, out var row);
-            if (sql.StartsWith("INSERT")) return Insert(hash, values);
-            if (sql.StartsWith("SELECT")) return Select(hash, row, values);
-            if (sql.StartsWith("DELETE")) return Delete(sql, hash, row, values);
-            if (row is null) return Result();
-            if (sql.Contains("RETURNING subject")) return AcquireLease(sql, row, values);
-            if (sql.Contains("refresh_lease = :lease") && row.GetValueOrDefault("lease") != values["lease"]) return Result();
-            return sql.Contains("encrypted_credential = :credential") ? CompleteLease(sql, row, values) : ReleaseLease(row);
-        }
-
-        private PostgresResult Insert(string hash, Dictionary<string, string?> values)
-        {
-            Assert.DoesNotContain("fake-refresh-credential", string.Join(" ", values.Values));
-            CredentialsWritten.Add(values["credential"]!);
-            _rows.Add(hash, new(values));
-            return Result(1);
-        }
-
-        private static PostgresResult Select(string hash, Dictionary<string, string?>? row, Dictionary<string, string?> values) =>
-            row is not null && Date(row, "expires") > Date(values, "now") ? Result(0, [hash]) : Result();
-
-        private PostgresResult Delete(string sql, string hash, Dictionary<string, string?>? row, Dictionary<string, string?> values)
-        {
-            if (row is null || (sql.Contains("refresh_lease = :lease") && row.GetValueOrDefault("lease") != values["lease"])) return Result();
-            if (sql.Contains("expires_at <=") && Date(row, "expires") > Date(values, "now")) return Result();
-            _rows.Remove(hash);
-            return Result(1);
-        }
-
-        private PostgresResult AcquireLease(string sql, Dictionary<string, string?> row, Dictionary<string, string?> values)
-        {
-            if (sql.Contains("expires_at >") && Date(row, "expires") <= Date(values, "now")) return Result();
-            if (sql.Contains("refresh_lease IS NULL") && row.GetValueOrDefault("lease") is not null && Date(row, "lease_expires") > Date(values, "now")) return Result();
-            row["lease"] = values["lease"];
-            row["lease_expires"] = values["lease_expires"];
-            return Result(1, [row["subject"]!, row["email"]!, CorruptCredential ? "v1.corrupt" : row["credential"]!, row["expires"]!]);
-        }
-
-        private PostgresResult CompleteLease(string sql, Dictionary<string, string?> row, Dictionary<string, string?> values)
-        {
-            if (sql.Contains("expires_at >") && Date(row, "expires") <= Date(values, "now")) return Result();
-            if (sql.Contains("lease_expires_at >") && Date(row, "lease_expires") <= Date(values, "now")) return Result();
-            row["credential"] = values["credential"];
-            row["expires"] = values["expires"];
-            CredentialsWritten.Add(values["credential"]!);
-            return ReleaseLease(row);
-        }
-
-        private static PostgresResult ReleaseLease(Dictionary<string, string?> row)
-        {
-            row["lease"] = null;
-            row["lease_expires"] = null;
-            return Result(1);
-        }
-
-        private static DateTimeOffset Date(Dictionary<string, string?> values, string key) => DateTimeOffset.Parse(values[key]!);
-        private static PostgresResult Result(long changed = 0, string[]? row = null) => new([], row is null ? [] : [row.Select(PostgresValue.FromString).ToArray()], changed);
-        public Task<string> BeginTransactionAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task CommitAsync(string transactionId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task RollbackAsync(string transactionId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-    }
 }
