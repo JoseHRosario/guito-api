@@ -43,8 +43,14 @@ case "$ENV_TARGET" in
 esac
 
 export GUITO_TARGET_UI_ORIGIN
-GUITO_TARGET_UI_ORIGIN=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["AppConfiguration"]["Cors"]["AllowedOrigins"][0])' \
-  "$REPO_ROOT/src/guito-api/appsettings.${ENV_TARGET^}.json")
+GUITO_TARGET_UI_ORIGIN=$(python3 -c '
+from pathlib import Path
+import runpy, sys
+root = Path(sys.argv[1])
+configuration = runpy.run_path(str(root / "deploy" / "user-session-config.py"))["configuration"]
+cors, _ = configuration(root, sys.argv[2])
+print(cors["AllowOrigins"][0])
+' "$REPO_ROOT" "${ENV_TARGET^}")
 
 export PATH="$HOME/.dotnet:$PATH"
 export DOTNET_ROOT="${DOTNET_ROOT:-$HOME/.dotnet}"
