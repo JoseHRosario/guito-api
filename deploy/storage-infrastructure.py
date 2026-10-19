@@ -45,11 +45,26 @@ def aws(service, operation, **options) -> Any:
         missing_table = operation == 'describe-table' and re.search(r'An error occurred \(ResourceNotFoundException\) when calling the DescribeTable operation', result.stderr)
         if missing_stack or missing_table:
             return None
-        raise GuardError(f'{service}:{operation} failed')
+        raise GuardError(aws_failure(service, operation, result.stderr))
     try:
         return json.loads(result.stdout or '{}')
     except ValueError:
         raise GuardError(f'{service}:{operation} invalid JSON') from None
+
+
+def aws_failure(service, operation, stderr):
+    message = f'{service}:{operation} failed'
+    code = re.search(r'An error occurred \(([A-Za-z0-9]+)\)', stderr)
+    if code is None:
+        return message
+    message += ' (' + code[1] + ')'
+    # Only fixed public infrastructure inputs are eligible for validation detail.
+    if service != 'cloudformation' or operation != 'create-change-set' or code[1] != 'ValidationError':
+        return message
+    detail = re.search(r'CreateChangeSet operation(?: \([^\n]*\))?: ([^\n]+)', stderr)
+    if detail and not re.search(r'credential|secret|password|token|access.?key|signature', detail[1], re.IGNORECASE):
+        message += ': ' + detail[1][:700]
+    return message
 
 
 def main():
@@ -257,6 +272,7 @@ def check_postgres(ctx):
     require(all(group['Status'] == 'active' for group in cluster['VpcSecurityGroups']), 'Aurora security group change pending')
     compare_postgres(desired_cluster, cluster, {
         'DBClusterParameterGroupName': cluster.get('DBClusterParameterGroup'),
+        'DBSubnetGroupName': cluster.get('DBSubnetGroup'),
         'VpcSecurityGroupIds': [g['VpcSecurityGroupId'] for g in cluster['VpcSecurityGroups']],
         'EnableHttpEndpoint': cluster.get('HttpEndpointEnabled'),
         'EnableIAMDatabaseAuthentication': cluster.get('IAMDatabaseAuthenticationEnabled')})

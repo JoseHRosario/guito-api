@@ -84,6 +84,28 @@ sys.exit(1 if step.get('error') else 0)
         self.queue('cloudformation create-change-set', {'Id': ARN})
         self.queue('cloudformation describe-change-set', {'ChangeSetId': ARN, 'StackName': 'guito-sessions-staging', 'Status': 'CREATE_COMPLETE', 'ExecutionStatus': 'AVAILABLE', 'Changes': self.changes, 'Parameters': [{'ParameterKey': 'Environment', 'ParameterValue': 'staging'}]})
 
+    def test_import_creation_validation_reports_only_safe_public_metadata(self):
+        self.sessions()
+        self.plan()
+        self.steps[-2]['error'] = 'An error occurred (ValidationError) when calling the CreateChangeSet operation: ResourceTypes cannot be specified for IMPORT'
+
+        result = self.run_cli('plan-import')
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('ResourceTypes cannot be specified for IMPORT', json.loads(result.stdout)['error'])
+        self.assertFalse(any('execute-change-set' in call for call in self.history))
+
+    def test_import_creation_does_not_report_credential_related_validation_detail(self):
+        self.sessions()
+        self.plan()
+        self.steps[-2]['error'] = 'An error occurred (ValidationError) when calling the CreateChangeSet operation: credential token PRIVATE-MARKER'
+
+        result = self.run_cli('plan-import')
+
+        self.assertEqual(result.returncode, 1)
+        self.assertNotIn('PRIVATE-MARKER', result.stdout)
+        self.assertIn('ValidationError', json.loads(result.stdout)['error'])
+
     def test_response_parameter_false_metadata_is_accepted(self):
         self.sessions()
         self.plan()
@@ -211,22 +233,38 @@ sys.exit(1 if step.get('error') else 0)
     def postgres(self):
         self.template = json.loads((ROOT/'infra/postgres-shared.json').read_text())
         (self.root/'infra/postgres-shared.json').write_text(json.dumps(self.template))
-        self.cluster = dict(self.template['Resources']['DatabaseCluster']['Properties'])
-        self.cluster['DBClusterParameterGroup'] = self.cluster.pop('DBClusterParameterGroupName')
-        self.cluster['VpcSecurityGroups'] = [{'VpcSecurityGroupId': x, 'Status': 'active'} for x in self.cluster.pop('VpcSecurityGroupIds')]
-        self.cluster['HttpEndpointEnabled'] = self.cluster.pop('EnableHttpEndpoint')
-        self.cluster['IAMDatabaseAuthenticationEnabled'] = self.cluster.pop('EnableIAMDatabaseAuthentication')
-        self.cluster['Status'] = 'available'
-        self.cluster['PendingModifiedValues'] = {}
-        self.cluster['DBClusterMembers'] = [{'DBInstanceIdentifier': 'guito', 'IsClusterWriter': True, 'DBClusterParameterGroupStatus': 'in-sync'}]
-        self.writer = dict(self.template['Resources']['DatabaseWriter']['Properties'])
-        self.writer['DBClusterIdentifier'] = 'db-cluster'
-        self.writer['DBParameterGroups'] = [{'DBParameterGroupName': self.writer.pop('DBParameterGroupName'), 'ParameterApplyStatus': 'in-sync'}]
-        self.writer['PerformanceInsightsEnabled'] = self.writer.pop('EnablePerformanceInsights')
-        self.writer['DBSubnetGroup'] = {'DBSubnetGroupName': 'default'}
-        self.writer['EngineVersion'] = '17.9'
-        self.writer['DBInstanceStatus'] = 'available'
-        self.writer['PendingModifiedValues'] = {}
+        # Native DescribeDBClusters/DescribeDBInstances metadata, independent of
+        # CFN properties so a missing API-name translation cannot pass by construction.
+        self.cluster = {
+            'DBClusterIdentifier': 'db-cluster', 'Engine': 'aurora-postgresql',
+            'EngineMode': 'provisioned', 'EngineVersion': '17.9',
+            'DatabaseName': 'guito_dev', 'MasterUsername': 'postgres', 'Port': 5432,
+            'StorageEncrypted': False, 'DeletionProtection': False,
+            'BackupRetentionPeriod': 1, 'PreferredBackupWindow': '23:29-23:59',
+            'PreferredMaintenanceWindow': 'mon:22:33-mon:23:03',
+            'CopyTagsToSnapshot': False,
+            'DBClusterParameterGroup': 'default.aurora-postgresql17',
+            'DBSubnetGroup': 'default',
+            'VpcSecurityGroups': [{'VpcSecurityGroupId': 'sg-0be03e5526e822276', 'Status': 'active'}],
+            'AvailabilityZones': ['eu-west-1a', 'eu-west-1b', 'eu-west-1c'],
+            'ServerlessV2ScalingConfiguration': {'MinCapacity': 0.0, 'MaxCapacity': 16.0, 'SecondsUntilAutoPause': 300},
+            'HttpEndpointEnabled': True, 'IAMDatabaseAuthenticationEnabled': False,
+            'NetworkType': 'IPV4', 'AutoMinorVersionUpgrade': True,
+            'EngineLifecycleSupport': 'open-source-rds-extended-support',
+            'Status': 'available', 'PendingModifiedValues': {},
+            'DBClusterMembers': [{'DBInstanceIdentifier': 'guito', 'IsClusterWriter': True, 'DBClusterParameterGroupStatus': 'in-sync', 'PromotionTier': 1}]}
+        self.writer = {
+            'DBInstanceIdentifier': 'guito', 'DBClusterIdentifier': 'db-cluster',
+            'DBInstanceClass': 'db.serverless', 'Engine': 'aurora-postgresql',
+            'EngineVersion': '17.9',
+            'DBParameterGroups': [{'DBParameterGroupName': 'default.aurora-postgresql17', 'ParameterApplyStatus': 'in-sync'}],
+            'PubliclyAccessible': True, 'AvailabilityZone': 'eu-west-1a',
+            'AutoMinorVersionUpgrade': True, 'PromotionTier': 1,
+            'CACertificateIdentifier': 'rds-ca-rsa2048-g1', 'MonitoringInterval': 0,
+            'PerformanceInsightsEnabled': False,
+            'PreferredMaintenanceWindow': 'thu:04:19-thu:04:49',
+            'DBSubnetGroup': {'DBSubnetGroupName': 'default'},
+            'DBInstanceStatus': 'available', 'PendingModifiedValues': {}}
         self.changes = [{'ResourceChange': {'Action': 'Import', 'LogicalResourceId': logical, 'ResourceType': row['Type'], 'PhysicalResourceId': 'db-cluster' if logical == 'DatabaseCluster' else 'guito'}} for logical, row in self.template['Resources'].items()]
 
     def pg_physical(self):
@@ -343,6 +381,29 @@ sys.exit(1 if step.get('error') else 0)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn('ARN required', result.stdout)
                 self.assertFalse(any('execute-change-set' in c for c in self.history))
+
+    def test_native_cluster_subnet_mismatch_or_absence_blocks_import_plan(self):
+        for subnet in ['other', None]:
+            with self.subTest(subnet=subnet):
+                self.steps = []
+                self.calls.unlink(missing_ok=True)
+                self.postgres()
+                # A CFN-shaped field must never substitute for the native API field.
+                self.cluster['DBSubnetGroupName'] = 'default'
+                if subnet is None:
+                    self.cluster.pop('DBSubnetGroup')
+                else:
+                    self.cluster['DBSubnetGroup'] = subnet
+                self.identity()
+                self.queue('cloudformation describe-stacks', error='ValidationError: Stack with id guito-postgres-shared does not exist')
+                self.pg_physical()
+
+                result = self.run_cli('plan-import', 'postgres-shared')
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(json.loads(result.stdout)['error'], 'Aurora live property mismatch: DBSubnetGroupName')
+                self.assertFalse(any(c[1] in ['get-template-summary', 'create-change-set', 'execute-change-set'] for c in self.history))
+                self.assertEqual(json.loads((self.root/'steps.json').read_text()), [])
 
     def test_pending_extra_aurora_security_group_blocks_import_plan(self):
         self.postgres()
