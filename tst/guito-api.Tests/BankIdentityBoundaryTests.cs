@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using GuitoApi.Infrastructure.Postgres;
 
 namespace GuitoApi.Tests;
 
@@ -198,6 +199,34 @@ public class BankIdentityBoundaryTests
         Assert.StartsWith("accounts/renewed-uid/transactions?", factory.EnableBankingTransport.Requests.Last().Path);
     }
 
+    [Fact]
+    public async Task CallbackAndSync_ShouldKeepSessionLocator_WhenHashlessConsentReusesCanonicalUid()
+    {
+        // Arrange
+        using var factory = Factory(emptyAccounts: true);
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        factory.EnableBankingTransport.Enqueue(200, Session("original-fetch", "primary-hash"));
+        Assert.Equal(HttpStatusCode.Redirect, (await client.GetAsync("/BankAuth/callback?code=first")).StatusCode);
+        factory.EnableBankingTransport.Enqueue(200, Page(Movement("reference")));
+        await SyncAsync(client, 1);
+        var before = await client.GetStringAsync("/BankConnection");
+        var canonicalUid = Assert.Single((await client.GetFromJsonAsync<JsonElement[]>("/BankTransaction"))!)
+            .GetProperty("accountUid").GetString()!;
+
+        // Act
+        factory.EnableBankingTransport.Enqueue(200, Session(canonicalUid, null));
+        Assert.Equal(HttpStatusCode.Redirect, (await client.GetAsync("/BankAuth/callback?code=hashless")).StatusCode);
+        factory.EnableBankingTransport.Enqueue(200, Page(Movement("reference", date: "2026-10-02")));
+        await SyncAsync(client, 0);
+
+        // Assert
+        Assert.Equal(before, await client.GetStringAsync("/BankConnection"));
+        Assert.StartsWith("accounts/original-fetch/transactions?", factory.EnableBankingTransport.Requests.Last().Path);
+        var row = Assert.Single((await client.GetFromJsonAsync<JsonElement[]>("/BankTransaction"))!);
+        Assert.Equal(canonicalUid, row.GetProperty("accountUid").GetString());
+        Assert.Equal("2026-10-02", row.GetProperty("bookingDate").GetString());
+    }
+
     [Theory]
     [InlineData(null, null)]
     [InlineData("hash-a", "hash-b")]
@@ -291,14 +320,53 @@ public class BankIdentityBoundaryTests
         var rows = (await client.GetFromJsonAsync<JsonElement[]>("/BankTransaction"))!;
 
         // Assert — source fields cannot yet be read on the #159 wire, so verify the outgoing transport bindings.
-        var imports = factory.Postgres.ExecutedSql.Select((sql, index) => (sql, index))
-            .Where(call => call.sql.StartsWith("WITH identity_choice", StringComparison.Ordinal))
-            .Select(call => factory.Postgres.ExecutedParameters[call.index]!.ToDictionary(parameter => parameter.Name, parameter => parameter.Value)).ToArray();
+        var imports = ImportBindings(factory);
+        AssertImportBindings(imports[0]);
         Assert.Equal("2026-09-30", imports[0]["transaction_date"].StringValue);
         Assert.Equal("2026-10-03", imports[0]["value_date"].StringValue);
         Assert.True(imports[1]["transaction_date"].IsNull);
         Assert.True(imports[1]["value_date"].IsNull);
         Assert.Equal("2026-10-01", rows.Single(row => row.GetProperty("id").GetInt64() == 1).GetProperty("bookingDate").GetString());
+    }
+
+    [Fact]
+    public async Task Sync_ShouldStoreNullRemittance_WhenProviderOmitsDescription()
+    {
+        // Arrange
+        using var factory = Factory();
+        factory.EnableBankingTransport.Enqueue(200, Page(Movement("reference", description: null)));
+        using var client = factory.CreateClient();
+
+        // Act
+        await SyncAsync(client, 1);
+        var row = Assert.Single((await client.GetFromJsonAsync<JsonElement[]>("/BankTransaction"))!);
+
+        // Assert
+        Assert.Equal(JsonValueKind.Null, row.GetProperty("remittanceInformation").ValueKind);
+        Assert.True(Assert.Single(ImportBindings(factory))["remittance_information"].IsNull);
+    }
+
+    [Fact]
+    public async Task Sync_ShouldCancelImportTransport_WhenHttpRequestIsCancelled()
+    {
+        // Arrange
+        using var factory = Factory();
+        factory.EnableBankingTransport.Enqueue(200, Page(Movement("reference")));
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        BlockImportUntilCancelled(factory, entered, cancelled);
+        using var client = factory.CreateClient();
+        using var cancellation = new CancellationTokenSource();
+        var request = SendSyncWithCancellationAsync(factory, cancellation.Token);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(60));
+
+        // Act
+        cancellation.Cancel();
+
+        // Assert
+        Assert.Equal(499, (await request.WaitAsync(TimeSpan.FromSeconds(60))).Response.StatusCode);
+        await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(60));
+        Assert.Empty((await client.GetFromJsonAsync<JsonElement[]>("/BankTransaction"))!);
     }
 
     [Fact]
@@ -325,6 +393,44 @@ public class BankIdentityBoundaryTests
         Assert.Equal(7, legacy.GetProperty("linkedExpense").GetProperty("id").GetInt32());
     }
 
+    private static void BlockImportUntilCancelled(CustomWebApplicationFactory factory, TaskCompletionSource entered, TaskCompletionSource cancelled) =>
+        factory.Postgres.BeforeBankImportAsync = async (sql, cancellationToken) =>
+        {
+            if (!sql.StartsWith("WITH identity_choice", StringComparison.Ordinal)) return;
+            using var registration = cancellationToken.Register(() => cancelled.TrySetResult());
+            entered.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        };
+
+    private static Task<Microsoft.AspNetCore.Http.HttpContext> SendSyncWithCancellationAsync(CustomWebApplicationFactory factory, CancellationToken cancellationToken) =>
+        factory.Server.SendAsync(context =>
+        {
+            context.Request.Method = "POST";
+            context.Request.Path = "/BankTransaction/sync";
+            context.RequestAborted = cancellationToken;
+        });
+
+    private static Dictionary<string, PostgresValue>[] ImportBindings(CustomWebApplicationFactory factory) =>
+        factory.Postgres.ExecutedSql.Select((sql, index) => (sql, index))
+            .Where(call => call.sql.StartsWith("WITH identity_choice", StringComparison.Ordinal))
+            .Select(call => factory.Postgres.ExecutedParameters[call.index]!.ToDictionary(parameter => parameter.Name, parameter => parameter.Value)).ToArray();
+
+    private static void AssertImportBindings(Dictionary<string, PostgresValue> values)
+    {
+        Assert.Equal(13, values.Count);
+        Assert.Equal("canonical", values["account_uid"].StringValue);
+        Assert.Equal("2026-10-01", values["booking_date"].StringValue);
+        Assert.Equal("12.34", values["amount"].StringValue);
+        Assert.Equal("EUR", values["currency"].StringValue);
+        Assert.Equal("DBIT", values["direction"].StringValue);
+        Assert.Equal("Lunch", values["remittance_information"].StringValue);
+        Assert.Equal("BOOK", values["status"].StringValue);
+        Assert.Equal("dated", values["entry_reference"].StringValue);
+        Assert.True(values["identity_reliable"].BooleanValue);
+        Assert.False(string.IsNullOrEmpty(values["sync_key"].StringValue));
+        Assert.StartsWith("ambiguous:", values["fallback_sync_key"].StringValue);
+    }
+
     private static CustomWebApplicationFactory Factory(bool emptyAccounts = false, bool hasAccountHash = true)
     {
         var factory = new CustomWebApplicationFactory
@@ -347,11 +453,11 @@ public class BankIdentityBoundaryTests
         Assert.Equal(expectedNew, result.GetProperty("new").GetInt32());
     }
 
-    private static object Movement(string? reference, string date = "2026-10-01", string amount = "12.34", string description = "Lunch") => new
+    private static object Movement(string? reference, string date = "2026-10-01", string amount = "12.34", string? description = "Lunch") => new
     {
         entry_reference = reference, booking_date = date, transaction_date = "2026-09-30", value_date = "2026-10-03",
         transaction_amount = new { amount, currency = "EUR" },
-        credit_debit_indicator = "DBIT", status = "BOOK", remittance_information = new[] { description }
+        credit_debit_indicator = "DBIT", status = "BOOK", remittance_information = description is null ? null : new[] { description }
     };
 
     private static string Page(params object[] movements) => PageWithContinuation(null, movements);

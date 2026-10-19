@@ -3,9 +3,9 @@ using GuitoApi.Infrastructure.Postgres;
 namespace GuitoApi.Tests;
 
 /// <summary>
-/// Hermetic fake of IPostgresDataApiClient for direct repository tests (issue #88).
-/// Scripts result sets/exceptions via NextResults/ExecuteException and records every
-/// executed statement (SQL, parameters, transaction id, cancellation token).
+/// Hermetic Data API transport with scripted results or stateful Expense/Bank rows.
+/// Stateful Bank upserts interpret the submitted conflict action, assignments and
+/// supported guards; unsupported assignments fail instead of simulating success.
 /// </summary>
 public class FakePostgresDataApiClient : IPostgresDataApiClient
 {
@@ -333,79 +333,147 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
 
     private PostgresResult ExecuteBankImport(string sql, IReadOnlyList<PostgresParameter>? parameters)
     {
-        var values = parameters?.ToDictionary(p => p.Name, p => p.Value) ?? [];
+        var values = parameters?.ToDictionary(parameter => parameter.Name, parameter => parameter.Value) ?? [];
         if (sql.Contains("bank_accounts", StringComparison.Ordinal)) return ExecuteBankAccount(sql, values);
-        if (sql.StartsWith("UPDATE", StringComparison.Ordinal))
+        if (sql.StartsWith("UPDATE", StringComparison.Ordinal)) return UpdateBankImportSuggestion(sql, values);
+        var reliable = IsReliableBankImport(sql, values);
+        values["identity_reliable"] = PostgresValue.FromBoolean(reliable);
+        var key = values[reliable ? "sync_key" : "fallback_sync_key"].StringValue!;
+        return _bankImports.TryGetValue(key, out var existing)
+            ? RefreshBankImport(sql, key, existing, values)
+            : InsertBankImport(key, values);
+    }
+
+    private PostgresResult UpdateBankImportSuggestion(string sql, Dictionary<string, PostgresValue> values)
+    {
+        var targets = _bankImports.Where(row => !sql.Contains("sync_key = :sync_key", StringComparison.Ordinal)
+            || row.Key == values["sync_key"].StringValue);
+        var affected = 0;
+        foreach (var target in targets)
         {
-            var targets = _bankImports.Where(row => !sql.Contains("sync_key = :sync_key", StringComparison.Ordinal)
-                || row.Key == values["sync_key"].StringValue).ToArray();
-            foreach (var target in targets)
-            {
-                var id = target.Value["id"].LongValue!.Value;
-                var state = LinkedTransactions[id];
-                if (sql.Contains("expense_id IS NULL", StringComparison.Ordinal) && state.ExpenseId is not null) continue;
-                if (sql.Contains("review_status IN ('needsReview', 'ignored')", StringComparison.Ordinal) && state.Status is not ("needsReview" or "ignored")) continue;
-                _bankCategories[id] = values["category_id"].LongValue;
-            }
-            return new([], [], 0);
+            var id = target.Value["id"].LongValue!.Value;
+            if (!CanUpdateBankReview(sql, id)) continue;
+            if (!sql.Contains("SET suggested_category_id = :category_id", StringComparison.Ordinal)) continue;
+            _bankCategories[id] = values["category_id"].LongValue;
+            affected++;
         }
-        var reliable = values["identity_reliable"].BooleanValue == true;
+        return new([], [], affected);
+    }
+
+    private bool CanUpdateBankReview(string sql, long id)
+    {
+        var state = LinkedTransactions[id];
+        return (!sql.Contains("expense_id IS NULL", StringComparison.Ordinal) || state.ExpenseId is null)
+            && (!sql.Contains("review_status IN ('needsReview', 'ignored')", StringComparison.Ordinal)
+                || state.Status is "needsReview" or "ignored");
+    }
+
+    private bool IsReliableBankImport(string sql, Dictionary<string, PostgresValue> values)
+    {
+        if (values["identity_reliable"].BooleanValue != true) return false;
         var evidence = _bankImports.Values.AsEnumerable();
         if (sql.Contains("evidence.account_uid = :account_uid", StringComparison.Ordinal))
-            evidence = evidence.Where(row => row["account_uid"].StringValue == values["account_uid"].StringValue);
+            evidence = evidence.Where(row => row["account_uid"] == values["account_uid"]);
         if (sql.Contains("evidence.entry_reference = :entry_reference", StringComparison.Ordinal))
-            evidence = evidence.Where(row => row["entry_reference"].StringValue == values["entry_reference"].StringValue && !values["entry_reference"].IsNull);
-        if (sql.Contains("NOT EXISTS", StringComparison.Ordinal) && evidence.Any(row =>
-            (sql.Contains("evidence.identity_reliable IS NOT TRUE", StringComparison.Ordinal) && row["identity_reliable"].BooleanValue != true)
-            || (sql.Contains("evidence.amount <>", StringComparison.Ordinal) && row["amount"].StringValue != values["amount"].StringValue)
-            || (sql.Contains("evidence.currency <>", StringComparison.Ordinal) && row["currency"].StringValue != values["currency"].StringValue)
-            || (sql.Contains("evidence.direction <>", StringComparison.Ordinal) && row["direction"].StringValue != values["direction"].StringValue))) reliable = false;
-        var key = values[reliable ? "sync_key" : "fallback_sync_key"].StringValue!;
-        if (!_bankImports.TryGetValue(key, out var existing))
-        {
-            var id = LinkedTransactions.Keys.DefaultIfEmpty(0).Max() + 1;
-            values["id"] = PostgresValue.FromLong(id);
-            values["identity_reliable"] = PostgresValue.FromBoolean(reliable);
-            _bankImports.Add(key, values);
-            LinkedTransactions.Add(id, (null, "needsReview"));
-            UpdateImportedBankDetails(values);
-            return new([], [[values["id"], PostgresValue.FromString(key), PostgresValue.FromBoolean(true)]], 1);
-        }
-        var existingId = existing["id"].LongValue!.Value;
-        var link = LinkedTransactions[existingId];
-        if ((sql.Contains("bank_transactions.expense_id IS NULL", StringComparison.Ordinal) && link.ExpenseId is not null)
-            || (sql.Contains("bank_transactions.review_status IN ('needsReview', 'ignored')", StringComparison.Ordinal) && link.Status is not ("needsReview" or "ignored"))
-            || (sql.Contains("bank_transactions.identity_reliable AND EXCLUDED.identity_reliable", StringComparison.Ordinal) && (!reliable || existing["identity_reliable"].BooleanValue != true)))
-            return new([], [], 0);
-        foreach (var field in new[] { "account_uid", "entry_reference", "amount", "currency", "direction" })
-            if (sql.Contains($"bank_transactions.{field} = EXCLUDED.{field}", StringComparison.Ordinal) && existing[field] != values[field]) return new([], [], 0);
-        foreach (var field in new[] { "booking_date", "transaction_date", "value_date", "remittance_information" })
-            if (sql.Contains($"{field} = EXCLUDED.{field}", StringComparison.Ordinal)) existing[field] = values[field];
-        if (sql.Contains("review_status = EXCLUDED.review_status", StringComparison.Ordinal)) LinkedTransactions[existingId] = (link.ExpenseId, "needsReview");
-        UpdateImportedBankDetails(existing);
-        return new([], [[existing["id"], PostgresValue.FromString(key), PostgresValue.FromBoolean(false)]], 1);
+            evidence = evidence.Where(row => !values["entry_reference"].IsNull && row["entry_reference"] == values["entry_reference"]);
+        return !sql.Contains("NOT EXISTS", StringComparison.Ordinal)
+            || !evidence.Any(row => HasConflictingBankEvidence(sql, row, values));
     }
+
+    private static bool HasConflictingBankEvidence(string sql, Dictionary<string, PostgresValue> row, Dictionary<string, PostgresValue> values) =>
+        (sql.Contains("evidence.identity_reliable IS NOT TRUE", StringComparison.Ordinal) && row["identity_reliable"].BooleanValue != true)
+        || new[] { "amount", "currency", "direction" }.Any(field =>
+            sql.Contains($"evidence.{field} <>", StringComparison.Ordinal) && !BankValuesEqual(field, row[field], values[field]));
+
+    private PostgresResult InsertBankImport(string key, Dictionary<string, PostgresValue> values)
+    {
+        var id = LinkedTransactions.Keys.DefaultIfEmpty(0).Max() + 1;
+        values["id"] = PostgresValue.FromLong(id);
+        _bankImports.Add(key, values);
+        LinkedTransactions.Add(id, (null, "needsReview"));
+        UpdateImportedBankDetails(values);
+        return BankImportResult(key, values, true);
+    }
+
+    private PostgresResult RefreshBankImport(string sql, string key, Dictionary<string, PostgresValue> existing, Dictionary<string, PostgresValue> values)
+    {
+        var update = ConflictUpdate(sql);
+        if (update is null || !CanRefreshBankImport(update, existing, values)) return new([], [], 0);
+        ApplyExcludedAssignments(update, existing, values);
+        var id = existing["id"].LongValue!.Value;
+        if (existing.TryGetValue("review_status", out var status)) LinkedTransactions[id] = (LinkedTransactions[id].ExpenseId, status.StringValue!);
+        UpdateImportedBankDetails(existing);
+        return BankImportResult(key, existing, false);
+    }
+
+    private bool CanRefreshBankImport(string update, Dictionary<string, PostgresValue> existing, Dictionary<string, PostgresValue> values)
+    {
+        var predicate = update.Split(" WHERE ", StringSplitOptions.None).ElementAtOrDefault(1) ?? "";
+        if (!CanUpdateBankReview(predicate, existing["id"].LongValue!.Value)) return false;
+        if (predicate.Contains("bank_transactions.identity_reliable", StringComparison.Ordinal) && existing["identity_reliable"].BooleanValue != true) return false;
+        if (predicate.Contains("EXCLUDED.identity_reliable", StringComparison.Ordinal) && values["identity_reliable"].BooleanValue != true) return false;
+        return !new[] { "account_uid", "entry_reference", "amount", "currency", "direction" }.Any(field =>
+            predicate.Contains($"bank_transactions.{field} = EXCLUDED.{field}", StringComparison.Ordinal)
+                && (existing[field].IsNull || values[field].IsNull || !BankValuesEqual(field, existing[field], values[field])));
+    }
+
+    private static bool BankValuesEqual(string field, PostgresValue first, PostgresValue second) =>
+        field == "amount" && !first.IsNull && !second.IsNull
+            ? decimal.Parse(first.StringValue!, System.Globalization.CultureInfo.InvariantCulture)
+                == decimal.Parse(second.StringValue!, System.Globalization.CultureInfo.InvariantCulture)
+            : first == second;
+
+    private static string? ConflictUpdate(string sql)
+    {
+        var normalized = System.Text.RegularExpressions.Regex.Replace(sql, @"\s+", " ");
+        var conflict = normalized.IndexOf("ON CONFLICT", StringComparison.Ordinal);
+        if (conflict < 0) return null;
+        var update = normalized.IndexOf(" DO UPDATE SET ", conflict, StringComparison.Ordinal);
+        return update < 0 ? null : normalized[(update + " DO UPDATE SET ".Length)..].Split(" RETURNING ", StringSplitOptions.None)[0];
+    }
+
+    private static void ApplyExcludedAssignments(string update, Dictionary<string, PostgresValue> target, Dictionary<string, PostgresValue> values)
+    {
+        var assignments = update.Split(" WHERE ", StringSplitOptions.None)[0].Split(',');
+        foreach (var assignment in assignments)
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(assignment.Trim(), @"^(\w+) = EXCLUDED\.(\w+)$");
+            if (!match.Success) throw new InvalidOperationException($"Unsupported fake upsert assignment: {assignment}");
+            var source = match.Groups[2].Value;
+            target[match.Groups[1].Value] = source == "review_status" ? PostgresValue.FromString("needsReview") : values[source];
+        }
+    }
+
+    private static PostgresResult BankImportResult(string key, Dictionary<string, PostgresValue> row, bool inserted) =>
+        new([], [[row["id"], PostgresValue.FromString(key), PostgresValue.FromBoolean(inserted)]], 1);
 
     private void UpdateImportedBankDetails(Dictionary<string, PostgresValue> row) =>
         BankDetails[row["id"].LongValue!.Value] = (row["booking_date"].StringValue!, row["amount"].StringValue!, row["currency"].StringValue!, row["remittance_information"].StringValue);
 
     private PostgresResult ExecuteBankAccount(string sql, Dictionary<string, PostgresValue> values)
     {
-        if (sql.StartsWith("SELECT", StringComparison.Ordinal))
-            return new([], _bankAccounts.Values.Select(row => (IReadOnlyList<PostgresValue>)new[]
-            {
-                row["uid"], row["session_id"], row["iban"], row["name"], row["currency"], row["aspsp_country"], row["aspsp_name"],
-                row["consent_status"], row["consent_expires_at"], row["fetch_uid"], row["identification_hash"]
-            }).ToList(), 0);
+        if (sql.StartsWith("SELECT", StringComparison.Ordinal)) return ReadBankAccounts();
         var target = sql.Contains("ON CONFLICT (identification_hash)", StringComparison.Ordinal)
-            ? _bankAccounts.Values.SingleOrDefault(row => row["identification_hash"] == values["identification_hash"])
+            ? _bankAccounts.Values.SingleOrDefault(row => !values["identification_hash"].IsNull && row["identification_hash"] == values["identification_hash"])
             : _bankAccounts.GetValueOrDefault(values["uid"].StringValue!);
-        if (target is null) _bankAccounts.Add(values["uid"].StringValue!, values);
-        else
-            foreach (var field in values.Keys.Where(field => field is not ("uid" or "identification_hash")))
-                if (sql.Contains($"{field} = EXCLUDED.{field}", StringComparison.Ordinal)) target[field] = values[field];
+        if (target is null)
+        {
+            _bankAccounts.Add(values["uid"].StringValue!, values);
+            return new([], [], 1);
+        }
+        var update = ConflictUpdate(sql);
+        if (update is null || (update.Contains("WHERE bank_accounts.identification_hash IS NOT DISTINCT FROM EXCLUDED.identification_hash", StringComparison.Ordinal)
+            && target["identification_hash"] != values["identification_hash"])) return new([], [], 0);
+        ApplyExcludedAssignments(update, target, values);
         return new([], [], 1);
     }
+
+    private PostgresResult ReadBankAccounts() =>
+        new([], _bankAccounts.Values.Select(row => (IReadOnlyList<PostgresValue>)new[]
+        {
+            row["uid"], row["session_id"], row["iban"], row["name"], row["currency"], row["aspsp_country"], row["aspsp_name"],
+            row["consent_status"], row["consent_expires_at"], row["fetch_uid"], row["identification_hash"]
+        }).ToList(), 0);
 
     private PostgresResult ReadLinkSchema(string sql)
     {
