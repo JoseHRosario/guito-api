@@ -131,8 +131,11 @@ Normal application deployment verifies the shared database stack, ensures the
 selected environment's session stack, then runs the existing SQL migrations,
 code deployment and read-only smoke tests. The old DynamoDB helper becomes a
 verifier; it must no longer issue CreateTable or UpdateTimeToLive. CloudFormation
-is the only provisioning owner. Its template/stack outputs and service readback
-must match the environment's runtime table and Region before code replacement.
+is the only provisioning owner. ListStackResources physical identities and native
+service readback must match the environment's fixed runtime table and Region before
+code replacement. Both adoption templates permanently omit optional Outputs:
+native IMPORT cannot add Outputs, no exports or consumers exist, and no separate
+output-update phase is needed.
 
 ## Permission model
 

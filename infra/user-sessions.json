@@ -33,9 +33,5 @@
         "PointInTimeRecoverySpecification": { "PointInTimeRecoveryEnabled": false }
       }
     }
-  },
-  "Outputs": {
-    "TableName": { "Description": "Session table for the selected API environment.", "Value": { "Ref": "UserSessions" } },
-    "TableArn": { "Description": "Managed session table ARN.", "Value": { "Fn::GetAtt": ["UserSessions", "Arn"] } }
   }
 }

@@ -20,6 +20,11 @@ production use separate logical databases in that one cluster. Do not create a
 second cluster, rename resources or try to import the same cluster into two stacks.
 Existing secrets, VPC, subnet/security groups and parameter groups are not adopted.
 No template contains a password or enables RDS-managed password rotation.
+Both adoption templates permanently omit optional `Outputs`: native IMPORT rejects
+adding Outputs even when they are valid for CREATE. No exports or output consumers
+exist, so there is no separate output-update phase. The controller rejects nonempty
+Outputs before planning or executing an import; ownership is checked through
+`ListStackResources` and native service readback against fixed runtime identities.
 
 ## Normal GitHub Actions deployments
 

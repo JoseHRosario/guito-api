@@ -63,7 +63,7 @@ sys.exit(1 if step.get('error') else 0)
         return result
 
     def sessions(self):
-        self.template = {'Parameters': {'Environment': {'Type': 'String', 'AllowedValues': ['staging', 'production']}}, 'Conditions': {'IsProduction': {'Fn::Equals': [{'Ref': 'Environment'}, 'production']}}, 'Resources': {'UserSessions': {'Type': 'AWS::DynamoDB::Table', 'DeletionPolicy': 'Retain', 'UpdateReplacePolicy': 'Retain', 'Properties': {'TableName': {'Fn::If': ['IsProduction', 'guito-api-user-sessions', 'guito-api-user-sessions-staging']}, 'BillingMode': 'PROVISIONED', 'TableClass': 'STANDARD', 'AttributeDefinitions': [{'AttributeName': 'handle_hash', 'AttributeType': 'S'}], 'KeySchema': [{'AttributeName': 'handle_hash', 'KeyType': 'HASH'}], 'ProvisionedThroughput': {'ReadCapacityUnits': 1, 'WriteCapacityUnits': 1}, 'TimeToLiveSpecification': {'AttributeName': 'ttl', 'Enabled': True}, 'DeletionProtectionEnabled': True, 'PointInTimeRecoverySpecification': {'PointInTimeRecoveryEnabled': False}}}}, 'Outputs': {'TableName': {'Value': {'Ref': 'UserSessions'}}}}
+        self.template = {'Parameters': {'Environment': {'Type': 'String', 'AllowedValues': ['staging', 'production']}}, 'Conditions': {'IsProduction': {'Fn::Equals': [{'Ref': 'Environment'}, 'production']}}, 'Resources': {'UserSessions': {'Type': 'AWS::DynamoDB::Table', 'DeletionPolicy': 'Retain', 'UpdateReplacePolicy': 'Retain', 'Properties': {'TableName': {'Fn::If': ['IsProduction', 'guito-api-user-sessions', 'guito-api-user-sessions-staging']}, 'BillingMode': 'PROVISIONED', 'TableClass': 'STANDARD', 'AttributeDefinitions': [{'AttributeName': 'handle_hash', 'AttributeType': 'S'}], 'KeySchema': [{'AttributeName': 'handle_hash', 'KeyType': 'HASH'}], 'ProvisionedThroughput': {'ReadCapacityUnits': 1, 'WriteCapacityUnits': 1}, 'TimeToLiveSpecification': {'AttributeName': 'ttl', 'Enabled': True}, 'DeletionProtectionEnabled': True, 'PointInTimeRecoverySpecification': {'PointInTimeRecoveryEnabled': False}}}}}
         (self.root/'infra/user-sessions.json').write_text(json.dumps(self.template))
         self.table = {'TableName': 'guito-api-user-sessions-staging', 'TableStatus': 'ACTIVE', 'TableClassSummary': {'TableClass': 'STANDARD'}, 'BillingModeSummary': {'BillingMode': 'PROVISIONED'}, 'AttributeDefinitions': [{'AttributeName': 'handle_hash', 'AttributeType': 'S'}], 'KeySchema': [{'AttributeName': 'handle_hash', 'KeyType': 'HASH'}], 'ProvisionedThroughput': {'ReadCapacityUnits': 1, 'WriteCapacityUnits': 1}, 'DeletionProtectionEnabled': True}
         self.changes = [{'ResourceChange': {'Action': 'Import', 'LogicalResourceId': 'UserSessions', 'ResourceType': 'AWS::DynamoDB::Table', 'Replacement': 'False', 'PhysicalResourceId': self.table['TableName']}}]
@@ -83,6 +83,26 @@ sys.exit(1 if step.get('error') else 0)
         self.queue('cloudformation get-template-summary', {'ResourceIdentifierSummaries': [{'LogicalResourceIds': ['UserSessions'], 'ResourceType': 'AWS::DynamoDB::Table', 'ResourceIdentifiers': ['TableName']}]})
         self.queue('cloudformation create-change-set', {'Id': ARN})
         self.queue('cloudformation describe-change-set', {'ChangeSetId': ARN, 'StackName': 'guito-sessions-staging', 'Status': 'CREATE_COMPLETE', 'ExecutionStatus': 'AVAILABLE', 'Changes': self.changes, 'Parameters': [{'ParameterKey': 'Environment', 'ParameterValue': 'staging'}]})
+
+    def test_outputs_are_rejected_before_import_planning_or_execution(self):
+        # CREATE-valid optional Outputs fail native IMPORT before a stack exists:
+        # "As part of the import operation, you cannot modify or add [Outputs]".
+        for target in ['sessions-staging', 'sessions-production', 'postgres-shared']:
+            for action in ['plan-import', 'execute-import']:
+                with self.subTest(target=target, action=action):
+                    self.steps = []
+                    self.calls.unlink(missing_ok=True)
+                    shared = target == 'postgres-shared'
+                    self.postgres() if shared else self.sessions()
+                    self.template['Outputs'] = {
+                        'Identifier': {'Value': {'Ref': 'DatabaseCluster' if shared else 'UserSessions'}}}
+                    name = 'postgres-shared.json' if shared else 'user-sessions.json'
+                    (self.root/'infra'/name).write_text(json.dumps(self.template))
+                    self.identity()
+                    result = self.run_cli(action, target, ('--change-set-arn', ARN))
+                    self.assertEqual(result.returncode, 1, result.stdout)
+                    self.assertIn('Outputs', json.loads(result.stdout)['error'])
+                    self.assertEqual([call[:2] for call in self.history], [['sts', 'get-caller-identity']])
 
     def test_import_creation_validation_reports_only_safe_public_metadata(self):
         self.sessions()

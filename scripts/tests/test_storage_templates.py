@@ -35,6 +35,12 @@ class StorageTemplateTests(unittest.TestCase):
                     self.assertTrue(context["why"])
                     self.assertTrue(context["must"])
 
+    def test_adoption_templates_have_no_outputs(self):
+        # Native IMPORT cannot add Outputs, even though CREATE accepts them.
+        for name in ("user-sessions.json", "postgres-shared.json"):
+            with self.subTest(template=name):
+                self.assertNotIn("Outputs", template(name))
+
     def test_sessions_remain_fixed_capacity_and_environment_isolated(self):
         document = template("user-sessions.json")
         properties = document["Resources"]["UserSessions"]["Properties"]

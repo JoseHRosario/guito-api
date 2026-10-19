@@ -99,6 +99,8 @@ def context(args):
     template = json.loads((ROOT/'infra'/('postgres-shared.json' if shared else 'user-sessions.json')).read_text())
     environment = args.target.removeprefix('sessions-')
     require(set(template) <= {'AWSTemplateFormatVersion', 'Description', 'Metadata', 'Parameters', 'Conditions', 'Resources', 'Outputs'}, 'unsafe template structure')
+    # Native IMPORT cannot add Outputs; identities come from ListStackResources.
+    require(not template.get('Outputs'), 'adoption templates must not define Outputs')
     resources = template['Resources']
     require(all(set(resource) <= {'Type', 'DeletionPolicy', 'UpdateReplacePolicy', 'Metadata', 'Properties'} for resource in resources.values()), 'unsafe template resource structure')
     expected = {'DatabaseCluster': ('AWS::RDS::DBCluster', 'DBClusterIdentifier', 'db-cluster'), 'DatabaseWriter': ('AWS::RDS::DBInstance', 'DBInstanceIdentifier', 'guito')} if shared else {'UserSessions': ('AWS::DynamoDB::Table', 'TableName', 'guito-api-user-sessions' + ('' if environment == 'production' else '-staging'))}
@@ -119,7 +121,6 @@ def validate_sessions(template):
     properties = template['Resources']['UserSessions']['Properties']
     expected = {'TableName': {'Fn::If': ['IsProduction', 'guito-api-user-sessions', 'guito-api-user-sessions-staging']}, 'BillingMode': 'PROVISIONED', 'TableClass': 'STANDARD', 'AttributeDefinitions': [{'AttributeName': 'handle_hash', 'AttributeType': 'S'}], 'KeySchema': [{'AttributeName': 'handle_hash', 'KeyType': 'HASH'}], 'ProvisionedThroughput': {'ReadCapacityUnits': 1, 'WriteCapacityUnits': 1}, 'TimeToLiveSpecification': {'AttributeName': 'ttl', 'Enabled': True}, 'DeletionProtectionEnabled': True, 'PointInTimeRecoverySpecification': {'PointInTimeRecoveryEnabled': False}}
     require(properties == expected, 'unsafe session table properties')
-    require(template.get('Outputs', {}).get('TableName', {}).get('Value') == {'Ref': 'UserSessions'}, 'missing table output')
 
 
 def stack_state(ctx):

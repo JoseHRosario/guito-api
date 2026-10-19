@@ -70,9 +70,5 @@
         "PreferredMaintenanceWindow": "thu:04:19-thu:04:49"
       }
     }
-  },
-  "Outputs": {
-    "ClusterArn": { "Description": "Existing shared cluster ARN used by RDS Data API.", "Value": { "Fn::GetAtt": ["DatabaseCluster", "DBClusterArn"] } },
-    "WriterIdentifier": { "Description": "Existing writer instance identifier.", "Value": { "Ref": "DatabaseWriter" } }
   }
 }
