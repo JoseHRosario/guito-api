@@ -86,8 +86,8 @@ namespace GuitoApi
             services.AddScoped<ITokenExchangeService, GoogleTokenExchangeService>();
             services.AddHttpClient(GoogleTokenExchangeService.HttpClientName);
             services.AddHttpClient(GuitoApi.Infrastructure.Auth.GoogleSessionProvider.HttpClientName,
-                client => client.Timeout = TimeSpan.FromSeconds(20));
-            services.AddHttpClient("UserSessionJwks", client => client.Timeout = TimeSpan.FromSeconds(20));
+                client => client.Timeout = TimeSpan.FromSeconds(20)).RemoveAllLoggers();
+            services.AddHttpClient("UserSessionJwks", client => client.Timeout = TimeSpan.FromSeconds(20)).RemoveAllLoggers();
             services.AddScoped<IGoogleSessionProvider, GuitoApi.Infrastructure.Auth.GoogleSessionProvider>();
             services.AddScoped<IUserSessionCredentialProtector, GuitoApi.Infrastructure.Auth.AesGcmUserSessionCredentialProtector>();
             services.AddScoped<IUserSessionRepository, DataApiUserSessionRepository>();

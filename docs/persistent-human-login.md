@@ -46,6 +46,55 @@ verbatim reflected text. Old token-only installations need a fresh explicit cons
 Legacy token/logout endpoints remain for existing clients; **new device signout
 must never call `/Auth/logout`**, which revokes Google's grant.
 
+### Cold-start readiness and deadlines
+
+Establishment and renewal share a **25-second operation budget**, linked to caller
+cancellation, starting before readiness (and before refresh lease acquisition).
+Readiness uses `IUserSessionRepository.EnsureReadyAsync`: the existing Data API
+transport executes read-only `SELECT 1` within an **18-second subbudget**, also
+bounded by the operation/caller. No Google authorization-code exchange is attempted
+until this read succeeds. This probe does not validate the session schema, encryption
+key or future write availability; later failures can still follow code consumption.
+
+Only typed `DatabaseResumingException` / `DatabaseUnavailableException` are eligible
+for the readiness loop's one-second retry. The shared Data API client's existing
+`DatabaseResumingException` schedule (one and five seconds) remains unchanged and
+counts inside readiness. No extra retry is applied to lease writes, completion,
+session creation, SQL/programming/credential/network errors or financial mutations.
+Readiness exhaustion after a known startup/availability failure returns sanitized
+503 `{error:"service_starting",error_description:"The service is starting. Please try again."}`.
+It is not a generic 503 label or proof that Aurora was auto-paused. Other failures
+remain `temporarily_unavailable`; a stalled probe with no known startup error is
+not relabeled startup. Caller cancellation never becomes `service_starting`.
+
+The **same 25 seconds** covers readiness, lease acquire, secret/crypto work, Google
+HTTP/JWKS validation and database completion, not a fresh budget for each stage.
+The existing Google HTTP clients retain their shorter 20-second transport limit.
+Refresh cleanup is awaited with an independent **two-second maximum**, including
+after cancellation or an uncertain acquire response: at most **27 seconds** of
+application operation plus cleanup, leaving headroom below the observed 30-second
+Lambda/gateway limits. Conditional lease cleanup cannot change another worker's
+lease. If cleanup fails or Lambda dies, the existing two-minute durable lease
+recovers; no scheduler/background cleanup is added. A transient response neither
+clears the cookie nor extends idle expiry. A lost provider rotation or ambiguous
+write still cannot be atomically recovered across Google and Postgres.
+
+Logs contain bounded categorical stage/failure, exception **type name only**, trace
+correlation and elapsed timing where available. Known resume/unavailable events
+are distinct from readiness timeout, provider unavailability, configuration failure
+and request timeout/client cancellation. No exception object, Message/stack, SQL
+parameters, email, headers, request/response bodies, tokens, code/verifier, cookie
+or key is logged. Default HttpClient logging is disabled specifically for the
+session Google/JWKS clients because it can otherwise log raw transport exceptions.
+Legacy auth clients and public authentication boundaries are unchanged.
+
+Only an explicitly readiness-gated failure **before** exchange permits manually
+retrying the same pending callback; never automatically replay a one-use code or
+financial mutation after a timeout/uncertain result. The paired UI's session-only
+HTTP deadline is 35 seconds (above API 25/gateway 30), not the former 15 seconds;
+this API change alone does not establish deployed/browser behavior.
+See [local regression and incident evidence](user-session-cold-start-verification.md).
+
 ## Encryption key configuration and separately gated field-name transition
 
 Initial staging provisioning/deployment was owner-approved; staging currently has
@@ -187,7 +236,7 @@ by this implementation.
 - Rotation/lost provider responses cannot be atomically committed with Postgres;
   ambiguous refresh-token rotation can eventually need new consent. No financial
   mutation is retried, and no operation ledger is introduced for this limitation.
-- Successful refresh has a 20-second budget plus bounded awaited cleanup; leases
+- Refresh has a shared 25-second operation budget plus at most two seconds of awaited cleanup; leases
   last two minutes to recover killed Lambda workers. No refresh transaction holds
   database locks across Google HTTP. Session completion/invalidation is conditional
   on lease identity; logout deletion is final for that handle.

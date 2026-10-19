@@ -1,5 +1,7 @@
 using System.Net;
 using System.Text.Json;
+using Amazon.RDSDataService;
+using Amazon.RDSDataService.Model;
 using GuitoApi.Configuration;
 using GuitoApi.Infrastructure.Auth;
 using GuitoApi.Infrastructure.Postgres;
@@ -9,6 +11,8 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Logging;
+using System.Collections.Concurrent;
 
 namespace GuitoApi.Tests;
 
@@ -22,14 +26,18 @@ internal sealed class UserSessionTestHost(UserSessionTestHost.State state) : Cus
     {
         UiOrigin = Origin;
         base.ConfigureWebHost(builder);
+
         builder.ConfigureTestServices(services =>
         {
+            services.RemoveAll<ILoggerFactory>();
+            services.AddSingleton<ILoggerFactory>(_ => LoggerFactory.Create(logging =>
+                logging.SetMinimumLevel(LogLevel.Trace).AddProvider(new SessionLogs(state))));
             services.PostConfigure<AppConfigurationOptions>(options =>
             {
                 options.Authentication.ValidateApiKey = true;
                 options.Authentication.ValidateIdToken = true;
                 options.Authentication.GoogleClientId = ClientId;
-                options.Authentication.OAuthAudience = ClientId;
+                options.Authentication.OAuthAudience = state.InvalidGoogleConfiguration ? "wrong-client" : ClientId;
                 options.Authentication.AllowedLogins = [Email];
                 options.Cors.AllowedOrigins = [Origin];
             });
@@ -40,7 +48,11 @@ internal sealed class UserSessionTestHost(UserSessionTestHost.State state) : Cus
             services.RemoveAll<IHumanAuthSecretProvider>();
             services.AddSingleton<IHumanAuthSecretProvider>(new FakeHumanAuthSecretProvider());
             services.RemoveAll<IPostgresDataApiClient>();
-            services.AddSingleton<IPostgresDataApiClient>(state.Database);
+            services.AddSingleton<SessionSdk>(_ => new SessionSdk(state));
+            services.AddScoped<IPostgresDataApiClient>(provider => state.SharedTransport
+                ? new DataApiClient(provider.GetRequiredService<SessionSdk>(), Options.Create(new DatabaseOptions()), new PostgresTransactionContext(),
+                    clock: state.Clock, logger: provider.GetRequiredService<ILogger<DataApiClient>>())
+                : state.Database);
             services.AddHttpClient(GoogleSessionProvider.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => new TokenTransport(state));
             services.AddHttpClient(GuitoApi.Services.Auth.RevokeGoogleTokenService.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => new RejectLegacyGoogleTransport(state));
             services.AddHttpClient(GuitoApi.Services.Auth.GoogleTokenExchangeService.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => new RejectLegacyGoogleTransport(state));
@@ -51,7 +63,13 @@ internal sealed class UserSessionTestHost(UserSessionTestHost.State state) : Cus
 
     internal sealed class State
     {
-        public Clock Clock { get; } = new();
+        public SessionTestClock Clock { get; } = new();
+        public bool SharedTransport { get; set; }
+        public bool InvalidGoogleConfiguration { get; set; }
+        public Func<ExecuteStatementRequest, CancellationToken, Task>? BeforeStatement { get; set; }
+        public List<string> Statements { get; } = [];
+        public ConcurrentQueue<string> Logs { get; } = new();
+        public ConcurrentQueue<Exception> LoggedExceptions { get; } = new();
         public Database Database { get; } = new();
         public ReportingTokenFixture Keys { get; } = new();
         public string Key { get; set; } = Convert.ToBase64String(Enumerable.Range(1, 32).Select(number => (byte)number).ToArray());
@@ -78,10 +96,38 @@ internal sealed class UserSessionTestHost(UserSessionTestHost.State state) : Cus
         }, WrongSignature);
     }
 
-    internal sealed class Clock : TimeProvider
+    private sealed class SessionSdk(State state) : AmazonRDSDataServiceClient(
+        new Amazon.Runtime.BasicAWSCredentials("hermetic", "hermetic"), new AmazonRDSDataServiceConfig { RegionEndpoint = Amazon.RegionEndpoint.EUWest1 })
     {
-        public DateTimeOffset Now { get; set; } = new(2030, 1, 1, 12, 0, 0, TimeSpan.Zero);
-        public override DateTimeOffset GetUtcNow() => Now;
+        public override async Task<ExecuteStatementResponse> ExecuteStatementAsync(ExecuteStatementRequest request, CancellationToken cancellationToken = default)
+        {
+            lock (state.Statements) state.Statements.Add(request.Sql);
+            if (state.BeforeStatement is not null) await state.BeforeStatement(request, cancellationToken);
+            var result = await state.Database.ExecuteAsync(request.Sql, request.Parameters?.Select(parameter =>
+                new PostgresParameter(parameter.Name, PostgresValue.FromString(parameter.Value.StringValue))).ToArray(), cancellationToken: cancellationToken);
+            return new ExecuteStatementResponse { NumberOfRecordsUpdated = result.NumberOfRecordsUpdated,
+                Records = result.Rows.Select(row => row.Select(value => new Field { StringValue = value.StringValue }).ToList()).ToList() };
+        }
+    }
+
+    private sealed class SessionLogs(State state) : ILoggerProvider
+    {
+        public ILogger CreateLogger(string categoryName) => new Logger(state, categoryName);
+        public void Dispose() { }
+        private sealed class Logger(State state, string category) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState value) where TState : notnull
+            {
+                state.Logs.Enqueue($"{category} scope: {value}");
+                return null;
+            }
+            public bool IsEnabled(LogLevel level) => true;
+            public void Log<TState>(LogLevel level, EventId id, TState value, Exception? exception, Func<TState, Exception?, string> formatter)
+            {
+                state.Logs.Enqueue($"{category}: {formatter(value, exception)}");
+                if (exception is not null) state.LoggedExceptions.Enqueue(exception);
+            }
+        }
     }
 
     private sealed class KeySecrets(State state) : ISecretsProvider
@@ -148,6 +194,7 @@ internal sealed class UserSessionTestHost(UserSessionTestHost.State state) : Cus
         private PostgresResult Execute(string sql, IReadOnlyList<PostgresParameter> parameters)
         {
             if (Fail) throw new InvalidOperationException("fake database outage fake-refresh-credential");
+            if (sql == "SELECT 1") return Result(0, ["1"]);
             Assert.Contains("user_sessions", sql);
             var values = parameters.ToDictionary(parameter => parameter.Name, parameter => parameter.Value.StringValue);
             var hash = values["hash"]!;

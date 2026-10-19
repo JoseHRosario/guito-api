@@ -1,12 +1,42 @@
 using System.Globalization;
+using Amazon.RDSDataService.Model;
 using GuitoApi.Exceptions;
 using GuitoApi.Model;
 using GuitoApi.Repositories;
 
 namespace GuitoApi.Infrastructure.Postgres;
 
-public sealed class DataApiUserSessionRepository(IPostgresDataApiClient database) : IUserSessionRepository
+public sealed class DataApiUserSessionRepository(IPostgresDataApiClient database, TimeProvider clock,
+    ILogger<DataApiUserSessionRepository> logger) : IUserSessionRepository
 {
+    public async Task EnsureReadyAsync(CancellationToken cancellationToken = default)
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(18), clock);
+        using var bounded = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
+        var resuming = false;
+        try
+        {
+            while (!await ProbeReadinessAsync(bounded.Token))
+            {
+                resuming = true;
+                await Task.Delay(TimeSpan.FromSeconds(1), clock, bounded.Token);
+            }
+        }
+        catch (OperationCanceledException) when (resuming && deadline.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        { throw UserSessionException.Starting(); }
+    }
+
+    private async Task<bool> ProbeReadinessAsync(CancellationToken cancellationToken)
+    {
+        try { await database.ExecuteAsync("SELECT 1", cancellationToken: cancellationToken); return true; }
+        catch (Exception exception) when (exception is DatabaseResumingException or DatabaseUnavailableException)
+        {
+            logger.LogWarning("Session readiness stage=database_readiness category={Category} type={Type}",
+                exception is DatabaseResumingException ? "database_resuming" : "database_unavailable", exception.GetType().Name);
+            return false;
+        }
+    }
+
     public async Task CreateAsync(UserSession session, CancellationToken cancellationToken = default)
     {
         await database.ExecuteAsync("""

@@ -8,23 +8,23 @@ using Microsoft.Extensions.Options;
 namespace GuitoApi.Services.Auth;
 
 public sealed class EstablishUserSessionService(IGoogleSessionProvider google, IUserSessionRepository sessions,
-    IUserSessionCredentialProtector protector, IOptions<AppConfigurationOptions> options, TimeProvider clock) : IEstablishUserSessionService
+    IUserSessionCredentialProtector protector, IOptions<AppConfigurationOptions> options, TimeProvider clock,
+    ILogger<EstablishUserSessionService> logger) : IEstablishUserSessionService
 {
     public async Task<UserSessionIssue> EstablishAsync(TokenExchangeRequest request, CancellationToken cancellationToken = default)
     {
-        using var bounded = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        bounded.CancelAfter(TimeSpan.FromSeconds(25));
-        cancellationToken = bounded.Token;
+        using var operation = new UserSessionOperation(clock, logger, cancellationToken);
         ValidateRequest(request);
-        var tokens = await google.ExchangeAsync(request.Code, request.CodeVerifier, request.RedirectUri, cancellationToken);
-        var identity = await google.ValidateAsync(tokens.IdToken, cancellationToken: cancellationToken);
+        await operation.RunAsync("database_readiness", sessions.EnsureReadyAsync);
+        var tokens = await operation.RunAsync("provider_exchange", token => google.ExchangeAsync(request.Code, request.CodeVerifier, request.RedirectUri, token));
+        var identity = await operation.RunAsync("provider_validate", token => google.ValidateAsync(tokens.IdToken, cancellationToken: token));
         if (string.IsNullOrWhiteSpace(tokens.RefreshToken))
             throw new UserSessionException(400, "refresh_token_required", "Sign in again with Google consent to enable persistent login.");
         var handle = UserSessionHandle.Create();
         var hash = UserSessionHandle.Hash(handle)!;
-        var encrypted = await protector.EncryptAsync(tokens.RefreshToken, hash, cancellationToken);
+        var encrypted = await operation.RunAsync("credential_encrypt", token => protector.EncryptAsync(tokens.RefreshToken, hash, token));
         var expiry = clock.GetUtcNow().AddDays(7);
-        await sessions.CreateAsync(new UserSession(hash, identity.Subject, identity.Email, encrypted, expiry), cancellationToken);
+        await operation.RunAsync("session_create", token => sessions.CreateAsync(new UserSession(hash, identity.Subject, identity.Email, encrypted, expiry), token));
         return new UserSessionIssue(handle, tokens, expiry);
     }
 

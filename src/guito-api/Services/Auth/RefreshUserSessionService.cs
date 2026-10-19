@@ -5,42 +5,51 @@ using GuitoApi.Repositories;
 namespace GuitoApi.Services.Auth;
 
 public sealed class RefreshUserSessionService(IGoogleSessionProvider google, IUserSessionRepository sessions,
-    IUserSessionCredentialProtector protector, TimeProvider clock) : IRefreshUserSessionService
+    IUserSessionCredentialProtector protector, TimeProvider clock, ILogger<RefreshUserSessionService> logger) : IRefreshUserSessionService
 {
     public async Task<UserSessionIssue> RefreshAsync(string? handle, CancellationToken cancellationToken = default)
     {
         var hash = UserSessionHandle.Hash(handle) ?? throw UserSessionException.Expired();
+        using var operation = new UserSessionOperation(clock, logger, cancellationToken);
+        await operation.RunAsync("database_readiness", sessions.EnsureReadyAsync);
         var lease = UserSessionHandle.Create();
-        var session = await sessions.AcquireAsync(hash, lease, clock.GetUtcNow(), cancellationToken) ?? throw UserSessionException.Expired();
-        try { return await RenewAsync(handle!, session, lease, cancellationToken); }
+        try { return await AcquireAndRenewAsync(handle!, hash, lease, operation); }
+        finally { await ReleaseAsync(hash, lease, operation); }
+    }
+
+    private async Task<UserSessionIssue> AcquireAndRenewAsync(string handle, string hash, string lease, UserSessionOperation operation)
+    {
+        var session = await operation.RunAsync("lease_acquire", token => sessions.AcquireAsync(hash, lease, clock.GetUtcNow(), token))
+            ?? throw UserSessionException.Expired();
+        try { return await RenewAsync(handle, session, lease, operation); }
         catch (UserSessionException exception) when (exception.StatusCode == 401)
         {
-            if (!await sessions.InvalidateAsync(hash, lease, cancellationToken)) throw UserSessionException.Unavailable();
+            if (!await operation.RunAsync("session_invalidate", token => sessions.InvalidateAsync(hash, lease, token)))
+                throw UserSessionException.Unavailable();
             throw;
-        }
-        finally
-        {
-            // Cleanup must finish before Lambda freezes the request. A crashed worker's lease expires in two minutes.
-            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            try { await sessions.ReleaseAsync(hash, lease, cleanup.Token); }
-            catch (Exception) { /* The bounded lease, not a background task, recovers provider/DB outages. */ }
         }
     }
 
-    private async Task<UserSessionIssue> RenewAsync(string handle, UserSession session, string lease, CancellationToken cancellationToken)
+    private async Task ReleaseAsync(string hash, string lease, UserSessionOperation operation)
     {
-        using var bounded = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        bounded.CancelAfter(TimeSpan.FromSeconds(20));
-        var credential = await protector.DecryptAsync(session.EncryptedCredential, session.HandleHash, bounded.Token);
-        var tokens = await google.RefreshAsync(credential, bounded.Token);
-        var identity = await google.ValidateAsync(tokens.IdToken, session.Subject, bounded.Token);
+        // Independent of caller cancellation, awaited before Lambda returns; crashed workers retain the durable two-minute lease.
+        using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(2), clock);
+        try { await sessions.ReleaseAsync(hash, lease, cleanup.Token); }
+        catch (Exception exception) { operation.LogFailure("lease_release", exception); }
+    }
+
+    private async Task<UserSessionIssue> RenewAsync(string handle, UserSession session, string lease, UserSessionOperation operation)
+    {
+        var credential = await operation.RunAsync("credential_decrypt", token => protector.DecryptAsync(session.EncryptedCredential, session.HandleHash, token));
+        var tokens = await operation.RunAsync("provider_refresh", token => google.RefreshAsync(credential, token));
+        var identity = await operation.RunAsync("provider_validate", token => google.ValidateAsync(tokens.IdToken, session.Subject, token));
         if (identity.Email != session.Email) throw UserSessionException.Expired();
         var encrypted = string.IsNullOrWhiteSpace(tokens.RefreshToken) ? session.EncryptedCredential
-            : await protector.EncryptAsync(tokens.RefreshToken, session.HandleHash, bounded.Token);
+            : await operation.RunAsync("credential_encrypt", token => protector.EncryptAsync(tokens.RefreshToken, session.HandleHash, token));
         var now = clock.GetUtcNow();
         if (session.ExpiresAt <= now) throw UserSessionException.Expired();
         var expiry = now.AddDays(7);
-        if (!await sessions.CompleteAsync(session.HandleHash, lease, encrypted, now, expiry, bounded.Token))
+        if (!await operation.RunAsync("session_complete", token => sessions.CompleteAsync(session.HandleHash, lease, encrypted, now, expiry, token)))
             throw UserSessionException.Unavailable();
         return new UserSessionIssue(handle, tokens, expiry);
     }

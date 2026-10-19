@@ -77,7 +77,7 @@ public sealed class GoogleSessionProvider(IHttpClientFactory clients, IHumanAuth
     private void EnsureConfiguration()
     {
         if (string.IsNullOrWhiteSpace(_authentication.GoogleClientId) || _authentication.GoogleClientId != _authentication.OAuthAudience || _authentication.AllowedLogins.Count == 0)
-            throw UserSessionException.Unavailable();
+            throw UserSessionException.ConfigurationUnavailable();
     }
 
     private static string ReadSubject(string token)

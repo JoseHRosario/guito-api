@@ -80,8 +80,17 @@ failed new login.
 
 An atomic conditional Data API UPDATE acquires a two-minute per-session lease,
 without an operation ledger or long database transaction across Google HTTP.
-Refresh work is bounded to 20 seconds, with at most five seconds of awaited lease
-cleanup; abandoned leases recover after two minutes. A competing tab receives a
+Establishment and refresh share one 25-second operation deadline including initial
+readiness, lease acquisition, provider/crypto work and completion. Read-only session
+readiness has an 18-second subbudget and precedes consumption of a one-use Google
+code. Only known typed database resume/unavailable errors are eligible for that
+readiness retry; known startup exhaustion is 503 `service_starting` with safe retry
+wording, while other faults remain `temporarily_unavailable`. Existing shared
+Data API mutation retry semantics are unchanged. Refresh has at most two seconds
+of independent awaited lease cleanup (27 seconds combined, below the observed
+30-second host/gateway bounds); abandoned leases recover after two minutes.
+The [runbook](../persistent-human-login.md) pins exact budgets and evidence limits.
+A competing tab receives a
 retryable 503 without issuing another Google refresh. Completion and invalidation
 are conditional on the exact lease; completion additionally checks lease and idle
 expiry and is UPDATE-only. Logout deletes the row. A late worker cannot insert it
