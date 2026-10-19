@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guarded, bounded DynamoDB session deployment; no session data operations."""
+"""Read-only DynamoDB session settings verifier and offline IAM policy emitter."""
 import argparse
 import json
 import os
@@ -51,35 +51,24 @@ def validate_table(table, description):
         raise ValueError("Session table drift; refusing to change capacity, billing, schema, encryption or protections")
 
 
-def ensure_table(table, args):
-    if aws("describe-table", table_name=table) is None:
-        payload = {"TableName": table,
-                   "AttributeDefinitions": [{"AttributeName": "handle_hash", "AttributeType": "S"}],
-                   "KeySchema": [{"AttributeName": "handle_hash", "KeyType": "HASH"}],
-                   "BillingMode": "PROVISIONED", "TableClass": "STANDARD",
-                   "ProvisionedThroughput": {"ReadCapacityUnits": 1, "WriteCapacityUnits": 1},
-                   "DeletionProtectionEnabled": True}
-        aws("create-table", cli_input_json=json.dumps(payload))
+def verify_table(table, args):
     for attempt in range(args.max_attempts):
         description = aws("describe-table", table_name=table)
-        if description and description["Table"]["TableStatus"] == "ACTIVE":
+        if description is None:
+            raise ValueError("Session table missing; use the CloudFormation storage lifecycle")
+        if description["Table"]["TableStatus"] == "ACTIVE":
             return description["Table"]
         time.sleep(args.poll_seconds)
     raise ValueError("Table did not become ACTIVE within bounded wait")
 
 
-def ensure_ttl(table, args):
-    requested = False
+def verify_ttl(table, args):
     for attempt in range(args.max_attempts):
         ttl = aws("describe-time-to-live", table_name=table)["TimeToLiveDescription"]
-        if ttl.get("AttributeName") not in (None, "ttl") or ttl["TimeToLiveStatus"] not in ("DISABLED", "ENABLING", "ENABLED"):
-            raise ValueError("Session TTL configuration drift; refusing to replace it")
-        if ttl["TimeToLiveStatus"] == "ENABLED" and ttl.get("AttributeName") == "ttl":
+        if ttl.get("AttributeName") != "ttl" or ttl["TimeToLiveStatus"] not in ("ENABLING", "ENABLED"):
+            raise ValueError("Session TTL configuration drift; reconcile through CloudFormation")
+        if ttl["TimeToLiveStatus"] == "ENABLED":
             return ttl
-        if ttl["TimeToLiveStatus"] == "DISABLED" and not requested:
-            aws("update-time-to-live", table_name=table,
-                time_to_live_specification=json.dumps({"Enabled": True, "AttributeName": "ttl"}))
-            requested = True
         time.sleep(args.poll_seconds)
     raise ValueError("TTL did not become ENABLED within bounded wait")
 
@@ -132,12 +121,12 @@ def main():
             return
         if aws("get-caller-identity")["Account"] != ACCOUNT:
             raise ValueError("Unexpected AWS account")
-        description = ensure_table(table, args)
+        description = verify_table(table, args)
         validate_table(table, description)
         backups = aws("describe-continuous-backups", table_name=table)
         if backups["ContinuousBackupsDescription"]["PointInTimeRecoveryDescription"]["PointInTimeRecoveryStatus"] != "DISABLED":
             raise ValueError("Session table PITR must remain disabled")
-        ttl = ensure_ttl(table, args)
+        ttl = verify_ttl(table, args)
         report_verified_settings(table, description, ttl, backups)
     except (ValueError, KeyError, TypeError, OSError, subprocess.TimeoutExpired) as error:
         sys.exit(str(error))

@@ -1,0 +1,46 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "InspectGuitoStorageStacks",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:DescribeStacks",
+        "cloudformation:DescribeStackResources",
+        "cloudformation:DescribeStackResource",
+        "cloudformation:ListStackResources",
+        "cloudformation:DescribeChangeSet",
+        "cloudformation:GetTemplate",
+        "cloudformation:GetStackPolicy",
+        "cloudformation:DescribeStackResourceDrifts"
+      ],
+      "Resource": [
+        "arn:aws:cloudformation:eu-west-1:497087877832:stack/guito-sessions-staging/*",
+        "arn:aws:cloudformation:eu-west-1:497087877832:stack/guito-sessions-production/*",
+        "arn:aws:cloudformation:eu-west-1:497087877832:stack/guito-postgres-shared/*"
+      ]
+    },
+    {
+      "Sid": "InspectNamedStorageOperationEvents",
+      "Effect": "Allow",
+      "Action": ["cloudformation:DescribeEvents"],
+      "Resource": [
+        "arn:aws:cloudformation:eu-west-1:497087877832:stack/guito-sessions-staging/*",
+        "arn:aws:cloudformation:eu-west-1:497087877832:stack/guito-sessions-production/*",
+        "arn:aws:cloudformation:eu-west-1:497087877832:stack/guito-postgres-shared/*",
+        "arn:aws:cloudformation:eu-west-1:497087877832:changeSet/guito-infra-*/*"
+      ]
+    },
+    {
+      "Sid": "ValidateTemplatesAndInspectDriftOperations",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:ValidateTemplate",
+        "cloudformation:GetTemplateSummary",
+        "cloudformation:DescribeStackDriftDetectionStatus"
+      ],
+      "Resource": "*",
+      "Condition": { "StringEquals": { "aws:RequestedRegion": "eu-west-1" } }
+    }
+  ]
+}

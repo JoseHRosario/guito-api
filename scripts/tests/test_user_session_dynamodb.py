@@ -1,4 +1,4 @@
-"""Exercise the public provisioner CLI with a stateful, offline AWS executable."""
+"""Exercise the public settings verifier CLI with a stateful, offline AWS executable."""
 import json
 import os
 from pathlib import Path
@@ -142,25 +142,21 @@ class UserSessionDynamoDbTests(unittest.TestCase):
                 self.assertEqual('guito-api-user-sessions', call[call.index('--table-name') + 1])
         self.assertFalse(any('create-table' in call or 'update-time-to-live' in call for call in self.calls()))
 
-    def test_missing_table_should_create_exact_free_first_shape_and_enable_ttl_once(self):
+    def test_missing_table_should_fail_without_competing_with_cloudformation(self):
         self.set_state()
         result = self.run_helper()
-        self.assertEqual(0, result.returncode, result.stderr)
-        state = json.loads(self.state.read_text())
-        self.assertEqual({
-            'TableName': TABLE, 'AttributeDefinitions': [{'AttributeName': 'handle_hash', 'AttributeType': 'S'}],
-            'KeySchema': [{'AttributeName': 'handle_hash', 'KeyType': 'HASH'}], 'BillingMode': 'PROVISIONED',
-            'ProvisionedThroughput': {'ReadCapacityUnits': 1, 'WriteCapacityUnits': 1},
-            'TableClass': 'STANDARD', 'DeletionProtectionEnabled': True,
-        }, state['created'])
-        self.assertEqual({'Enabled': True, 'AttributeName': 'ttl'}, state['ttl_request'])
-        self.assertEqual('ENABLED', state['ttl']['TimeToLiveStatus'])
-        first_count = len(self.calls())
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('CloudFormation', result.stderr)
+        self.assertFalse(any('create-table' in call or 'update-time-to-live' in call for call in self.calls()))
+        self.assertNotIn('table', json.loads(self.state.read_text()))
+
+    def test_disabled_ttl_should_fail_without_repairing_cloudformation_resource(self):
+        self.set_state(table=valid_table(), ttl={'TimeToLiveStatus': 'DISABLED'})
         result = self.run_helper()
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertFalse(any('create-table' in call or 'update-time-to-live' in call for call in self.calls()[first_count:]))
-        self.assertGreaterEqual(sum('describe-table' in call for call in self.calls()), 2)
-        self.assertGreaterEqual(sum('describe-time-to-live' in call for call in self.calls()), 3)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('CloudFormation', result.stderr)
+        self.assertFalse(any('create-table' in call or 'update-time-to-live' in call for call in self.calls()))
+        self.assertEqual({'TimeToLiveStatus': 'DISABLED'}, json.loads(self.state.read_text())['ttl'])
 
     def test_existing_drift_should_fail_closed_without_any_mutation(self):
         drifts = [
@@ -228,8 +224,8 @@ class UserSessionDynamoDbTests(unittest.TestCase):
         self.set_state(table=valid_table(), ttl={'TimeToLiveStatus': 'DISABLED'}, stuck=True)
         result = self.run_helper()
         self.assertNotEqual(0, result.returncode)
-        self.assertEqual(1, sum('update-time-to-live' in call for call in self.calls()))
-        self.assertEqual(3, sum('describe-time-to-live' in call for call in self.calls()))
+        self.assertEqual(0, sum('update-time-to-live' in call for call in self.calls()))
+        self.assertEqual(1, sum('describe-time-to-live' in call for call in self.calls()))
         for stuck_table in (False, True):
             table = valid_table()
             if stuck_table:
@@ -273,7 +269,7 @@ class UserSessionDynamoDbTests(unittest.TestCase):
         self.assertEqual(set(expected['Action']), set(actual['Action']))
         self.assertEqual(set(expected['Resource']), set(actual['Resource']))
 
-    def test_deploy_should_provision_before_code_and_install_only_separate_runtime_policy(self):
+    def test_deploy_should_verify_before_code_and_install_only_separate_runtime_policy(self):
         source = (ROOT / 'deploy/deploy.sh').read_text()
         marker = '# --- User-session DynamoDB preflight ---'
         self.assertIn(marker, source)
@@ -281,7 +277,13 @@ class UserSessionDynamoDbTests(unittest.TestCase):
         self.assertLess(source.index(marker), source.index('create_or_update "$API_NAME"'))
         self.assertIn('--policy-name guito-api-user-sessions', source)
         policy = source.split('# --- User-session runtime IAM ---', 1)[1].split('# --- End user-session runtime IAM ---', 1)[0]
-        env = dict(self.env, REPO_ROOT=str(ROOT), DEPLOY_WORK_DIR=str(self.directory), ENV='staging',
+        # Controller routing/failure is exercised separately; this seam verifies
+        # fresh DynamoDB readback and the unchanged item-only runtime policy.
+        fixture_deploy = self.directory / 'deploy'
+        fixture_deploy.mkdir()
+        (fixture_deploy / 'storage-infrastructure.py').write_text('import sys\nsys.exit(0)\n')
+        (fixture_deploy / 'user-session-dynamodb.py').write_text(HELPER.read_text())
+        env = dict(self.env, REPO_ROOT=str(self.directory), DEPLOY_WORK_DIR=str(self.directory), ENV='staging',
                    REGION=REGION, ACCOUNT_ID=ACCOUNT, ROLE='guito-api-lambda-role')
         result = subprocess.run(['bash', '-euc', block + '\n' + policy], env=env, capture_output=True, text=True, timeout=15)
         self.assertEqual(0, result.returncode, result.stderr)

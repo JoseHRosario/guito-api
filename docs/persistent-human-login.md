@@ -130,19 +130,30 @@ failure as Google revocation. Build/hermetic tests use fake keys and need no sec
 
 ## Infrastructure and IAM
 
-Routine provisioning/code rollout runs through the existing GitHub Actions lane,
-not a local `deploy.sh` invocation. The session helper must treat only typed
-ResourceNotFound as missing, bound its ACTIVE/TTL waits, read exact settings back,
-and fail closed on access denial, malformed schema, wrong mode/class/capacity,
-indexes, customer-managed encryption or paid-backup drift. It must not quietly
-switch an existing table's billing mode/capacity or repair unrelated resources.
+Storage lifecycle is now defined by the retained environment-specific session
+stacks and import-only shared Postgres stack in
+[ADR-0020](adr/0020-cloudformation-storage-ownership.md). The
+[storage runbook](storage-infrastructure.md) covers explicit import plans,
+exact-change-set execution and readback. Ownership transfer does not reset tables,
+copy credentials or change the session wire contract.
 
-The reviewed `deploy/user-session-provisioner-policy.json` grants the existing
-`guito-api-deploy` role only CreateTable, DescribeTable, DescribeTimeToLive,
+Routine infrastructure/code rollout runs through the existing GitHub Actions lane,
+not a local `deploy.sh` invocation. CloudFormation is the provisioning owner;
+`deploy/user-session-dynamodb.py` only verifies native metadata after stack
+reconciliation. It must treat only typed ResourceNotFound as missing, fail rather
+than create an unmanaged table, and never repair TTL directly. It reads exact
+settings back and fails closed on access denial, malformed schema, wrong
+mode/class/capacity, indexes, customer-managed encryption or paid-backup drift.
+
+The original `deploy/user-session-provisioner-policy.json` grants the existing
+`guito-api-deploy` role CreateTable, DescribeTable, DescribeTimeToLive,
 UpdateTimeToLive and DescribeContinuousBackups on the two fixed table ARNs.
-José approved that narrow addition; the parent applied and readback-verified it
-before publication. No agent identity DynamoDB grants, broad List/Scan/DeleteTable,
-financial permissions or unrelated policy changes are required.
+Those native permissions support CloudFormation and metadata verification; the
+Python helper no longer uses them as a competing provisioning controller.
+The separately approved CloudFormation deployment/inspection policies are
+versioned alongside it. Their addition must be exact-readback-verified before
+adoption. No operator DynamoDB item grants, List/Scan/DeleteTable, new RDS
+create/modify/delete authority or financial permissions are introduced.
 
 The normal deployment installs a separate `guito-api-user-sessions` runtime policy
 on `guito-api-lambda-role` containing only GetItem, PutItem, UpdateItem and DeleteItem

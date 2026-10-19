@@ -1,0 +1,149 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "InspectNamedStorageStacks",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:DescribeStacks",
+        "cloudformation:DescribeStackResources",
+        "cloudformation:DescribeStackResource",
+        "cloudformation:ListStackResources",
+        "cloudformation:DescribeChangeSet",
+        "cloudformation:GetTemplate",
+        "cloudformation:GetStackPolicy",
+        "cloudformation:DescribeStackResourceDrifts",
+        "cloudformation:DetectStackDrift",
+        "cloudformation:DetectStackResourceDrift"
+      ],
+      "Resource": [
+        "arn:aws:cloudformation:eu-west-1:497087877832:stack/guito-sessions-staging/*",
+        "arn:aws:cloudformation:eu-west-1:497087877832:stack/guito-sessions-production/*",
+        "arn:aws:cloudformation:eu-west-1:497087877832:stack/guito-postgres-shared/*"
+      ]
+    },
+    {
+      "Sid": "InspectNamedStoragePredeploymentEvents",
+      "Effect": "Allow",
+      "Action": "cloudformation:DescribeEvents",
+      "Resource": [
+        "arn:aws:cloudformation:eu-west-1:497087877832:stack/guito-sessions-staging/*",
+        "arn:aws:cloudformation:eu-west-1:497087877832:stack/guito-sessions-production/*",
+        "arn:aws:cloudformation:eu-west-1:497087877832:stack/guito-postgres-shared/*",
+        "arn:aws:cloudformation:eu-west-1:497087877832:changeSet/guito-infra-*/*"
+      ]
+    },
+    {
+      "Sid": "TagOnlyNamedStorageStackMetadata",
+      "Effect": "Allow",
+      "Action": "cloudformation:TagResource",
+      "Resource": [
+        "arn:aws:cloudformation:eu-west-1:497087877832:stack/guito-sessions-staging/*",
+        "arn:aws:cloudformation:eu-west-1:497087877832:stack/guito-sessions-production/*",
+        "arn:aws:cloudformation:eu-west-1:497087877832:stack/guito-postgres-shared/*"
+      ]
+    },
+    {
+      "Sid": "PlanOnlyNativeSessionTableChanges",
+      "Effect": "Allow",
+      "Action": "cloudformation:CreateChangeSet",
+      "Resource": [
+        "arn:aws:cloudformation:eu-west-1:497087877832:stack/guito-sessions-staging/*",
+        "arn:aws:cloudformation:eu-west-1:497087877832:stack/guito-sessions-production/*"
+      ],
+      "Condition": {
+        "StringLike": { "cloudformation:ChangeSetName": "guito-infra-*" },
+        "ForAllValues:StringEquals": { "cloudformation:ResourceTypes": ["AWS::DynamoDB::Table"] },
+        "Null": { "cloudformation:ResourceTypes": "false", "cloudformation:RoleArn": "true" }
+      }
+    },
+    {
+      "Sid": "PlanOnlySharedPostgresImports",
+      "Effect": "Allow",
+      "Action": "cloudformation:CreateChangeSet",
+      "Resource": "arn:aws:cloudformation:eu-west-1:497087877832:stack/guito-postgres-shared/*",
+      "Condition": {
+        "StringLike": { "cloudformation:ChangeSetName": "guito-infra-*" },
+        "ForAllValues:StringEquals": {
+          "cloudformation:ResourceTypes": ["AWS::RDS::DBCluster", "AWS::RDS::DBInstance"],
+          "cloudformation:ImportResourceTypes": ["AWS::RDS::DBCluster", "AWS::RDS::DBInstance"]
+        },
+        "Null": { "cloudformation:ResourceTypes": "false", "cloudformation:ImportResourceTypes": "false", "cloudformation:RoleArn": "true" }
+      }
+    },
+    {
+      "Sid": "ExecuteOnlyNamedStoragePlans",
+      "Effect": "Allow",
+      "Action": "cloudformation:ExecuteChangeSet",
+      "Resource": [
+        "arn:aws:cloudformation:eu-west-1:497087877832:stack/guito-sessions-staging/*",
+        "arn:aws:cloudformation:eu-west-1:497087877832:stack/guito-sessions-production/*",
+        "arn:aws:cloudformation:eu-west-1:497087877832:stack/guito-postgres-shared/*"
+      ],
+      "Condition": {
+        "StringLike": {
+          "cloudformation:ChangeSetName": [
+            "guito-infra-*",
+            "arn:aws:cloudformation:eu-west-1:497087877832:changeSet/guito-infra-*/*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "ProtectSharedPostgresFromUpdates",
+      "Effect": "Allow",
+      "Action": "cloudformation:SetStackPolicy",
+      "Resource": "arn:aws:cloudformation:eu-west-1:497087877832:stack/guito-postgres-shared/*"
+    },
+    {
+      "Sid": "ValidateNativeTemplatesAndInspectDriftOperations",
+      "Effect": "Allow",
+      "Action": ["cloudformation:ValidateTemplate", "cloudformation:GetTemplateSummary", "cloudformation:DescribeStackDriftDetectionStatus", "cloudformation:BatchDescribeTypeConfigurations"],
+      "Resource": "*",
+      "Condition": { "StringEquals": { "aws:RequestedRegion": "eu-west-1" } }
+    },
+    {
+      "Sid": "InspectAndTagOnlyNamedSessionTables",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:DescribeTable",
+        "dynamodb:DescribeContinuousBackups",
+        "dynamodb:DescribeTimeToLive",
+        "dynamodb:ListTagsOfResource",
+        "dynamodb:DescribeContributorInsights",
+        "dynamodb:DescribeKinesisStreamingDestination",
+        "dynamodb:GetResourcePolicy",
+        "dynamodb:TagResource",
+        "dynamodb:UntagResource"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:eu-west-1:497087877832:table/guito-api-user-sessions-staging",
+        "arn:aws:dynamodb:eu-west-1:497087877832:table/guito-api-user-sessions"
+      ]
+    },
+    {
+      "Sid": "InspectAndTagOnlyExistingSharedPostgres",
+      "Effect": "Allow",
+      "Action": ["rds:DescribeDBClusters", "rds:DescribeDBInstances", "rds:ListTagsForResource", "rds:AddTagsToResource", "rds:RemoveTagsFromResource"],
+      "Resource": [
+        "arn:aws:rds:eu-west-1:497087877832:cluster:db-cluster",
+        "arn:aws:rds:eu-west-1:497087877832:db:guito"
+      ]
+    },
+    {
+      "Sid": "ReadNetworkMetadataForNativeInstanceProvider",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeAccountAttributes",
+        "ec2:DescribeAvailabilityZones",
+        "ec2:DescribeInternetGateways",
+        "ec2:DescribeSecurityGroups",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeVpcAttribute",
+        "ec2:DescribeVpcs"
+      ],
+      "Resource": "*",
+      "Condition": { "StringEquals": { "aws:RequestedRegion": "eu-west-1" } }
+    }
+  ]
+}

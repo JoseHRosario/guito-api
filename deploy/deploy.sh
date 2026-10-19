@@ -65,8 +65,11 @@ for parameter in "$SECRET_NAME" /guito-api/human-auth "$BANK_PARAMETER"; do
 done
 
 # --- User-session DynamoDB preflight ---
-# Validate/provision only the selected environment before any Lambda code update.
-# Deployment authority is separately owner-approved; this never grants agent rights.
+# Shared Aurora must already be imported; routine deploys never change it.
+# CloudFormation alone owns table creation/TTL. Fail before migrations or code.
+python3 "$REPO_ROOT/deploy/storage-infrastructure.py" verify --target postgres-shared
+python3 "$REPO_ROOT/deploy/storage-infrastructure.py" ensure --target "sessions-$ENV"
+# Fresh read-only settings evidence and the unchanged runtime IAM artifact.
 python3 "$REPO_ROOT/deploy/user-session-dynamodb.py" --environment "$ENV" \
   --account-id "$ACCOUNT_ID" --region "$REGION" --output-dir "$DEPLOY_WORK_DIR"
 # --- End user-session DynamoDB preflight ---
