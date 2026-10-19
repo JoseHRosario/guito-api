@@ -136,7 +136,8 @@ namespace GuitoApi.Infrastructure.EnableBanking
                     Uid: account.GetProperty("uid").GetString() ?? string.Empty,
                     Iban: iban,
                     Name: account.TryGetProperty("name", out var nameElement) ? nameElement.GetString() ?? string.Empty : string.Empty,
-                    Currency: currency ?? string.Empty));
+                    Currency: currency ?? string.Empty,
+                    IdentificationHash: GetStringOrNull(account, "identification_hash")));
             }
 
             return accounts;
@@ -166,7 +167,9 @@ namespace GuitoApi.Infrastructure.EnableBanking
                         Status: GetStringOrNull(element, "status") ?? string.Empty,
                         RemittanceInformation: JoinRemittanceInformation(element),
                         Note: GetStringOrNull(element, "note"),
-                        CounterpartyName: PartyName(element, "creditor") ?? PartyName(element, "debtor")));
+                        CounterpartyName: PartyName(element, "creditor") ?? PartyName(element, "debtor"),
+                        TransactionDate: ParseDate(element, "transaction_date"),
+                        ValueDate: ParseDate(element, "value_date")));
                 }
             }
 
@@ -177,12 +180,16 @@ namespace GuitoApi.Infrastructure.EnableBanking
             return new BankTransactionSourcePage(transactions, continuationKey);
         }
 
+        private static DateOnly? ParseDate(JsonElement element, string property) =>
+            DateOnly.TryParseExact(GetStringOrNull(element, property), "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out var date) ? date : null;
+
         private static string? GetStringOrNull(JsonElement element, string property) =>
             element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
                 ? value.GetString()
                 : null;
 
-        /// <summary>The counterparty's name (creditor for DBIT rows — the sync_key composite, ADR-0013).</summary>
+        /// <summary>The counterparty name, retained in ambiguous observation fingerprints.</summary>
         private static string? PartyName(JsonElement element, string partyProperty) =>
             element.TryGetProperty(partyProperty, out var party)
             && party.ValueKind == JsonValueKind.Object

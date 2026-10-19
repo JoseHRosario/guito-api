@@ -24,49 +24,49 @@ public class DataApiPostgresBankTransactionRepositoryTests
     };
 
     [Fact]
-    public async Task InsertOrSkipAsync_ShouldReturnTrue_AndExecuteInsert_WhenRowIsNew()
+    public async Task ImportAsync_ShouldReturnTrue_AndExecuteInsert_WhenRowIsNew()
     {
         var client = new FakePostgresDataApiClient();
         client.NextResults.Enqueue(
-            new PostgresResult(["id"], [[PostgresValue.FromLong(1)]], 1));
+            new PostgresResult(["id", "sync_key", "inserted"], [[PostgresValue.FromLong(1), PostgresValue.FromString("sync-key-1"), PostgresValue.FromBoolean(true)]], 1));
         var repository = new DataApiPostgresBankTransactionRepository(client, new DataApiUnitOfWork(client, new PostgresTransactionContext()));
 
-        var isNew = await repository.InsertOrSkipAsync(BuildInsert());
+        var isNew = await repository.ImportAsync(BuildInsert());
 
-        Assert.True(isNew);
+        Assert.True(isNew.IsNew);
         var sql = Assert.Single(client.ExecutedSql);
         Assert.Contains("INSERT INTO bank_transactions", sql);
-        Assert.Contains("ON CONFLICT (sync_key) DO NOTHING", sql);
+        Assert.Contains("ON CONFLICT (sync_key) DO UPDATE", sql);
         Assert.Contains("RETURNING id", sql);
     }
 
     [Fact]
-    public async Task InsertOrSkipAsync_ShouldReturnFalse_WhenSyncKeyConflicts()
+    public async Task ImportAsync_ShouldReturnFalse_WhenSyncKeyConflicts()
     {
         var client = new FakePostgresDataApiClient();
         client.NextResults.Enqueue(new PostgresResult([], [], 0));
         var repository = new DataApiPostgresBankTransactionRepository(client, new DataApiUnitOfWork(client, new PostgresTransactionContext()));
 
-        var isNew = await repository.InsertOrSkipAsync(BuildInsert());
+        var isNew = await repository.ImportAsync(BuildInsert());
 
-        Assert.False(isNew);
+        Assert.False(isNew.IsNew);
     }
 
     [Fact]
-    public async Task InsertOrSkipAsync_ShouldBindEveryColumn_AsNamedParameter()
+    public async Task ImportAsync_ShouldBindEveryColumn_AsNamedParameter()
     {
         var client = new FakePostgresDataApiClient();
         client.NextResults.Enqueue(new PostgresResult([], [], 0));
         var repository = new DataApiPostgresBankTransactionRepository(client, new DataApiUnitOfWork(client, new PostgresTransactionContext()));
 
-        await repository.InsertOrSkipAsync(BuildInsert());
+        await repository.ImportAsync(BuildInsert());
 
         var parameters = Assert.Single(client.ExecutedParameters)!;
         var byName = parameters.ToDictionary(p => p.Name, p => p.Value);
-        Assert.Equal(8, parameters.Count);
+        Assert.Equal(13, parameters.Count);
         Assert.Equal("eb-account-1", byName["account_uid"].StringValue);
         Assert.Equal("2026-10-04", byName["booking_date"].StringValue);
-        Assert.True(byName["amount"].DoubleValue == 2.30);
+        Assert.Equal("2.3", byName["amount"].StringValue);
         Assert.Equal("EUR", byName["currency"].StringValue);
         Assert.Equal("DBIT", byName["direction"].StringValue);
         Assert.Equal("Padaria", byName["remittance_information"].StringValue);
@@ -75,27 +75,27 @@ public class DataApiPostgresBankTransactionRepositoryTests
     }
 
     [Fact]
-    public async Task InsertOrSkipAsync_ShouldBindNullRemittance_WhenItIsAbsent()
+    public async Task ImportAsync_ShouldBindNullRemittance_WhenItIsAbsent()
     {
         var client = new FakePostgresDataApiClient();
         client.NextResults.Enqueue(new PostgresResult([], [], 0));
         var repository = new DataApiPostgresBankTransactionRepository(client, new DataApiUnitOfWork(client, new PostgresTransactionContext()));
 
-        await repository.InsertOrSkipAsync(BuildInsert(remittanceInformation: null));
+        await repository.ImportAsync(BuildInsert(remittanceInformation: null));
 
         var parameters = Assert.Single(client.ExecutedParameters)!;
         Assert.True(parameters.Single(p => p.Name == "remittance_information").Value.IsNull);
     }
 
     [Fact]
-    public async Task InsertOrSkipAsync_ShouldForwardCancellationToken()
+    public async Task ImportAsync_ShouldForwardCancellationToken()
     {
         var client = new FakePostgresDataApiClient();
         client.NextResults.Enqueue(new PostgresResult([], [], 0));
         var repository = new DataApiPostgresBankTransactionRepository(client, new DataApiUnitOfWork(client, new PostgresTransactionContext()));
         using var cancellationSource = new CancellationTokenSource();
 
-        await repository.InsertOrSkipAsync(BuildInsert(), cancellationSource.Token);
+        await repository.ImportAsync(BuildInsert(), cancellationSource.Token);
 
         Assert.Equal(cancellationSource.Token, Assert.Single(client.ExecutedCancellationTokens));
     }

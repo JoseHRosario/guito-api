@@ -17,10 +17,10 @@ public class FakeBankTransactionRepository : IBankTransactionRepository
     /// <summary>Scripted pending rows returned by ListAsync (issue #91 GET test).</summary>
     public List<BankTransactionDetail> Pending { get; } = [];
 
-    public Task<bool> InsertOrSkipAsync(BankTransactionInsert transaction, CancellationToken cancellationToken = default)
+    public Task<BankTransactionImportResult> ImportAsync(BankTransactionInsert transaction, CancellationToken cancellationToken = default)
     {
         Inserts.Add(transaction);
-        return Task.FromResult(ExistingSyncKeys.Add(transaction.SyncKey));
+        return Task.FromResult(new BankTransactionImportResult(ExistingSyncKeys.Add(transaction.SyncKey), transaction.SyncKey));
     }
 
     public Task<IReadOnlyList<BankTransactionDetail>> ListAsync(string reviewStatus = "all", CancellationToken cancellationToken = default) =>

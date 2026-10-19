@@ -36,6 +36,8 @@ namespace GuitoApi.Services.BankAuth
                 await _accounts.UpsertAsync(new BankAccountUpsert
                 {
                     Uid = account.Uid,
+                    FetchUid = account.Uid,
+                    IdentificationHash = string.IsNullOrWhiteSpace(account.IdentificationHash) ? null : account.IdentificationHash,
                     SessionId = session.SessionId,
                     Iban = account.Iban,
                     Name = account.Name,

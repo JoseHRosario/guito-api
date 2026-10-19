@@ -16,4 +16,6 @@ public record BankTransactionSource(
     string Status,
     string? RemittanceInformation,
     string? Note,
-    string? CounterpartyName);
+    string? CounterpartyName,
+    DateOnly? TransactionDate = null,
+    DateOnly? ValueDate = null);

@@ -3,8 +3,12 @@ namespace GuitoApi.Model;
 /// <summary>One bank account to upsert into bank_accounts (issue #89, consent flow).</summary>
 public class BankAccountUpsert
 {
-    /// <summary>The Enable Banking account uid (bank_accounts PK).</summary>
+    /// <summary>The provider account UID received during consent; not a durable identity.</summary>
     public string Uid { get; set; } = string.Empty;
+
+    public string? IdentificationHash { get; set; }
+
+    public string? FetchUid { get; set; }
 
     /// <summary>The EB session id this account's consent belongs to.</summary>
     public string SessionId { get; set; } = string.Empty;

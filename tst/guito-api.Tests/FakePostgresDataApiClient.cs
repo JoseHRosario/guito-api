@@ -12,6 +12,11 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
     public Queue<PostgresResult> NextResults { get; } = new();
     public Func<string, IReadOnlyList<PostgresParameter>?, PostgresResult>? ExecuteBank { get; set; }
     public bool PersistExpenses { get; set; }
+    public bool PersistBankImports { get; set; }
+    public Func<string, CancellationToken, Task>? BeforeBankImportAsync { get; set; }
+    private readonly Dictionary<string, Dictionary<string, PostgresValue>> _bankImports = [];
+    private readonly Dictionary<string, Dictionary<string, PostgresValue>> _bankAccounts = [];
+    private readonly Dictionary<long, long?> _bankCategories = [];
     public List<(long Id, string Name, string? Description)> CategoryRows { get; } =
         [(2, "Restaurants", null), (3, "Groceries", null), (2147483648L, "Test", null), (4, "Original category", null)];
     private readonly List<IReadOnlyList<PostgresValue>> _expenses = [];
@@ -28,6 +33,20 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
     public Dictionary<long, (string Status, string Direction)> BankMovementStates { get; } = [];
     private Dictionary<long, (int? ExpenseId, string Status)>? _linksSnapshot;
 
+
+    public void SeedBankAccount(string uid, string? identificationHash)
+    {
+        var values = new Dictionary<string, PostgresValue>
+        {
+            ["uid"] = PostgresValue.FromString(uid), ["fetch_uid"] = PostgresValue.FromString(uid),
+            ["identification_hash"] = identificationHash is null ? PostgresValue.Null() : PostgresValue.FromString(identificationHash),
+            ["session_id"] = PostgresValue.FromString("session"), ["iban"] = PostgresValue.Null(),
+            ["name"] = PostgresValue.FromString("Main"), ["currency"] = PostgresValue.FromString("EUR"),
+            ["aspsp_country"] = PostgresValue.FromString("PT"), ["aspsp_name"] = PostgresValue.FromString("Bank"),
+            ["consent_status"] = PostgresValue.FromString("VALID"), ["consent_expires_at"] = PostgresValue.Null()
+        };
+        _bankAccounts.Add(uid, values);
+    }
 
     public void SeedExpense(int id, string bookingDate, string amount, string category, string creatorEmail = "human@example.com", string description = "Original purchase") =>
         _expenses.Add([PostgresValue.FromString(id.ToString(System.Globalization.CultureInfo.InvariantCulture)),
@@ -172,6 +191,10 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
             ? sql.StartsWith(prefix, StringComparison.Ordinal) : ExecutedSql.Count >= ExecuteExceptionAtCall))
             throw ExecuteException;
 
+        if (PersistBankImports && (sql.Contains("bank_accounts", StringComparison.Ordinal)
+            || sql.StartsWith("WITH identity_choice", StringComparison.Ordinal)
+            || sql.StartsWith("UPDATE bank_transactions\nSET suggested_category_id", StringComparison.Ordinal)))
+            return ExecuteBankImportAsync(sql, parameters, cancellationToken);
         if (NextResults.Count == 0 && sql.StartsWith("SELECT id, name, description FROM categories", StringComparison.Ordinal))
         {
             var categories = sql.Contains("ORDER BY name", StringComparison.Ordinal)
@@ -289,13 +312,99 @@ public class FakePostgresDataApiClient : IPostgresDataApiClient
         var bank = BankDetails.GetValueOrDefault(id, ("2026-07-01", "12.34", "EUR", null));
         var count = sql.Contains("SELECT COUNT(*) FROM expenses candidate")
             ? EligibleExpenses(sql, [new("id", PostgresValue.FromLong(id))]).Count() : 0;
-        return [PostgresValue.FromLong(id), PostgresValue.FromString("eb-account"),
+        var imported = _bankImports.Values.SingleOrDefault(row => row["id"].LongValue == id);
+        var suggestion = _bankCategories.GetValueOrDefault(id);
+        return [PostgresValue.FromLong(id), PostgresValue.FromString(imported?["account_uid"].StringValue ?? "eb-account"),
             PostgresValue.FromString(bank.Item1), PostgresValue.FromString(bank.Item2),
-            PostgresValue.FromString(bank.Item3), bank.Item4 is null ? PostgresValue.Null() : PostgresValue.FromString(bank.Item4), PostgresValue.Null(), PostgresValue.Null(),
+            PostgresValue.FromString(bank.Item3), bank.Item4 is null ? PostgresValue.Null() : PostgresValue.FromString(bank.Item4),
+            suggestion is { } categoryId ? PostgresValue.FromLong(categoryId) : PostgresValue.Null(),
+            suggestion is { } suggestedId ? PostgresValue.FromString(CategoryRows.Single(c => c.Id == suggestedId).Name) : PostgresValue.Null(),
             PostgresValue.FromString("BOOK"), PostgresValue.FromString(link.Status),
             link.ExpenseId is { } expenseId ? PostgresValue.FromLong(expenseId) : PostgresValue.Null(),
             expense?[1] ?? PostgresValue.Null(), expense?[2] ?? PostgresValue.Null(),
             expense?[3] ?? PostgresValue.Null(), expense?[4] ?? PostgresValue.Null(), PostgresValue.FromLong(count)];
+    }
+
+    private async Task<PostgresResult> ExecuteBankImportAsync(string sql, IReadOnlyList<PostgresParameter>? parameters, CancellationToken cancellationToken)
+    {
+        if (BeforeBankImportAsync is not null) await BeforeBankImportAsync(sql, cancellationToken);
+        return ExecuteBankImport(sql, parameters);
+    }
+
+    private PostgresResult ExecuteBankImport(string sql, IReadOnlyList<PostgresParameter>? parameters)
+    {
+        var values = parameters?.ToDictionary(p => p.Name, p => p.Value) ?? [];
+        if (sql.Contains("bank_accounts", StringComparison.Ordinal)) return ExecuteBankAccount(sql, values);
+        if (sql.StartsWith("UPDATE", StringComparison.Ordinal))
+        {
+            var targets = _bankImports.Where(row => !sql.Contains("sync_key = :sync_key", StringComparison.Ordinal)
+                || row.Key == values["sync_key"].StringValue).ToArray();
+            foreach (var target in targets)
+            {
+                var id = target.Value["id"].LongValue!.Value;
+                var state = LinkedTransactions[id];
+                if (sql.Contains("expense_id IS NULL", StringComparison.Ordinal) && state.ExpenseId is not null) continue;
+                if (sql.Contains("review_status IN ('needsReview', 'ignored')", StringComparison.Ordinal) && state.Status is not ("needsReview" or "ignored")) continue;
+                _bankCategories[id] = values["category_id"].LongValue;
+            }
+            return new([], [], 0);
+        }
+        var reliable = values["identity_reliable"].BooleanValue == true;
+        var evidence = _bankImports.Values.AsEnumerable();
+        if (sql.Contains("evidence.account_uid = :account_uid", StringComparison.Ordinal))
+            evidence = evidence.Where(row => row["account_uid"].StringValue == values["account_uid"].StringValue);
+        if (sql.Contains("evidence.entry_reference = :entry_reference", StringComparison.Ordinal))
+            evidence = evidence.Where(row => row["entry_reference"].StringValue == values["entry_reference"].StringValue && !values["entry_reference"].IsNull);
+        if (sql.Contains("NOT EXISTS", StringComparison.Ordinal) && evidence.Any(row =>
+            (sql.Contains("evidence.identity_reliable IS NOT TRUE", StringComparison.Ordinal) && row["identity_reliable"].BooleanValue != true)
+            || (sql.Contains("evidence.amount <>", StringComparison.Ordinal) && row["amount"].StringValue != values["amount"].StringValue)
+            || (sql.Contains("evidence.currency <>", StringComparison.Ordinal) && row["currency"].StringValue != values["currency"].StringValue)
+            || (sql.Contains("evidence.direction <>", StringComparison.Ordinal) && row["direction"].StringValue != values["direction"].StringValue))) reliable = false;
+        var key = values[reliable ? "sync_key" : "fallback_sync_key"].StringValue!;
+        if (!_bankImports.TryGetValue(key, out var existing))
+        {
+            var id = LinkedTransactions.Keys.DefaultIfEmpty(0).Max() + 1;
+            values["id"] = PostgresValue.FromLong(id);
+            values["identity_reliable"] = PostgresValue.FromBoolean(reliable);
+            _bankImports.Add(key, values);
+            LinkedTransactions.Add(id, (null, "needsReview"));
+            UpdateImportedBankDetails(values);
+            return new([], [[values["id"], PostgresValue.FromString(key), PostgresValue.FromBoolean(true)]], 1);
+        }
+        var existingId = existing["id"].LongValue!.Value;
+        var link = LinkedTransactions[existingId];
+        if ((sql.Contains("bank_transactions.expense_id IS NULL", StringComparison.Ordinal) && link.ExpenseId is not null)
+            || (sql.Contains("bank_transactions.review_status IN ('needsReview', 'ignored')", StringComparison.Ordinal) && link.Status is not ("needsReview" or "ignored"))
+            || (sql.Contains("bank_transactions.identity_reliable AND EXCLUDED.identity_reliable", StringComparison.Ordinal) && (!reliable || existing["identity_reliable"].BooleanValue != true)))
+            return new([], [], 0);
+        foreach (var field in new[] { "account_uid", "entry_reference", "amount", "currency", "direction" })
+            if (sql.Contains($"bank_transactions.{field} = EXCLUDED.{field}", StringComparison.Ordinal) && existing[field] != values[field]) return new([], [], 0);
+        foreach (var field in new[] { "booking_date", "transaction_date", "value_date", "remittance_information" })
+            if (sql.Contains($"{field} = EXCLUDED.{field}", StringComparison.Ordinal)) existing[field] = values[field];
+        if (sql.Contains("review_status = EXCLUDED.review_status", StringComparison.Ordinal)) LinkedTransactions[existingId] = (link.ExpenseId, "needsReview");
+        UpdateImportedBankDetails(existing);
+        return new([], [[existing["id"], PostgresValue.FromString(key), PostgresValue.FromBoolean(false)]], 1);
+    }
+
+    private void UpdateImportedBankDetails(Dictionary<string, PostgresValue> row) =>
+        BankDetails[row["id"].LongValue!.Value] = (row["booking_date"].StringValue!, row["amount"].StringValue!, row["currency"].StringValue!, row["remittance_information"].StringValue);
+
+    private PostgresResult ExecuteBankAccount(string sql, Dictionary<string, PostgresValue> values)
+    {
+        if (sql.StartsWith("SELECT", StringComparison.Ordinal))
+            return new([], _bankAccounts.Values.Select(row => (IReadOnlyList<PostgresValue>)new[]
+            {
+                row["uid"], row["session_id"], row["iban"], row["name"], row["currency"], row["aspsp_country"], row["aspsp_name"],
+                row["consent_status"], row["consent_expires_at"], row["fetch_uid"], row["identification_hash"]
+            }).ToList(), 0);
+        var target = sql.Contains("ON CONFLICT (identification_hash)", StringComparison.Ordinal)
+            ? _bankAccounts.Values.SingleOrDefault(row => row["identification_hash"] == values["identification_hash"])
+            : _bankAccounts.GetValueOrDefault(values["uid"].StringValue!);
+        if (target is null) _bankAccounts.Add(values["uid"].StringValue!, values);
+        else
+            foreach (var field in values.Keys.Where(field => field is not ("uid" or "identification_hash")))
+                if (sql.Contains($"{field} = EXCLUDED.{field}", StringComparison.Ordinal)) target[field] = values[field];
+        return new([], [], 1);
     }
 
     private PostgresResult ReadLinkSchema(string sql)

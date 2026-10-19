@@ -12,12 +12,12 @@ Accepted
 
 ADR-0004 kept Google Sheets as the store while flagging Postgres as the anticipated future store (ADR-0011 made the repository pattern the seam for exactly this migration). The Bank Transactions aggregate (Enable Banking sync) is the first datastore decision after that seam exists. Bank transactions are *relational* by nature — account → transactions with an FK, a UNIQUE dedup key, and "unmatched vs matched" state queried by predicate — which is awkward in Sheets (no joins, no constraints, no indexes, row-index-as-id). Sheets stays the Expense/Category store; no data migrates.
 
-Enable Banking facts that shaped the design (from the EB API reference):
+Historical integration assumptions recorded at the original decision, with current identity/auth corrections noted explicitly:
 
-- EB transactions carry **no unique transaction id**. Idempotent storage must be built from a composite: account uid + booking_date + amount + credit_debit_indicator + entry_reference + counterparty → hashed into a `sync_key` (UNIQUE constraint, `ON CONFLICT DO NOTHING` on re-sync).
+- **Historical identity recipe (superseded by #159 / ADR-0020):** Guito originally hashed account UID + booking date + amount + direction + entry reference + counterparty. This was a Guito implementation choice, **not a composite recommended or guaranteed unique by Enable Banking**. Mutable dates and renewed-consent UIDs can produce new keys for the same movement. The provider's `transaction_id` is not a durable unique identity; its account-scoped `entry_reference` is intended for cross-retrieval matching but may be missing or reused. ADR-0020 resolves canonical accounts by primary `identification_hash` and preserves ambiguity rather than guessing legacy mappings.
 - Only `status=BOOK` rows are final; PDNG/INFO rows are skipped at the fetch boundary.
 - Amounts arrive positive with a `credit_debit_indicator` (DBIT/CRDT); only DBIT (expenses) is stored for now (ADR-0010 still holds).
-- Auth is a **PS256** (RSA-PSS) JWT, fresh per request — not RS256 as ADR-0004 originally said.
+- **Historical signing assumption:** the original decision recorded PS256. The supported adapter uses RS256, as confirmed by the later integration; this identity change does not alter signing or credentials.
 - Pagination via `continuation_key` until null; fetch strategies `longest` (history) vs `default` (date range).
 
 ## Decision

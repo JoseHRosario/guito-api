@@ -8,7 +8,7 @@ namespace GuitoApi.Model;
 /// </summary>
 public class BankTransactionInsert
 {
-    /// <summary>The Enable Banking account uid (bank_accounts PK).</summary>
+    /// <summary>The immutable Guito account key (bank_accounts PK).</summary>
     public string AccountUid { get; set; } = string.Empty;
 
     /// <summary>The booking date, at day precision.</summary>
@@ -30,8 +30,14 @@ public class BankTransactionInsert
     public string Status { get; set; } = string.Empty;
 
     /// <summary>
-    /// Deduplication key (hash of the EB composite per ADR-0013); UNIQUE in the schema —
-    /// a conflicting insert is skipped, not re-written.
+    /// Preferred reference identity or ambiguous occurrence slot; UNIQUE in the schema.
+    /// Only reliable, unlinked identities can refresh current source fields.
     /// </summary>
     public string SyncKey { get; set; } = string.Empty;
+
+    public string? EntryReference { get; set; }
+    public bool IdentityReliable { get; set; }
+    public string? FallbackSyncKey { get; set; }
+    public DateOnly? TransactionDate { get; set; }
+    public DateOnly? ValueDate { get; set; }
 }

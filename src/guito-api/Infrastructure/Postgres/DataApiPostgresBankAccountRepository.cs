@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using GuitoApi.Model;
 using GuitoApi.Repositories;
 
@@ -12,16 +14,16 @@ namespace GuitoApi.Infrastructure.Postgres;
 public class DataApiPostgresBankAccountRepository(IPostgresDataApiClient client) : IBankAccountRepository
 {
     private const string ListSql = """
-        SELECT uid, session_id, iban, name, currency, aspsp_country, aspsp_name, consent_status, consent_expires_at
+        SELECT uid, session_id, iban, name, currency, aspsp_country, aspsp_name, consent_status, consent_expires_at, fetch_uid, identification_hash
         FROM bank_accounts
         ORDER BY name, uid
         """;
 
     private const string UpsertSql = """
         INSERT INTO bank_accounts
-            (uid, session_id, iban, name, currency, aspsp_country, aspsp_name, consent_status, consent_expires_at)
+            (uid, session_id, iban, name, currency, aspsp_country, aspsp_name, consent_status, consent_expires_at, fetch_uid, identification_hash)
         VALUES
-            (:uid, :session_id, :iban, :name, :currency, :aspsp_country, :aspsp_name, :consent_status, :consent_expires_at::timestamptz)
+            (:uid, :session_id, :iban, :name, :currency, :aspsp_country, :aspsp_name, :consent_status, :consent_expires_at::timestamptz, :fetch_uid, :identification_hash)
         ON CONFLICT (uid) DO UPDATE SET
             session_id = EXCLUDED.session_id,
             iban = EXCLUDED.iban,
@@ -30,7 +32,9 @@ public class DataApiPostgresBankAccountRepository(IPostgresDataApiClient client)
             aspsp_country = EXCLUDED.aspsp_country,
             aspsp_name = EXCLUDED.aspsp_name,
             consent_status = EXCLUDED.consent_status,
-            consent_expires_at = EXCLUDED.consent_expires_at
+            consent_expires_at = EXCLUDED.consent_expires_at,
+            fetch_uid = EXCLUDED.fetch_uid
+        WHERE bank_accounts.identification_hash IS NOT DISTINCT FROM EXCLUDED.identification_hash
         """;
 
     public async Task<IReadOnlyList<BankAccountSummary>> ListAsync(CancellationToken cancellationToken = default)
@@ -41,7 +45,9 @@ public class DataApiPostgresBankAccountRepository(IPostgresDataApiClient client)
 
     public async Task UpsertAsync(BankAccountUpsert account, CancellationToken cancellationToken = default)
     {
-        await client.ExecuteAsync(UpsertSql, ToParameters(account), cancellationToken: cancellationToken);
+        var sql = string.IsNullOrWhiteSpace(account.IdentificationHash) ? UpsertSql
+            : UpsertSql.Replace("ON CONFLICT (uid)", "ON CONFLICT (identification_hash) WHERE identification_hash IS NOT NULL", StringComparison.Ordinal);
+        await client.ExecuteAsync(sql, ToParameters(account), cancellationToken: cancellationToken);
     }
 
     // Positional access mirrors the SELECT column order above (same convention as the
@@ -49,7 +55,8 @@ public class DataApiPostgresBankAccountRepository(IPostgresDataApiClient client)
 
     private static IReadOnlyList<PostgresParameter> ToParameters(BankAccountUpsert account) =>
     [
-        new("uid", PostgresValue.FromString(account.Uid)),
+        new("uid", PostgresValue.FromString(string.IsNullOrWhiteSpace(account.IdentificationHash) ? account.Uid
+            : $"canonical:{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(account.IdentificationHash)))}")),
         new("session_id", PostgresValue.FromString(account.SessionId)),
         new("iban", account.Iban is null ? PostgresValue.Null() : PostgresValue.FromString(account.Iban)),
         new("name", PostgresValue.FromString(account.Name)),
@@ -60,11 +67,15 @@ public class DataApiPostgresBankAccountRepository(IPostgresDataApiClient client)
         new("consent_expires_at", account.ConsentExpiresAt is null
             ? PostgresValue.Null()
             : PostgresValue.FromString(account.ConsentExpiresAt.Value.ToString("yyyy-MM-ddTHH:mm:ssZ"))),
+        new("fetch_uid", PostgresValue.FromString(account.FetchUid ?? account.Uid)),
+        new("identification_hash", string.IsNullOrWhiteSpace(account.IdentificationHash) ? PostgresValue.Null() : PostgresValue.FromString(account.IdentificationHash)),
     ];
 
     private static BankAccountSummary ToSummary(IReadOnlyList<PostgresValue> row) => new()
     {
         Uid = row[0].StringValue!,
+        FetchUid = row[9].IsNull ? row[0].StringValue : row[9].StringValue,
+        IdentificationHash = row[10].IsNull ? null : row[10].StringValue,
         SessionId = row[1].StringValue!,
         Iban = row[2].IsNull ? null : row[2].StringValue,
         Name = row[3].StringValue!,
