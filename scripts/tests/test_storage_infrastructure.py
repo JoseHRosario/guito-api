@@ -126,6 +126,17 @@ sys.exit(1 if step.get('error') else 0)
         self.assertNotIn('PRIVATE-MARKER', result.stdout)
         self.assertIn('ValidationError', json.loads(result.stdout)['error'])
 
+    def test_null_parameters_do_not_replace_required_environment(self):
+        self.sessions()
+        self.plan()
+        self.steps[-1]['data']['Parameters'] = None
+
+        result = self.run_cli('plan-import')
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('parameters', json.loads(result.stdout)['error'])
+        self.assertFalse(any('execute-change-set' in call for call in self.history))
+
     def test_response_parameter_false_metadata_is_accepted(self):
         self.sessions()
         self.plan()
@@ -292,13 +303,13 @@ sys.exit(1 if step.get('error') else 0)
         self.queue('rds describe-db-instances', {'DBInstances': [self.writer]})
 
     def pg_managed(self, status='IMPORT_COMPLETE'):
-        self.queue('cloudformation describe-stacks', {'Stacks': [{'StackName': 'guito-postgres-shared', 'StackStatus': status, 'Parameters': []}]})
+        self.queue('cloudformation describe-stacks', {'Stacks': [{'StackName': 'guito-postgres-shared', 'StackStatus': status, 'Parameters': None}]})
 
     def test_shared_import_compares_live_settings_and_locks_stack_policy(self):
         self.postgres()
         self.identity()
         self.pg_managed('REVIEW_IN_PROGRESS')
-        self.queue('cloudformation describe-change-set', {'ChangeSetId': ARN, 'StackName': 'guito-postgres-shared', 'Status': 'CREATE_COMPLETE', 'ExecutionStatus': 'AVAILABLE', 'Changes': self.changes, 'Parameters': []})
+        self.queue('cloudformation describe-change-set', {'ChangeSetId': ARN, 'StackName': 'guito-postgres-shared', 'Status': 'CREATE_COMPLETE', 'ExecutionStatus': 'AVAILABLE', 'Changes': self.changes, 'Parameters': None})
         self.queue('cloudformation get-template', {'TemplateBody': self.template})
         self.pg_physical()
         self.queue('cloudformation execute-change-set')
@@ -456,7 +467,7 @@ sys.exit(1 if step.get('error') else 0)
                 self.postgres()
                 self.identity()
                 self.pg_managed('REVIEW_IN_PROGRESS')
-                self.queue('cloudformation describe-change-set', {'ChangeSetId': ARN, 'StackName': 'guito-postgres-shared', 'Status': 'CREATE_COMPLETE', 'ExecutionStatus': 'AVAILABLE', 'Changes': self.changes, 'Parameters': []})
+                self.queue('cloudformation describe-change-set', {'ChangeSetId': ARN, 'StackName': 'guito-postgres-shared', 'Status': 'CREATE_COMPLETE', 'ExecutionStatus': 'AVAILABLE', 'Changes': self.changes, 'Parameters': None})
                 self.queue('cloudformation get-template', {'TemplateBody': self.template})
                 if case == 'pending': self.cluster['PendingModifiedValues'] = {'EngineVersion': '18'}
                 if case == 'capacity': self.cluster['ServerlessV2ScalingConfiguration'] = {'MinCapacity': 1, 'MaxCapacity': 16, 'SecondsUntilAutoPause': 300}
@@ -721,7 +732,7 @@ sys.exit(1 if step.get('error') else 0)
         self.pg_physical()
         self.queue('cloudformation get-template-summary', {'ResourceIdentifierSummaries': [{'LogicalResourceIds': ['DatabaseCluster'], 'ResourceType': 'AWS::RDS::DBCluster', 'ResourceIdentifiers': ['DBClusterIdentifier']}, {'LogicalResourceIds': ['DatabaseWriter'], 'ResourceType': 'AWS::RDS::DBInstance', 'ResourceIdentifiers': ['DBInstanceIdentifier']}]})
         self.queue('cloudformation create-change-set', {'Id': ARN})
-        self.queue('cloudformation describe-change-set', {'ChangeSetId': ARN, 'StackName': 'guito-postgres-shared', 'Status': 'CREATE_COMPLETE', 'ExecutionStatus': 'AVAILABLE', 'Changes': self.changes, 'Parameters': []})
+        self.queue('cloudformation describe-change-set', {'ChangeSetId': ARN, 'StackName': 'guito-postgres-shared', 'Status': 'CREATE_COMPLETE', 'ExecutionStatus': 'AVAILABLE', 'Changes': self.changes, 'Parameters': None})
         result = self.run_cli('plan-import', 'postgres-shared')
         self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
         create = next(c for c in self.history if 'create-change-set' in c)

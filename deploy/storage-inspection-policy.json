@@ -10,6 +10,7 @@
         "cloudformation:DescribeStackResource",
         "cloudformation:ListStackResources",
         "cloudformation:DescribeChangeSet",
+        "cloudformation:ListChangeSets",
         "cloudformation:GetTemplate",
         "cloudformation:GetStackPolicy",
         "cloudformation:DescribeStackResourceDrifts"

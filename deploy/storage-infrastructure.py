@@ -167,6 +167,7 @@ def poll(args, fetch, done, label):
 
 
 def check_parameters(actual, expected):
+    actual = [] if actual is None else actual
     message = 'unexpected stack/change-set parameters'
     require(isinstance(actual, list), message)
     normalized = []
