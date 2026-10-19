@@ -35,7 +35,8 @@ namespace GuitoApi.Middleware
             // /healthz stays public (single definition in ApiKeyMiddleware); a request that
             // already passed the agent key gate does not need a Google token (paths
             // stay independent — ADR-0003: this only skips the token check).
-            if (httpContext.Request.Path.StartsWithSegments(ApiKeyMiddleware.PublicPathKey) ||
+            if (UserSessionBoundaryMiddleware.IsSessionPath(httpContext.Request.Path) ||
+                httpContext.Request.Path.StartsWithSegments(ApiKeyMiddleware.PublicPathKey) ||
                 httpContext.Request.Path.StartsWithSegments(ApiKeyMiddleware.PublicTokenExchangePathKey) ||
                 httpContext.Request.Path.StartsWithSegments(ApiKeyMiddleware.PublicWarmPathKey) ||
                 httpContext.Request.Path.StartsWithSegments(ApiKeyMiddleware.PublicBankAuthCallbackPathKey) ||

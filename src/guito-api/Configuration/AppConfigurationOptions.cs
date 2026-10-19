@@ -6,6 +6,7 @@
         public Authentication Authentication { get; set; } = new();
         public SheetsReportingAuthentication SheetsReportingAuthentication { get; set; } = new();
         public Cors Cors { get; set; } = new();
+        public UserSessionOptions UserSessions { get; set; } = new();
         public string BankProvider { get; set; } = "Dummy";
         public EnableBankingOptions EnableBanking { get; set; } = new();
         public ArtificialIntelligence ArtificialIntelligence { get; set; } = new();

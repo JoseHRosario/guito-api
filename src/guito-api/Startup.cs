@@ -1,4 +1,6 @@
 using Amazon.RDSDataService;
+using Amazon.DynamoDBv2;
+using GuitoApi.Infrastructure.DynamoDb;
 using Amazon.SimpleSystemsManagement;
 using GuitoApi.Configuration;
 using GuitoApi.Infrastructure.Postgres;
@@ -57,8 +59,11 @@ namespace GuitoApi
                     builder.WithOrigins(allowedOrigins)
                            .AllowAnyMethod()
                            .AllowAnyHeader()
+                           .AllowCredentials()
                            .WithExposedHeaders(VersionHeaderMiddleware.HeaderName, "ETag");
                 });
+                o.AddPolicy("UserSession", builder => builder.WithOrigins(allowedOrigins)
+                    .WithMethods("POST").WithHeaders("Content-Type", "X-Guito-Session").AllowCredentials());
             });
             // Defaults retain the Google SDK's production validation and certificate transport.
             services.AddSingleton(new Google.Apis.Auth.GoogleJsonWebSignature.ValidationSettings());
@@ -82,6 +87,24 @@ namespace GuitoApi
             services.AddSingleton<IHumanAuthSecretProvider>(sp => CreateHumanAuthSecretProvider(secretsLocation, sp));
             services.AddScoped<ITokenExchangeService, GoogleTokenExchangeService>();
             services.AddHttpClient(GoogleTokenExchangeService.HttpClientName);
+            services.AddHttpClient(GuitoApi.Infrastructure.Auth.GoogleSessionProvider.HttpClientName,
+                client => client.Timeout = TimeSpan.FromSeconds(20)).RemoveAllLoggers();
+            services.AddHttpClient("UserSessionJwks", client => client.Timeout = TimeSpan.FromSeconds(20)).RemoveAllLoggers();
+            services.AddScoped<IGoogleSessionProvider, GuitoApi.Infrastructure.Auth.GoogleSessionProvider>();
+            services.AddScoped<IUserSessionCredentialProtector, GuitoApi.Infrastructure.Auth.AesGcmUserSessionCredentialProtector>();
+            services.AddSingleton<IAmazonDynamoDB>(sp => new AmazonDynamoDBClient(new AmazonDynamoDBConfig
+            {
+                RegionEndpoint = Amazon.RegionEndpoint.GetBySystemName(
+                    sp.GetRequiredService<IOptions<AppConfigurationOptions>>().Value.UserSessions.Region is { Length: > 0 } region ? region : "eu-west-1"),
+                MaxErrorRetry = 0,
+                DisableLogging = true,
+                LogResponse = false,
+                LogMetrics = false
+            }));
+            services.AddScoped<IUserSessionRepository, DynamoDbUserSessionRepository>();
+            services.AddScoped<IEstablishUserSessionService, EstablishUserSessionService>();
+            services.AddScoped<IRefreshUserSessionService, RefreshUserSessionService>();
+            services.AddScoped<ILogoutUserSessionService, LogoutUserSessionService>();
 
             // Google token revocation on sign-out (issue #64): the session's access token → Google's revoke endpoint.
             services.AddScoped<IRevokeGoogleTokenService, RevokeGoogleTokenService>();
@@ -200,7 +223,8 @@ namespace GuitoApi
             {
                 app.UseSwagger();
                 app.UseSwaggerUI();
-                app.UseCors("AllowAll");
+                app.UseWhen(context => !UserSessionBoundaryMiddleware.IsSessionPath(context.Request.Path), branch => branch.UseCors("AllowAll"));
+                app.UseWhen(context => UserSessionBoundaryMiddleware.IsSessionPath(context.Request.Path), branch => branch.UseCors("UserSession"));
             }
             else
             {
@@ -208,6 +232,7 @@ namespace GuitoApi
                 app.UseCors("AllowOnlyWebApp");
             }
             app.UseExceptionHandler();
+            app.UseMiddleware<UserSessionBoundaryMiddleware>();
             // Build-version stamp on every response (issue #75) — before the auth
             // middlewares so rejected requests carry it too.
             app.UseMiddleware<VersionHeaderMiddleware>();

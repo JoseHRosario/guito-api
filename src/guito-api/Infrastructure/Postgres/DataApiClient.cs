@@ -21,17 +21,23 @@ public class DataApiClient : IPostgresDataApiClient
     private readonly DatabaseOptions _options;
     private readonly PostgresTransactionContext _transactionContext;
     private readonly TimeSpan[] _resumeRetryDelays;
+    private readonly TimeProvider _clock;
+    private readonly ILogger<DataApiClient>? _logger;
 
     public DataApiClient(
         IAmazonRDSDataService sdk,
         IOptions<DatabaseOptions> options,
         PostgresTransactionContext transactionContext,
-        TimeSpan[]? resumeRetryDelays = null)
+        TimeSpan[]? resumeRetryDelays = null,
+        TimeProvider? clock = null,
+        ILogger<DataApiClient>? logger = null)
     {
         _sdk = sdk;
         _options = options.Value;
         _transactionContext = transactionContext;
         _resumeRetryDelays = resumeRetryDelays ?? ResumeRetryDelays;
+        _clock = clock ?? TimeProvider.System;
+        _logger = logger;
     }
 
     public async Task<PostgresResult> ExecuteAsync(
@@ -68,7 +74,8 @@ public class DataApiClient : IPostgresDataApiClient
             {
                 // Aurora resumes in a few seconds; a fresh error class (or a still-paused
                 // cluster past the retries) surfaces to the caller unchanged.
-                await Task.Delay(_resumeRetryDelays[attempt], cancellationToken);
+                _logger?.LogWarning("Database retry stage=database_execute category=database_resuming type=DatabaseResumingException attempt={Attempt}", attempt + 1);
+                await Task.Delay(_resumeRetryDelays[attempt], _clock, cancellationToken);
                 attempt++;
             }
         }
@@ -91,7 +98,7 @@ public class DataApiClient : IPostgresDataApiClient
             }
             catch (DatabaseResumingException) when (attempt < _resumeRetryDelays.Length)
             {
-                await Task.Delay(_resumeRetryDelays[attempt], cancellationToken);
+                await Task.Delay(_resumeRetryDelays[attempt], _clock, cancellationToken);
                 attempt++;
             }
         }

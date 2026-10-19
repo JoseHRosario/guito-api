@@ -21,17 +21,97 @@ on:
         type: choice
         options: [staging, production]
         default: staging
+      infrastructure_target:
+        description: 'Infrastructure adoption only (none runs normal app deployment)'
+        type: choice
+        options: [none, sessions-staging, sessions-production]
+        default: none
+      infrastructure_action:
+        description: 'Plan an import or execute the exact reviewed change set'
+        type: choice
+        options: [plan-import, execute-import]
+        default: plan-import
+      infrastructure_change_set_arn:
+        description: 'Full reviewed CloudFormation change-set ARN (required for execute-import)'
+        type: string
+        required: false
 
 permissions:
   id-token: write   # OIDC federation with AWS (guito-api-deploy role)
   contents: read
 
 concurrency:
-  # Every staging deployment shares one lane to avoid overlapping writes.
-  group: ci-cd-${{ ((github.event_name == 'workflow_dispatch' && inputs.environment == 'production') || (github.event_name == 'push' && github.ref_name == 'master')) && 'production' || 'staging' }}
+  # Both environments share IAM and Aurora: adoption and app deploys cannot race.
+  group: ci-cd-guito-storage
   cancel-in-progress: false
 
 jobs:
+  infrastructure-adoption:
+    name: CloudFormation storage adoption (infrastructure only)
+    needs: test
+    if: >-
+      github.event_name == 'workflow_dispatch' && inputs.infrastructure_target != 'none'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.infrastructure_target == 'sessions-production' && 'production' || 'staging' }}
+    env:
+      ACTION: ${{ inputs.infrastructure_action }}
+      TARGET: ${{ inputs.infrastructure_target }}
+      CSARN: ${{ inputs.infrastructure_change_set_arn }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Validate infrastructure inputs (no AWS)
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$TARGET" in
+            sessions-staging|sessions-production) ;;
+            *) echo 'Invalid infrastructure target' >&2; exit 1 ;;
+          esac
+          case "$ACTION" in
+            plan-import|execute-import) ;;
+            *) echo 'Invalid infrastructure action' >&2; exit 1 ;;
+          esac
+          if [ "$ACTION" = execute-import ] && [ -z "$CSARN" ]; then
+            echo 'execute-import requires the full reviewed change-set ARN' >&2
+            exit 1
+          fi
+          if [ -n "$CSARN" ] && ! [[ "$CSARN" =~ ^arn:aws:cloudformation:eu-west-1:497087877832:changeSet/guito-infra-[A-Za-z0-9-]+/[A-Za-z0-9-]+$ ]]; then
+            echo 'Invalid infrastructure change-set ARN' >&2
+            exit 1
+          fi
+      - name: Assume AWS deploy role (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::497087877832:role/guito-api-deploy
+          aws-region: eu-west-1
+      - name: Run storage adoption controller
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/guito-infrastructure"
+          args=("$ACTION" --target "$TARGET" --output-dir "$RUNNER_TEMP/guito-infrastructure")
+          if [ -n "$CSARN" ]; then
+            args+=(--change-set-arn "$CSARN")
+          fi
+          python3 deploy/storage-infrastructure.py "${args[@]}"
+      - name: Check nonsecret plan artifact
+        id: plan-artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f "$RUNNER_TEMP/guito-infrastructure/infrastructure-plan.json" ]; then
+            echo 'exists=true' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Upload nonsecret infrastructure plan
+        if: ${{ success() && steps.plan-artifact.outputs.exists == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: guito-infrastructure-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/guito-infrastructure/infrastructure-plan.json
+          if-no-files-found: error
+
   test:
     name: dotnet test (hermetic unit suite)
     runs-on: ubuntu-latest
@@ -58,7 +138,7 @@ jobs:
     name: deploy + smoke (staging)
     needs: test
     if: >-
-      (github.event_name == 'workflow_dispatch' && inputs.environment == 'staging') ||
+      (github.event_name == 'workflow_dispatch' && inputs.infrastructure_target == 'none' && inputs.environment == 'staging') ||
       (github.event_name == 'push' && startsWith(github.ref_name, 'feature/'))
     runs-on: ubuntu-latest
     environment: staging
@@ -87,7 +167,7 @@ jobs:
     name: deploy + smoke (production)
     needs: test
     if: >-
-      (github.event_name == 'workflow_dispatch' && inputs.environment == 'production') ||
+      (github.event_name == 'workflow_dispatch' && inputs.infrastructure_target == 'none' && inputs.environment == 'production') ||
       (github.event_name == 'push' && github.ref_name == 'master')
     runs-on: ubuntu-latest
     environment: production

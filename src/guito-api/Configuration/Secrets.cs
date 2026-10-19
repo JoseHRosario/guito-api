@@ -9,6 +9,9 @@ namespace GuitoApi.Configuration
         /// <summary>Long-lived agent keys; a match on X-Api-Key authorizes the request.</summary>
         public List<string> ApiKeys { get; set; } = [];
 
+        /// <summary>Deserializes the owner-provisioned base64 AES-256 key from SSM JSON; no key literal is stored in source. Never logged or returned.</summary>
+        public string UserSessionEncryptionKey { get; set; } = string.Empty;
+
         /// <summary>OpenRouter API key for expense extraction (issue #69).</summary>
         public string OpenRouterApiKey { get; set; } = string.Empty;
 

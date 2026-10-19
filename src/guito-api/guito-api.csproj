@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <Version>0.26.0</Version>
+    <Version>0.27.0</Version>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>GuitoApi</RootNamespace>
@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <PackageReference Include="Amazon.Lambda.AspNetCoreServer" Version="9.0.0" />
+    <PackageReference Include="AWSSDK.DynamoDBv2" Version="4.0.101" />
     <PackageReference Include="AWSSDK.RDSDataService" Version="4.0.100.15" />
     <PackageReference Include="AWSSDK.SimpleSystemsManagement" Version="4.0.104.2" />
     <PackageReference Include="AWSSDK.SecurityToken" Version="4.0.101.1" />

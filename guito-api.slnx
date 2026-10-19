@@ -27,6 +27,10 @@
     <File Path="docs/adr/0016-frozen-history-import-provenance.md" />
     <File Path="docs/adr/0017-secretless-sheets-reporting-identity.md" />
     <File Path="docs/adr/0018-bank-transaction-review.md" />
+    <File Path="docs/adr/0019-persistent-human-sessions.md" />
+    <File Path="docs/adr/0020-cloudformation-storage-ownership.md" />
+    <File Path="docs/storage-infrastructure.md" />
+    <File Path="docs/persistent-human-login.md" />
     <File Path="docs/historical-expense-import.md" />
     <File Path="docs/expense-cutover.md" />
     <File Path="docs/expense-edit-delete-contract.md" />
