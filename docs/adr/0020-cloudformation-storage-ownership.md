@@ -2,14 +2,20 @@
 
 ## Status
 
-Accepted follow-up to #156. José approved moving session infrastructure management
-from custom AWS provisioning to CloudFormation, plus adoption of the existing
-shared Aurora PostgreSQL cluster and writer. He separately approved scoped
-CloudFormation deployment permissions and read-only CloudFormation inspection for
-MinervaAIAgent, and explicitly approved an import-only shared Postgres adoption
-that preserves live settings and data. Source implementation, service validation,
-reviewed change sets, executed imports and deployed application acceptance are
-separate evidence gates.
+Accepted follow-up to #156, amended by José's explicit decision: **Finish
+DynamoDB; pause Aurora adoption.** This supersedes the earlier shared Aurora
+import approval only. Session CloudFormation ownership work continues; Aurora is
+**TEMPLATE ONLY — not adopted and not deployable**. The live import attempted
+`rds:ModifyDBCluster` despite a full baseline match. The deployment role's native
+no-RDS-writes boundary denied it. The shared stack rolled back to empty
+`ROLLBACK_COMPLETE`, with native resource count **0** and no Aurora ownership;
+before/after database settings and identities were identical. This is supplied
+operator evidence, not a new source-only live verification.
+
+Do not grant RDS Modify authority, retry Aurora import, or delete the empty failed
+stack; empty-stack deletion has no owner approval. Keep the prepared JSON for a
+future separately approved decision. Source implementation, session import and
+application acceptance remain separate evidence gates.
 
 This does not authorize a new Postgres cluster, RDS setting changes, password or
 secret management, networking changes, financial writes, production application
@@ -27,7 +33,7 @@ CloudFormation service charge; their normal AWS resource charges still apply.
 |---|---|---|
 | `guito-sessions-staging` | `guito-api-user-sessions-staging` DynamoDB table | Staging API lane |
 | `guito-sessions-production` | `guito-api-user-sessions` DynamoDB table | Separately approved production API lane |
-| `guito-postgres-shared` | Existing `db-cluster` Aurora cluster and `guito` serverless writer | Explicit infrastructure-only adoption; not an automatic database reconfiguration lane |
+| `guito-postgres-shared` | None: empty failed stack, native resources 0 | TEMPLATE ONLY; adoption owner-paused, not deployable |
 
 Staging and production source configuration point to the same physical Aurora
 cluster, using separate `guito_staging` and `guito_prod` logical databases. The
@@ -76,6 +82,13 @@ explicit owner decision, reviewed permissions and safety plan.
 
 ## Import safety and ownership transfer
 
+The session path below remains active. Aurora-specific import/protection details
+are historical safeguards for a future review, not current execution authority.
+Public `plan-import`, `execute-import` (including consumed-plan recovery) and
+`ensure` for `postgres-shared` fail with an owner-paused error before AWS calls.
+There is no bypass flag. Read-only `verify` remains diagnostic only; it cannot
+establish ownership of the empty failed stack.
+
 CloudFormation import is not an automatic assertion that a template matches AWS.
 In particular, AWS documents that DBInstance import can apply mismatched template
 configuration. Therefore:
@@ -112,8 +125,9 @@ not a database bootstrap mechanism.
 Keep the existing registered `ci-cd.yml`; do not depend on a new feature-only
 workflow that GitHub cannot dispatch before registration on the default branch.
 Infrastructure-only dispatch selects a target and either plans an import or
-executes a specific reviewed change-set ARN. Shared Postgres and production
-session adoption use the existing `Production` GitHub environment, but do not run
+executes a specific reviewed change-set ARN. Only session staging/production
+targets are supported; Postgres is rejected before OIDC. Only production session
+adoption uses the existing `Production` GitHub environment, but does not run
 production application deployment. Read-only repository inspection found no
 required-reviewer or deployment-branch rules on that environment; its name alone
 is not an enforced approval gate. Explicit owner approval and infrastructure-only
@@ -127,8 +141,8 @@ arrays rather than interpolating arbitrary expressions into commands. Publish
 only nonsecret plan/status artifacts, never credentials, item contents or financial
 source data.
 
-Normal application deployment verifies the shared database stack, ensures the
-selected environment's session stack, then runs the existing SQL migrations,
+Normal application deployment ensures the selected environment's session stack
+and verifies native DynamoDB metadata before the existing SQL migrations,
 code deployment and read-only smoke tests. The old DynamoDB helper becomes a
 verifier; it must no longer issue CreateTable or UpdateTimeToLive. CloudFormation
 is the only provisioning owner. ListStackResources physical identities and native
@@ -141,10 +155,11 @@ output-update phase is needed.
 
 Keep CloudFormation permissions on the existing GitHub deployment role limited
 to the named storage stacks and named change-set prefix. Resource-type and
-underlying service permissions must prevent unrelated provisioning and new RDS
-creation/reconfiguration. RDS metadata/tag bookkeeping permission is distinct
-from SQL data access or service configuration changes. Native instance-provider
-network describes and CloudFormation BatchDescribeTypeConfigurations require
+underlying service permissions must prevent unrelated provisioning. The new
+deployment policy has no RDS or EC2 actions and no SetStackPolicy grant; all
+CreateChangeSet, ExecuteChangeSet and stack TagResource writes are scoped to the
+two session stacks only. DynamoDB metadata/tag grants remain restricted to the
+two fixed tables. CloudFormation BatchDescribeTypeConfigurations requires
 Region-bounded Resource=* where IAM offers no useful resource-level granularity.
 The latter is required for drift detection; the controller does not directly read
 unrelated extension configuration. Drift permission closure includes

@@ -135,7 +135,7 @@ class StorageTemplateTests(unittest.TestCase):
         stacks = [f'arn:aws:cloudformation:eu-west-1:497087877832:stack/{name}/*'
                   for name in ['guito-sessions-staging', 'guito-sessions-production', 'guito-postgres-shared']]
         self.assertIn('cloudformation:TagResource', by_action)
-        self.assertEqual(by_action['cloudformation:TagResource']['Resource'], stacks)
+        self.assertEqual(by_action['cloudformation:TagResource']['Resource'], stacks[:2])
         self.assertIn('cloudformation:DescribeEvents', by_action)
         self.assertEqual(by_action['cloudformation:DescribeEvents']['Resource'], stacks +
                          ['arn:aws:cloudformation:eu-west-1:497087877832:changeSet/guito-infra-*/*'])
@@ -151,19 +151,22 @@ class StorageTemplateTests(unittest.TestCase):
         }
 
         self.assertTrue(all("*" not in action for action in actions))
-        self.assertEqual({"rds:DescribeDBClusters", "rds:DescribeDBInstances", "rds:ListTagsForResource", "rds:AddTagsToResource", "rds:RemoveTagsFromResource"}, {action for action in actions if action.startswith("rds:")})
+        self.assertFalse(any(action.startswith(("rds:", "ec2:")) for action in actions))
+        self.assertNotIn("cloudformation:SetStackPolicy", actions)
         self.assertNotIn("cloudformation:CreateStack", actions)
         self.assertNotIn("cloudformation:UpdateStack", actions)
         self.assertNotIn("cloudformation:DeleteStack", actions)
-        shared = statements["PlanOnlySharedPostgresImports"]
-        self.assertEqual("cloudformation:CreateChangeSet", shared["Action"])
-        self.assertEqual("arn:aws:cloudformation:eu-west-1:497087877832:stack/guito-postgres-shared/*", shared["Resource"])
-        self.assertEqual("false", shared["Condition"]["Null"]["cloudformation:ImportResourceTypes"])
-        self.assertEqual(["AWS::RDS::DBCluster", "AWS::RDS::DBInstance"], shared["Condition"]["ForAllValues:StringEquals"]["cloudformation:ImportResourceTypes"])
+        self.assertNotIn("PlanOnlySharedPostgresImports", statements)
+        session_stacks = [f"arn:aws:cloudformation:eu-west-1:497087877832:stack/{name}/*"
+                          for name in ("guito-sessions-staging", "guito-sessions-production")]
+        for statement in statements.values():
+            granted = statement["Action"] if isinstance(statement["Action"], list) else [statement["Action"]]
+            if any(action in granted for action in ("cloudformation:CreateChangeSet", "cloudformation:ExecuteChangeSet", "cloudformation:TagResource")):
+                self.assertEqual(session_stacks, statement["Resource"])
         for statement in statements.values():
             if statement["Resource"] == "*":
                 self.assertEqual("eu-west-1", statement["Condition"]["StringEquals"]["aws:RequestedRegion"])
-        for sid in ("PlanOnlyNativeSessionTableChanges", "PlanOnlySharedPostgresImports"):
+        for sid in ("PlanOnlyNativeSessionTableChanges",):
             condition = statements[sid]["Condition"]
             self.assertEqual("guito-infra-*", condition["StringLike"]["cloudformation:ChangeSetName"])
             self.assertEqual("false", condition["Null"]["cloudformation:ResourceTypes"])

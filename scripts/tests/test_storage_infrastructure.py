@@ -1,4 +1,5 @@
 """Hermetic public CLI tests. AWS is a deny-by-default executable transcript."""
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -7,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 ACCOUNT = '497087877832'
@@ -84,25 +86,56 @@ sys.exit(1 if step.get('error') else 0)
         self.queue('cloudformation create-change-set', {'Id': ARN})
         self.queue('cloudformation describe-change-set', {'ChangeSetId': ARN, 'StackName': 'guito-sessions-staging', 'Status': 'CREATE_COMPLETE', 'ExecutionStatus': 'AVAILABLE', 'Changes': self.changes, 'Parameters': [{'ParameterKey': 'Environment', 'ParameterValue': 'staging'}]})
 
-    def test_outputs_are_rejected_before_import_planning_or_execution(self):
-        # CREATE-valid optional Outputs fail native IMPORT before a stack exists:
-        # "As part of the import operation, you cannot modify or add [Outputs]".
-        for target in ['sessions-staging', 'sessions-production', 'postgres-shared']:
+    def check_pg_comparison(self, error=None):
+        spec = importlib.util.spec_from_file_location('storage_controller', ROOT/'deploy/storage-infrastructure.py')
+        controller = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(controller)
+        ctx = {'template': self.template}
+        with patch.object(controller, 'aws', side_effect=[{'DBClusters': [self.cluster]}, {'DBInstances': [self.writer]}]) as aws:
+            if error:
+                with self.assertRaisesRegex(controller.GuardError, error):
+                    controller.check_postgres(ctx)
+            else:
+                controller.check_postgres(ctx)
+            self.assertTrue(all(call.args[0] == 'rds' and call.args[1].startswith('describe-') for call in aws.call_args_list))
+
+    def test_native_comparison_accepts_identical_baseline_and_unordered_zones(self):
+        self.postgres()
+        self.cluster['AvailabilityZones'].reverse()
+        self.check_pg_comparison()
+
+    def test_consumed_postgres_import_is_paused_without_recovery_writes(self):
+        self.postgres()
+        self.pg_preview(consumed=True)
+        result = self.run_cli('execute-import', 'postgres-shared', ('--change-set-arn', ARN))
+        self.assertEqual(1, result.returncode)
+        self.assertIn('owner-paused', result.stdout)
+        self.assertEqual([], self.history)
+
+    def test_owner_paused_postgres_mutations_make_no_aws_calls(self):
+        for action in ('plan-import', 'execute-import', 'ensure'):
+            with self.subTest(action=action):
+                self.calls.unlink(missing_ok=True)
+                result = self.run_cli(action, 'postgres-shared', ('--change-set-arn', ARN))
+                self.assertEqual(1, result.returncode)
+                self.assertIn('owner-paused', json.loads(result.stdout)['error'])
+                self.assertEqual([], self.history)
+
+
+    def test_outputs_are_rejected_before_session_import_planning_or_execution(self):
+        for target in ['sessions-staging', 'sessions-production']:
             for action in ['plan-import', 'execute-import']:
                 with self.subTest(target=target, action=action):
                     self.steps = []
                     self.calls.unlink(missing_ok=True)
-                    shared = target == 'postgres-shared'
-                    self.postgres() if shared else self.sessions()
-                    self.template['Outputs'] = {
-                        'Identifier': {'Value': {'Ref': 'DatabaseCluster' if shared else 'UserSessions'}}}
-                    name = 'postgres-shared.json' if shared else 'user-sessions.json'
-                    (self.root/'infra'/name).write_text(json.dumps(self.template))
+                    self.sessions()
+                    self.template['Outputs'] = {'Identifier': {'Value': {'Ref': 'UserSessions'}}}
+                    (self.root/'infra/user-sessions.json').write_text(json.dumps(self.template))
                     self.identity()
                     result = self.run_cli(action, target, ('--change-set-arn', ARN))
-                    self.assertEqual(result.returncode, 1, result.stdout)
-                    self.assertIn('Outputs', json.loads(result.stdout)['error'])
-                    self.assertEqual([call[:2] for call in self.history], [['sts', 'get-caller-identity']])
+                    self.assertEqual(1, result.returncode)
+                    self.assertIn('Outputs', result.stdout)
+                    self.assertEqual([['sts', 'get-caller-identity']], [call[:2] for call in self.history])
 
     def test_import_creation_validation_reports_only_safe_public_metadata(self):
         self.sessions()
@@ -305,32 +338,6 @@ sys.exit(1 if step.get('error') else 0)
     def pg_managed(self, status='IMPORT_COMPLETE'):
         self.queue('cloudformation describe-stacks', {'Stacks': [{'StackName': 'guito-postgres-shared', 'StackStatus': status, 'Parameters': None}]})
 
-    def test_shared_import_compares_live_settings_and_locks_stack_policy(self):
-        self.postgres()
-        self.identity()
-        self.pg_managed('REVIEW_IN_PROGRESS')
-        self.queue('cloudformation describe-change-set', {'ChangeSetId': ARN, 'StackName': 'guito-postgres-shared', 'Status': 'CREATE_COMPLETE', 'ExecutionStatus': 'AVAILABLE', 'Changes': self.changes, 'Parameters': None})
-        self.queue('cloudformation get-template', {'TemplateBody': self.template})
-        self.pg_physical()
-        self.queue('cloudformation execute-change-set')
-        self.pg_managed()
-        self.pg_managed()
-        self.queue('cloudformation list-stack-resources', {'StackResourceSummaries': [{'LogicalResourceId': c['ResourceChange']['LogicalResourceId'], 'PhysicalResourceId': c['ResourceChange']['PhysicalResourceId'], 'ResourceType': c['ResourceChange']['ResourceType']} for c in self.changes]})
-        self.queue('cloudformation get-template', {'TemplateBody': self.template})
-        self.pg_physical()
-        policy = {'Statement': [{'Effect': 'Allow', 'Principal': '*', 'Action': 'Update:*', 'Resource': '*'}, {'Effect': 'Deny', 'Principal': '*', 'Action': 'Update:*', 'Resource': ['LogicalResourceId/DatabaseCluster', 'LogicalResourceId/DatabaseWriter']}]}
-        self.queue('cloudformation set-stack-policy')
-        self.queue('cloudformation get-stack-policy', {'StackPolicyBody': json.dumps(policy)})
-        self.queue('cloudformation detect-stack-drift', {'StackDriftDetectionId': 'drift-1'})
-        self.queue('cloudformation describe-stack-drift-detection-status', {'DetectionStatus': 'DETECTION_COMPLETE', 'StackDriftStatus': 'IN_SYNC'})
-        self.queue('cloudformation describe-stack-resource-drifts', {'StackResourceDrifts': [dict(c['ResourceChange'], StackResourceDriftStatus='IN_SYNC') for c in self.changes]})
-        self.queue('cloudformation get-stack-policy', {'StackPolicyBody': json.dumps(policy)})
-        result = self.run_cli('execute-import', 'postgres-shared', ('--change-set-arn', ARN))
-        self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
-        self.assertEqual(json.loads((self.root/'steps.json').read_text()), [])
-        call = next(c for c in self.history if 'set-stack-policy' in c)
-        self.assertEqual(json.loads(call[call.index('--stack-policy-body')+1]), policy)
-        self.assertFalse(any(c[0] == 'rds' and not c[1].startswith('describe-') for c in self.history))
 
     def test_aws_describe_change_set_has_no_changesettype_field(self):
         self.sessions()
@@ -413,40 +420,21 @@ sys.exit(1 if step.get('error') else 0)
                 self.assertIn('ARN required', result.stdout)
                 self.assertFalse(any('execute-change-set' in c for c in self.history))
 
-    def test_native_cluster_subnet_mismatch_or_absence_blocks_import_plan(self):
+    def test_native_cluster_subnet_comparison_rejects_mismatch_or_absence(self):
         for subnet in ['other', None]:
             with self.subTest(subnet=subnet):
-                self.steps = []
-                self.calls.unlink(missing_ok=True)
                 self.postgres()
-                # A CFN-shaped field must never substitute for the native API field.
                 self.cluster['DBSubnetGroupName'] = 'default'
                 if subnet is None:
                     self.cluster.pop('DBSubnetGroup')
                 else:
                     self.cluster['DBSubnetGroup'] = subnet
-                self.identity()
-                self.queue('cloudformation describe-stacks', error='ValidationError: Stack with id guito-postgres-shared does not exist')
-                self.pg_physical()
+                self.check_pg_comparison('Aurora live property mismatch: DBSubnetGroupName')
 
-                result = self.run_cli('plan-import', 'postgres-shared')
-
-                self.assertNotEqual(result.returncode, 0)
-                self.assertEqual(json.loads(result.stdout)['error'], 'Aurora live property mismatch: DBSubnetGroupName')
-                self.assertFalse(any(c[1] in ['get-template-summary', 'create-change-set', 'execute-change-set'] for c in self.history))
-                self.assertEqual(json.loads((self.root/'steps.json').read_text()), [])
-
-    def test_pending_extra_aurora_security_group_blocks_import_plan(self):
+    def test_native_comparison_rejects_pending_extra_security_group(self):
         self.postgres()
-        self.identity()
-        self.queue('cloudformation describe-stacks', error='ValidationError: Stack with id guito-postgres-shared does not exist')
         self.cluster['VpcSecurityGroups'].append({'VpcSecurityGroupId': 'sg-pending-extra', 'Status': 'adding'})
-        self.pg_physical()
-        self.queue('cloudformation get-template-summary')
-        result = self.run_cli('plan-import', 'postgres-shared')
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('security group', result.stdout)
-        self.assertFalse(any('get-template-summary' in c or 'create-change-set' in c for c in self.history))
+        self.check_pg_comparison('security group')
 
     def test_access_denied_with_missing_table_marker_never_creates(self):
         self.sessions()
@@ -459,35 +447,18 @@ sys.exit(1 if step.get('error') else 0)
         self.assertIn('describe-table failed', result.stdout)
         self.assertFalse(any('create-change-set' in c for c in self.history))
 
-    def test_fresh_aurora_mismatch_blocks_execute(self):
+    def test_native_comparison_preserves_aurora_baseline_guards(self):
         for case in ['pending', 'capacity', 'writer-class', 'writer-subnet', 'unexpected-member', 'engine-version']:
             with self.subTest(case=case):
-                self.steps = []
-                self.calls.unlink(missing_ok=True)
                 self.postgres()
-                self.identity()
-                self.pg_managed('REVIEW_IN_PROGRESS')
-                self.queue('cloudformation describe-change-set', {'ChangeSetId': ARN, 'StackName': 'guito-postgres-shared', 'Status': 'CREATE_COMPLETE', 'ExecutionStatus': 'AVAILABLE', 'Changes': self.changes, 'Parameters': None})
-                self.queue('cloudformation get-template', {'TemplateBody': self.template})
                 if case == 'pending': self.cluster['PendingModifiedValues'] = {'EngineVersion': '18'}
                 if case == 'capacity': self.cluster['ServerlessV2ScalingConfiguration'] = {'MinCapacity': 1, 'MaxCapacity': 16, 'SecondsUntilAutoPause': 300}
                 if case == 'writer-class': self.writer['DBInstanceClass'] = 'db.r6g.large'
                 if case == 'writer-subnet': self.writer['DBSubnetGroup'] = {'DBSubnetGroupName': 'other'}
                 if case == 'unexpected-member': self.cluster['DBClusterMembers'][0]['DBInstanceIdentifier'] = 'other'
                 if case == 'engine-version': self.cluster['EngineVersion'] = '18'
-                self.pg_physical()
-                result = self.run_cli('execute-import', 'postgres-shared', ('--change-set-arn', ARN))
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn('Aurora', result.stdout)
-                self.assertFalse(any('execute-change-set' in c for c in self.history))
+                self.check_pg_comparison('Aurora')
 
-    def test_missing_shared_stack_never_creates_aurora(self):
-        self.postgres()
-        self.identity()
-        self.queue('cloudformation describe-stacks', error='ValidationError: Stack with id guito-postgres-shared does not exist')
-        result = self.run_cli('ensure', 'postgres-shared')
-        self.assertNotEqual(result.returncode, 0)
-        self.assertFalse(any('create-change-set' in c for c in self.history))
 
     def test_access_denied_is_not_missing_and_raw_errors_never_escape(self):
         self.sessions()
@@ -590,46 +561,6 @@ sys.exit(1 if step.get('error') else 0)
         self.queue('cloudformation describe-stack-drift-detection-status', {'DetectionStatus': 'DETECTION_COMPLETE', 'StackDriftStatus': 'IN_SYNC'})
         self.queue('cloudformation describe-stack-resource-drifts', {'StackResourceDrifts': [dict(c['ResourceChange'], StackResourceDriftStatus='IN_SYNC') for c in self.changes]})
 
-    def test_first_shared_import_installs_protection_before_drift_failure(self):
-        self.postgres()
-        self.pg_preview()
-        self.pg_physical()
-        self.queue('cloudformation execute-change-set')
-        self.pg_managed()
-        self.pg_managed()
-        self.pg_ownership()
-        self.pg_physical()
-        self.queue('cloudformation set-stack-policy')
-        self.pg_policy()
-        self.queue('cloudformation detect-stack-drift', error='AccessDenied')
-        result = self.run_cli('execute-import', 'postgres-shared', ('--change-set-arn', ARN))
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('detect-stack-drift failed', result.stdout)
-        self.assertEqual(json.loads((self.root/'steps.json').read_text()), [])
-        operations = [c[1] for c in self.history]
-        self.assertLess(operations.index('set-stack-policy'), operations.index('detect-stack-drift'))
-
-    def test_consumed_import_retry_finishes_without_second_execute(self):
-        for installed in [False, True]:
-            with self.subTest(installed=installed):
-                self.steps = []
-                self.calls.unlink(missing_ok=True)
-                self.postgres()
-                self.pg_preview(consumed=True)
-                self.pg_ownership()
-                self.pg_physical()
-                self.pg_policy(installed)
-                if not installed:
-                    self.queue('cloudformation set-stack-policy')
-                    self.pg_policy()
-                self.pg_drift()
-                self.pg_policy()
-                result = self.run_cli('execute-import', 'postgres-shared', ('--change-set-arn', ARN))
-                self.assertEqual(result.returncode, 0, result.stdout)
-                self.assertEqual(json.loads(result.stdout)['status'], 'noop' if installed else 'imported')
-                self.assertEqual(json.loads((self.root/'steps.json').read_text()), [])
-                self.assertFalse(any('execute-change-set' in c for c in self.history))
-                self.assertEqual(sum('set-stack-policy' in c for c in self.history), 0 if installed else 1)
 
     def test_consumed_session_import_revalidates_without_second_execute(self):
         self.sessions()
@@ -647,51 +578,6 @@ sys.exit(1 if step.get('error') else 0)
         self.assertEqual(json.loads((self.root/'steps.json').read_text()), [])
         self.assertFalse(any('execute-change-set' in c for c in self.history))
 
-    def test_completed_import_rechecks_protection_after_drift_before_success(self):
-        self.postgres()
-        self.pg_preview(consumed=True)
-        self.pg_ownership()
-        self.pg_physical()
-        self.pg_policy()
-        self.pg_drift()
-        self.pg_policy(False)
-        result = self.run_cli('execute-import', 'postgres-shared', ('--change-set-arn', ARN))
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('protection', result.stdout)
-        self.assertEqual(json.loads((self.root/'steps.json').read_text()), [])
-
-    def test_consumed_import_retry_rejects_changed_evidence_before_metadata_writes(self):
-        for case in ['template', 'stack', 'baseline', 'ownership', 'action', 'physical-id', 'stack-status']:
-            with self.subTest(case=case):
-                self.steps = []
-                self.calls.unlink(missing_ok=True)
-                self.postgres()
-                self.pg_preview(consumed=True)
-                if case == 'template': self.steps[-1]['data']['TemplateBody'] = dict(self.template, Description='changed')
-                if case == 'stack': self.steps[-2]['data']['StackId'] += '-recreated'
-                if case == 'action': self.changes[0]['ResourceChange']['Action'] = 'Modify'
-                if case == 'physical-id': self.changes[0]['ResourceChange']['PhysicalResourceId'] = 'replaced'
-                if case == 'stack-status': self.steps[1]['data']['Stacks'][0]['StackStatus'] = 'UPDATE_COMPLETE'
-                self.pg_ownership()
-                if case == 'ownership': self.steps[-2]['data']['StackResourceSummaries'][0]['PhysicalResourceId'] = 'replaced'
-                if case == 'baseline': self.writer['PubliclyAccessible'] = False
-                self.pg_physical()
-                result = self.run_cli('execute-import', 'postgres-shared', ('--change-set-arn', ARN))
-                self.assertNotEqual(result.returncode, 0)
-                self.assertFalse(any(c[1] in ['execute-change-set', 'set-stack-policy', 'detect-stack-drift'] for c in self.history))
-
-    def test_shared_plan_noop_requires_protection_and_reports_original_arn_recovery(self):
-        self.postgres()
-        self.identity()
-        self.pg_managed()
-        self.pg_ownership()
-        self.pg_physical()
-        self.pg_policy(False)
-        result = self.run_cli('plan-import', 'postgres-shared')
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('execute-import', result.stdout)
-        self.assertIn('original', result.stdout)
-        self.assertFalse(any(c[1] in ['create-change-set', 'set-stack-policy'] for c in self.history))
 
     def test_shared_verify_requires_anti_update_stack_policy(self):
         self.postgres()
@@ -724,23 +610,6 @@ sys.exit(1 if step.get('error') else 0)
         self.assertIn('ARN required', result.stdout)
         self.assertEqual(len(self.history), 2)
 
-    def test_shared_plan_import_maps_both_existing_resources_without_execution(self):
-        self.postgres()
-        self.identity()
-        self.queue('cloudformation describe-stacks', error='ValidationError: Stack with id guito-postgres-shared does not exist')
-        self.cluster['AvailabilityZones'].reverse()
-        self.pg_physical()
-        self.queue('cloudformation get-template-summary', {'ResourceIdentifierSummaries': [{'LogicalResourceIds': ['DatabaseCluster'], 'ResourceType': 'AWS::RDS::DBCluster', 'ResourceIdentifiers': ['DBClusterIdentifier']}, {'LogicalResourceIds': ['DatabaseWriter'], 'ResourceType': 'AWS::RDS::DBInstance', 'ResourceIdentifiers': ['DBInstanceIdentifier']}]})
-        self.queue('cloudformation create-change-set', {'Id': ARN})
-        self.queue('cloudformation describe-change-set', {'ChangeSetId': ARN, 'StackName': 'guito-postgres-shared', 'Status': 'CREATE_COMPLETE', 'ExecutionStatus': 'AVAILABLE', 'Changes': self.changes, 'Parameters': None})
-        result = self.run_cli('plan-import', 'postgres-shared')
-        self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
-        create = next(c for c in self.history if 'create-change-set' in c)
-        self.assertEqual(create[create.index('--change-set-type')+1], 'IMPORT')
-        self.assertEqual(json.loads(create[create.index('--resource-types')+1]), ['AWS::RDS::DBCluster', 'AWS::RDS::DBInstance'])
-        self.assertNotIn('--capabilities', create)
-        self.assertEqual(json.loads(create[create.index('--resources-to-import')+1]), [{'LogicalResourceId': 'DatabaseCluster', 'ResourceType': 'AWS::RDS::DBCluster', 'ResourceIdentifier': {'DBClusterIdentifier': 'db-cluster'}}, {'LogicalResourceId': 'DatabaseWriter', 'ResourceType': 'AWS::RDS::DBInstance', 'ResourceIdentifier': {'DBInstanceIdentifier': 'guito'}}])
-        self.assertFalse(any('execute-change-set' in c for c in self.history))
 
     def test_production_selects_only_production_table_and_parameters(self):
         self.sessions()
@@ -758,15 +627,6 @@ sys.exit(1 if step.get('error') else 0)
         self.assertEqual(json.loads(create[create.index('--parameters')+1]), [{'ParameterKey': 'Environment', 'ParameterValue': 'production'}])
         self.assertEqual(json.loads(create[create.index('--resources-to-import')+1])[0]['ResourceIdentifier'], {'TableName': 'guito-api-user-sessions'})
 
-    def test_missing_physical_shared_cluster_never_creates_a_change_set(self):
-        self.postgres()
-        self.identity()
-        self.queue('cloudformation describe-stacks', error='ValidationError: Stack with id guito-postgres-shared does not exist')
-        self.queue('rds describe-db-clusters', error='DBClusterNotFoundFault: private-info')
-        result = self.run_cli('plan-import', 'postgres-shared')
-        self.assertNotEqual(result.returncode, 0)
-        self.assertFalse(any('create-change-set' in c for c in self.history))
-        self.assertNotIn('private-info', result.stdout+result.stderr)
 
     def test_unrecognized_failed_change_set_is_never_noop(self):
         self.sessions()

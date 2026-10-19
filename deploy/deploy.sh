@@ -65,9 +65,8 @@ for parameter in "$SECRET_NAME" /guito-api/human-auth "$BANK_PARAMETER"; do
 done
 
 # --- User-session DynamoDB preflight ---
-# Shared Aurora must already be imported; routine deploys never change it.
+# Aurora adoption is owner-paused; unmanaged Aurora does not gate app rollout.
 # CloudFormation alone owns table creation/TTL. Fail before migrations or code.
-python3 "$REPO_ROOT/deploy/storage-infrastructure.py" verify --target postgres-shared
 python3 "$REPO_ROOT/deploy/storage-infrastructure.py" ensure --target "sessions-$ENV"
 # Fresh read-only settings evidence and the unchanged runtime IAM artifact.
 python3 "$REPO_ROOT/deploy/user-session-dynamodb.py" --environment "$ENV" \

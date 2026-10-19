@@ -25,12 +25,8 @@
       "Sid": "InspectNamedStorageOperationEvents",
       "Effect": "Allow",
       "Action": ["cloudformation:DescribeEvents"],
-      "Resource": [
-        "arn:aws:cloudformation:eu-west-1:497087877832:stack/guito-sessions-staging/*",
-        "arn:aws:cloudformation:eu-west-1:497087877832:stack/guito-sessions-production/*",
-        "arn:aws:cloudformation:eu-west-1:497087877832:stack/guito-postgres-shared/*",
-        "arn:aws:cloudformation:eu-west-1:497087877832:changeSet/guito-infra-*/*"
-      ]
+      "Resource": "*",
+      "Condition": { "StringEquals": { "aws:RequestedRegion": "eu-west-1" } }
     },
     {
       "Sid": "ValidateTemplatesAndInspectDriftOperations",

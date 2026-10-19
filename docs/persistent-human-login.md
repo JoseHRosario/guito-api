@@ -137,6 +137,16 @@ stacks and import-only shared Postgres stack in
 exact-change-set execution and readback. Ownership transfer does not reset tables,
 copy credentials or change the session wire contract.
 
+José's current infrastructure decision is **Finish DynamoDB; pause Aurora
+adoption**. Aurora is TEMPLATE ONLY, not adopted or deployable. Supplied operator
+evidence records denied `rds:ModifyDBCluster` during import despite a full baseline
+match, an empty `guito-postgres-shared` stack in `ROLLBACK_COMPLETE` with native
+resources 0/unowned Aurora, and identical before/after database settings and
+identities. No RDS Modify grant, import retry or empty-stack deletion is approved.
+Normal deployment gates only on session-stack ensure plus the native DynamoDB
+verifier before unchanged financial SQL migrations/code; unmanaged Aurora is not
+an adoption prerequisite. See [the storage runbook](storage-infrastructure.md).
+
 Routine infrastructure/code rollout runs through the existing GitHub Actions lane,
 not a local `deploy.sh` invocation. CloudFormation is the provisioning owner;
 `deploy/user-session-dynamodb.py` only verifies native metadata after stack

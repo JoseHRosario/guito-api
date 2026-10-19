@@ -78,6 +78,8 @@ def main():
     args = parser.parse_args()
     report = {'target': args.target, 'action': args.action, 'account': ACCOUNT, 'region': REGION}
     try:
+        require(args.target != 'postgres-shared' or args.action == 'verify',
+                'Aurora adoption is owner-paused; postgres-shared is template-only, not deployable')
         require(0 <= args.poll_interval <= 30 and 1 <= args.max_polls <= 180, 'invalid poll budget')
         identity = aws('sts', 'get-caller-identity')
         require(identity.get('Account') == ACCOUNT, 'unexpected AWS account')

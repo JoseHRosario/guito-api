@@ -63,7 +63,7 @@ if os.environ.get('FAIL_GATE') == ' '.join(sys.argv[1:]):
     def calls(self):
         return [json.loads(line) for line in self.log.read_text().splitlines()]
 
-    def test_normal_deploy_should_gate_migrations_and_code_on_both_owned_stacks(self):
+    def test_normal_deploy_gates_sessions_but_does_not_require_managed_aurora(self):
         source = (ROOT / 'deploy/deploy.sh').read_text()
         marker = '# --- User-session DynamoDB preflight ---'
         block = source.split(marker, 1)[1].split('# --- End user-session DynamoDB preflight ---', 1)[0]
@@ -76,12 +76,11 @@ if os.environ.get('FAIL_GATE') == ' '.join(sys.argv[1:]):
                                         capture_output=True, text=True, timeout=10)
                 self.assertEqual(0, result.returncode, result.stderr)
                 self.assertEqual([
-                    ['storage-infrastructure.py', 'verify', '--target', 'postgres-shared'],
                     ['storage-infrastructure.py', 'ensure', '--target', 'sessions-' + environment],
                     ['user-session-dynamodb.py', '--environment', environment, '--account-id', '497087877832',
                      '--region', 'eu-west-1', '--output-dir', str(self.directory)],
                 ], self.calls())
-        for failure, count in (('verify --target postgres-shared', 1), ('ensure --target sessions-staging', 2)):
+        for failure, count in (('ensure --target sessions-staging', 1), ('--environment staging --account-id 497087877832 --region eu-west-1 --output-dir ' + str(self.directory), 2)):
             with self.subTest(failure=failure):
                 self.log.write_text('')
                 result = subprocess.run(['bash', '-euc', block + '\nprintf unsafe-after-gate'],
@@ -115,19 +114,20 @@ if os.environ.get('FAIL_GATE') == ' '.join(sys.argv[1:]):
 
     def test_adoption_should_validate_inputs_before_oidc(self):
         adoption = job(self.source, 'infrastructure-adoption')
+        self.assertIn('options: [none, sessions-staging, sessions-production]', self.source)
         script = run_step(adoption, 'Validate infrastructure inputs (no AWS)')
         self.assertLess(adoption.index('Validate infrastructure inputs (no AWS)'),
                         adoption.index('aws-actions/configure-aws-credentials@v4'))
         for values in ({'ACTION': 'execute-import', 'CSARN': ''},
                        {'ACTION': 'execute-import', 'CSARN': 'not-a-full-arn'},
-                       {'ACTION': 'ensure'}, {'TARGET': 'postgres-shared; echo injected'},
+                       {'ACTION': 'ensure'}, {'TARGET': 'postgres-shared'}, {'TARGET': 'postgres-shared; echo injected'},
                        {'ACTION': 'execute-import', 'CSARN': 'arn:aws:cloudformation:us-east-1:497087877832:changeSet/guito-infra-test/id'}):
             with self.subTest(values=values):
                 result = subprocess.run(['bash', '-euc', script], env=dict(self.env, **values),
                                         capture_output=True, text=True, timeout=10)
                 self.assertNotEqual(0, result.returncode)
                 self.assertEqual([], self.calls())
-        for target in ('sessions-staging', 'sessions-production', 'postgres-shared'):
+        for target in ('sessions-staging', 'sessions-production'):
             for action in ('plan-import', 'execute-import'):
                 arn = 'arn:aws:cloudformation:eu-west-1:497087877832:changeSet/guito-infra-reviewed/00000000-0000-0000-0000-000000000000' if action == 'execute-import' else ''
                 result = subprocess.run(['bash', '-euc', script], env=dict(self.env, ACTION=action, TARGET=target, CSARN=arn),
@@ -156,7 +156,7 @@ if os.environ.get('FAIL_GATE') == ' '.join(sys.argv[1:]):
         self.assertIn('ref: ${{ github.sha }}', adoption)
         self.assertIn('role-to-assume: arn:aws:iam::497087877832:role/guito-api-deploy', adoption)
         self.assertIn('aws-region: eu-west-1', adoption)
-        self.assertIn("environment: ${{ (inputs.infrastructure_target == 'postgres-shared' || inputs.infrastructure_target == 'sessions-production') && 'production' || 'staging' }}", adoption)
+        self.assertIn("environment: ${{ inputs.infrastructure_target == 'sessions-production' && 'production' || 'staging' }}", adoption)
         for key, value in (('ACTION', 'infrastructure_action'), ('TARGET', 'infrastructure_target'), ('CSARN', 'infrastructure_change_set_arn')):
             self.assertIn(key + ': ${{ inputs.' + value + ' }}', adoption)
         self.assertIn('actions/upload-artifact@v4', adoption)
