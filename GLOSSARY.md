@@ -30,6 +30,7 @@ state. Live acceptance and credential retirement require separate evidence in
 - **Bank booking status** — provider finality (`status=BOOK`), separate from Guito review decisions.
 - **Transaction review status** — persisted `needsReview`, `matched` or `ignored`; Matched iff a valid one-to-one Expense link exists. Ignore/Return to review only change unlinked rows, never a Match or a category suggestion. See ADR-0018 for the HTTP contract.
 - **Bank Transactions** — the aggregate of bank movements synced from Enable Banking into Postgres (`bank_transactions`), the former "Match Transactions" sheet idea. Income-direction (CRDT) and non-BOOK rows are not stored. See ADR 0013.
+
 - **Bank account** — the bank-held account whose movements Guito imports. Its identity survives renewal of access consent; a temporary retrieval identifier is not another bank account.
 - **Bank movement identity** — the identity of one actual bank movement across repeated retrievals. Equal dates, amounts and descriptions alone do not establish that two observations represent one movement.
 - **Ambiguous movement** — a provider movement for which the available identity evidence cannot safely distinguish a repeated observation from a genuine separate movement. Ambiguity is not permission to merge or discard purchases.
@@ -38,7 +39,7 @@ state. Live acceptance and credential retirement require separate evidence in
 - **Bank booking date** — the date the provider reports the movement was recorded on the account's books.
 - **Bank value date** — the date the funds become available for a credit or cease to be available for a debit.
 - **Bank effective date** — the date chosen for Bank presentation: transaction date when available, otherwise booking date. Existing matched records retain their original date; import time is never a substitute.
-- **Data API** — the RDS Data API: HTTPS access to Aurora Postgres, letting the Lambda stay VPC-less (no NAT/subnets). The only database access path; faked in unit tests via `IPostgresDataApiClient`. See ADR 0013.
+- **Data API** — the RDS Data API: HTTPS access to Aurora Postgres, letting the Lambda stay VPC-less (no NAT/subnets). The relational financial-data access path; faked in unit tests via `IPostgresDataApiClient`. User sessions use DynamoDB independently. See ADR 0013.
 - **Extract** — AI parsing of free-form input (text/speech) into a proposed Expense.
 - **PSD2 provider** — Enable Banking (free Restricted Production tier), supplying Transactions behind `IListTransactionsService`; provider selection is configuration (`BankProvider`).
 - **Design tokens** — the daisyUI semantic values (`design/tokens.json` in guito-ui) compiled by `npm run tokens` into the theme. Single source: the "Design Tokens"/SDS variables of the Guito Figma file; code never invents colors or radii ad hoc.
@@ -46,6 +47,7 @@ state. Live acceptance and credential retirement require separate evidence in
 - **Local dev** — running the API on a development machine (`dotnet run --project src/guito-api`). Uses explicitly configured non-production Data API references and retained secrets; no Sheets key prerequisite. Never targets production.
 - **Staging** — the deployed test environment: a full parallel AWS stack (`guito-api-staging` Lambda pair, its own API Gateway and `/guito-api/staging` parameter; see ADR 0007). Runs with full auth parity with prod but datastore isolation must be verified independently before test writes. Target of the default deploy (`deploy/deploy.sh` with no `ENV`) and home of deployed-endpoint integration tests.
 - **Production** — the live environment: `guito-api` Lambda pair, `/guito-api/prod` parameter, Postgres with real financial data and API-fed presentation Sheets. Requires the explicit `ENV=production` deploy flag. Local dev must never target production database or secrets. Verification is read-only.
+- **User session** — independent browser/device cookie capability (not a new multi-user identity or ownership model), server-enforced seven-day idle expiry without an absolute lifetime, backed by encrypted Google refresh permission in an environment-isolated DynamoDB table. Conditional item writes protect refresh ownership and logout; TTL only removes expired records eventually. It renews short-lived Google tokens but never authorizes business requests or depends on Aurora readiness. See ADR-0019.
 - **SecretsPayload** — runtime JSON payload used by the API and authorizer; the obsolete GoogleServiceAccount field is retired, with deployed removal separately approval-gated. Deployed application secrets use SSM SecureString under `/guito-api/*` (`AwsSsm`); local files remain supported. Legacy application Secrets Manager backends are retired; authorizer configuration requires explicit `AwsSsm` selection. Database credential secrets stay in Secrets Manager for RDS Data API (ADR 0008).
 
 ## Repos

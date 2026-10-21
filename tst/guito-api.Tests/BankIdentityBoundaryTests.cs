@@ -397,9 +397,16 @@ public class BankIdentityBoundaryTests
         factory.Postgres.BeforeBankImportAsync = async (sql, cancellationToken) =>
         {
             if (!sql.StartsWith("WITH identity_choice", StringComparison.Ordinal)) return;
-            using var registration = cancellationToken.Register(() => cancelled.TrySetResult());
             entered.TrySetResult();
-            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                cancelled.TrySetResult();
+                throw;
+            }
         };
 
     private static Task<Microsoft.AspNetCore.Http.HttpContext> SendSyncWithCancellationAsync(CustomWebApplicationFactory factory, CancellationToken cancellationToken) =>

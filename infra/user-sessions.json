@@ -1,0 +1,37 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Guito device sessions: environment-isolated DynamoDB with fixed free-first capacity.",
+  "Metadata": {
+    "AWSToolsMetrics": { "AWSAgentToolkit": "aws-cloudformation@2" }
+  },
+  "Parameters": {
+    "Environment": { "Type": "String", "AllowedValues": ["staging", "production"] }
+  },
+  "Conditions": {
+    "IsProduction": { "Fn::Equals": [{ "Ref": "Environment" }, "production"] }
+  },
+  "Resources": {
+    "UserSessions": {
+      "Type": "AWS::DynamoDB::Table",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "why": "Persist encrypted refresh permission without waking Aurora; fixed names preserve installed API configuration.",
+          "must": ["Import pre-existing tables; never recreate them for adoption.", "Keep fixed capacity and no paid extras without owner approval.", "TTL is cleanup, not authentication expiry."]
+        }
+      },
+      "Properties": {
+        "TableName": { "Fn::If": ["IsProduction", "guito-api-user-sessions", "guito-api-user-sessions-staging"] },
+        "TableClass": "STANDARD",
+        "BillingMode": "PROVISIONED",
+        "ProvisionedThroughput": { "ReadCapacityUnits": 1, "WriteCapacityUnits": 1 },
+        "AttributeDefinitions": [{ "AttributeName": "handle_hash", "AttributeType": "S" }],
+        "KeySchema": [{ "AttributeName": "handle_hash", "KeyType": "HASH" }],
+        "TimeToLiveSpecification": { "AttributeName": "ttl", "Enabled": true },
+        "DeletionProtectionEnabled": true,
+        "PointInTimeRecoverySpecification": { "PointInTimeRecoveryEnabled": false }
+      }
+    }
+  }
+}

@@ -250,7 +250,7 @@ public class DeployedAuthContractTests
         // Arrange
         using var client = DeployedEndpointFixture.CreateAnonymousClient();
         var request = new HttpRequestMessage(HttpMethod.Options, "/Auth/logout");
-        request.Headers.Add("Origin", "https://guito.web.kerumirembora.com");
+        request.Headers.Add("Origin", DeployedEndpointFixture.UiOrigin);
         request.Headers.Add("Access-Control-Request-Method", "POST");
 
         // Act
@@ -261,6 +261,7 @@ public class DeployedAuthContractTests
             $"preflight must be 2xx, got {(int)response.StatusCode}");
         Assert.True(response.Headers.Contains("Access-Control-Allow-Origin"),
             "preflight must carry Access-Control-Allow-Origin or the browser blocks the sign-out");
+        Assert.Equal(DeployedEndpointFixture.UiOrigin, Assert.Single(response.Headers.GetValues("Access-Control-Allow-Origin")));
     }
 
     [Fact]
@@ -285,7 +286,7 @@ public class DeployedAuthContractTests
         // app open, and HttpClient-only tests can never surface it.
         using var client = DeployedEndpointFixture.CreateAnonymousClient();
         var request = new HttpRequestMessage(HttpMethod.Options, "/warm");
-        request.Headers.Add("Origin", "https://guito.web.kerumirembora.com");
+        request.Headers.Add("Origin", DeployedEndpointFixture.UiOrigin);
         request.Headers.Add("Access-Control-Request-Method", "GET");
 
         // Act
@@ -296,6 +297,7 @@ public class DeployedAuthContractTests
             $"preflight must be 2xx, got {(int)response.StatusCode}");
         Assert.True(response.Headers.Contains("Access-Control-Allow-Origin"),
             "preflight must carry Access-Control-Allow-Origin or the browser blocks the warm-up");
+        Assert.Equal(DeployedEndpointFixture.UiOrigin, Assert.Single(response.Headers.GetValues("Access-Control-Allow-Origin")));
     }
 
     /// <summary>

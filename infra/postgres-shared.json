@@ -1,0 +1,74 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Import-only ownership of existing shared Guito Aurora resources; preserve configuration and data.",
+  "Metadata": {
+    "AWSToolsMetrics": { "AWSAgentToolkit": "aws-cloudformation@2" },
+    "com.aws.cloudformation.Context": {
+      "must": ["Shared by guito_dev, guito_staging and guito_prod; never duplicate per environment.", "Adoption is IMPORT only and must match fresh live configuration.", "No new cluster, instance, password, network change, encryption change or SQL mutation.", "Existing public accessibility and unencrypted storage are recorded, not endorsed; hardening requires separate approval."]
+    }
+  },
+  "Resources": {
+    "DatabaseCluster": {
+      "Type": "AWS::RDS::DBCluster",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "why": "One physical Aurora cluster backs separate logical databases; import existing identity rather than provision another cluster.",
+          "must": ["Preserve existing engine, capacity, Data API, credentials and network settings during import.", "No application deployment may automatically reconfigure this shared resource."]
+        }
+      },
+      "Properties": {
+        "DBClusterIdentifier": "db-cluster",
+        "Engine": "aurora-postgresql",
+        "EngineMode": "provisioned",
+        "EngineVersion": "17.9",
+        "DatabaseName": "guito_dev",
+        "MasterUsername": "postgres",
+        "Port": 5432,
+        "StorageEncrypted": false,
+        "DeletionProtection": false,
+        "BackupRetentionPeriod": 1,
+        "PreferredBackupWindow": "23:29-23:59",
+        "PreferredMaintenanceWindow": "mon:22:33-mon:23:03",
+        "CopyTagsToSnapshot": false,
+        "DBClusterParameterGroupName": "default.aurora-postgresql17",
+        "DBSubnetGroupName": "default",
+        "VpcSecurityGroupIds": ["sg-0be03e5526e822276"],
+        "AvailabilityZones": ["eu-west-1a", "eu-west-1b", "eu-west-1c"],
+        "ServerlessV2ScalingConfiguration": { "MinCapacity": 0, "MaxCapacity": 16, "SecondsUntilAutoPause": 300 },
+        "EnableHttpEndpoint": true,
+        "EnableIAMDatabaseAuthentication": false,
+        "NetworkType": "IPV4",
+        "AutoMinorVersionUpgrade": true,
+        "EngineLifecycleSupport": "open-source-rds-extended-support"
+      }
+    },
+    "DatabaseWriter": {
+      "Type": "AWS::RDS::DBInstance",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "why": "Adopt the existing serverless writer; engine version and subnet group remain owned by its cluster.",
+          "must": ["PubliclyAccessible reflects the existing resource for exact-match import only; never create an instance from this template.", "No replacement, restart, class change, credential change or new instance."]
+        }
+      },
+      "Properties": {
+        "DBInstanceIdentifier": "guito",
+        "DBClusterIdentifier": { "Ref": "DatabaseCluster" },
+        "DBInstanceClass": "db.serverless",
+        "Engine": "aurora-postgresql",
+        "DBParameterGroupName": "default.aurora-postgresql17",
+        "PubliclyAccessible": true,
+        "AvailabilityZone": "eu-west-1a",
+        "AutoMinorVersionUpgrade": true,
+        "PromotionTier": 1,
+        "CACertificateIdentifier": "rds-ca-rsa2048-g1",
+        "MonitoringInterval": 0,
+        "EnablePerformanceInsights": false,
+        "PreferredMaintenanceWindow": "thu:04:19-thu:04:49"
+      }
+    }
+  }
+}

@@ -42,6 +42,9 @@ elif 'wait' not in a:
             (root / "guito-reporting-auth-env.json").write_text(json.dumps({
                 "SHEETS_REPORTING_GOOGLE_AUDIENCE": "report-client",
                 "SHEETS_REPORTING_GOOGLE_SUBJECT": "installer"}))
+            helper = Path(__file__).resolve().parents[2] / "deploy/user-session-config.py"
+            prepared = subprocess.run(["python3", str(helper), "--environment", "Production", "--output-dir", folder], capture_output=True, text=True)
+            self.assertEqual(prepared.returncode, 0, prepared.stderr)
             env = {"PATH": f"{root}:{os.defpath}", "DEPLOY_WORK_DIR": folder,
                    "SECRET_NAME": "/guito-api/prod", "ASPNETCORE_ENV": "Production",
                    "GOOGLE_CLIENT_ID": "", "GOOGLE_ALLOWED_EMAILS": ""}
@@ -68,6 +71,18 @@ elif 'wait' not in a:
                 self.assertEqual(api["UNRELATED"], "keep")
                 self.assertEqual(state["guito-api-authorizer"]["UNRELATED"], "keep")
                 self.assertEqual(api["ASPNETCORE_ENVIRONMENT"], "Production")
+
+    def test_session_origins_replace_stale_wildcards_without_changing_other_configuration(self):
+        api = self.apply_environment({
+            "AppConfiguration__Cors__AllowedOrigins": "*",
+            "AppConfiguration__Cors__AllowedOrigins__0": "https://stale.example",
+            "AppConfiguration__Cors__AllowedOrigins__7": "https://unexpected.example",
+            "UNRELATED": "keep"})["guito-api"]
+        self.assertNotIn("AppConfiguration__Cors__AllowedOrigins", api)
+        self.assertNotIn("AppConfiguration__Cors__AllowedOrigins__7", api)
+        self.assertEqual(api["AppConfiguration__Cors__AllowedOrigins__0"], "https://guito.web.kerumirembora.com")
+        self.assertEqual(api["UNRELATED"], "keep")
+        self.assertFalse(any("encrypt" in key.lower() for key in api))
 
     def test_retired_shell_selector_cannot_reinstall_override(self):
         api = self.apply_environment({}, "Sheets")["guito-api"]
