@@ -11,12 +11,11 @@ namespace GuitoApi.Repositories;
 public interface IBankTransactionRepository
 {
     /// <summary>
-    /// Inserts one bank transaction, skipping when its SyncKey already exists
-    /// (INSERT ... ON CONFLICT DO NOTHING). Returns whether the row was NEW —
-    /// true drives the `{fetched, new}` response of the sync endpoint (#90).
-    /// Idempotent: re-inserting a synced batch changes nothing.
+    /// Imports a movement and returns its selected identity and whether it was newly stored.
+    /// Reliable identities refresh only unlinked rows, preserving Ignored decisions.
+    /// Ambiguous occurrence slots skip repeats without claiming movement identity.
     /// </summary>
-    Task<bool> InsertOrSkipAsync(BankTransactionInsert transaction, CancellationToken cancellationToken = default);
+    Task<BankTransactionImportResult> ImportAsync(BankTransactionInsert transaction, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Lists all stored transactions, optionally filtered by review status,

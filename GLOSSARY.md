@@ -30,8 +30,15 @@ state. Live acceptance and credential retirement require separate evidence in
 - **Bank booking status** — provider finality (`status=BOOK`), separate from Guito review decisions.
 - **Transaction review status** — persisted `needsReview`, `matched` or `ignored`; Matched iff a valid one-to-one Expense link exists. Ignore/Return to review only change unlinked rows, never a Match or a category suggestion. See ADR-0018 for the HTTP contract.
 - **Bank Transactions** — the aggregate of bank movements synced from Enable Banking into Postgres (`bank_transactions`), the former "Match Transactions" sheet idea. Income-direction (CRDT) and non-BOOK rows are not stored. See ADR 0013.
-- **bank_accounts** — the Postgres table holding one row per bank account linked through Enable Banking: EB uid, session id, IBAN, name, currency, ASPSP, and consent status/expiry. Populated by the auth flow; consumed by sync.
-- **sync_key** — the UNIQUE dedup key of a Bank Transaction: a hash of the EB recommended composite (account uid + booking_date + amount + credit_debit_indicator + entry_reference + counterparty), since EB rows carry no unique transaction id. Re-syncs are idempotent via `ON CONFLICT DO NOTHING`.
+
+- **Bank account** — the bank-held account whose movements Guito imports. Its identity survives renewal of access consent; a temporary retrieval identifier is not another bank account.
+- **Bank movement identity** — the identity of one actual bank movement across repeated retrievals. Equal dates, amounts and descriptions alone do not establish that two observations represent one movement.
+- **Ambiguous movement** — a provider movement for which the available identity evidence cannot safely distinguish a repeated observation from a genuine separate movement. Ambiguity is not permission to merge or discard purchases.
+- **Import-frozen Match** — a matched Bank Transaction whose fields and Expense association cannot be changed by an import. The user may still explicitly Unmatch it.
+- **Bank transaction date** — the provider's transaction date, distinct from booking date, value date and the time Guito imported the record.
+- **Bank booking date** — the date the provider reports the movement was recorded on the account's books.
+- **Bank value date** — the date the funds become available for a credit or cease to be available for a debit.
+- **Bank effective date** — the date chosen for Bank presentation: transaction date when available, otherwise booking date. Existing matched records retain their original date; import time is never a substitute.
 - **Data API** — the RDS Data API: HTTPS access to Aurora Postgres, letting the Lambda stay VPC-less (no NAT/subnets). The relational financial-data access path; faked in unit tests via `IPostgresDataApiClient`. User sessions use DynamoDB independently. See ADR 0013.
 - **Extract** — AI parsing of free-form input (text/speech) into a proposed Expense.
 - **PSD2 provider** — Enable Banking (free Restricted Production tier), supplying Transactions behind `IListTransactionsService`; provider selection is configuration (`BankProvider`).

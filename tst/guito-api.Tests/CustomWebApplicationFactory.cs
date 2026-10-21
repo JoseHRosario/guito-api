@@ -42,6 +42,8 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
     /// </summary>
     public bool UseEnableBankingProvider { get; set; }
     public bool UseRealBankTransactionRepository { get; set; }
+    public bool UseRealBankAccountRepository { get; set; }
+    public bool UseRealCategoriesRepository { get; set; }
     public string Environment { get; set; } = "Development";
 
     /// <summary>UI origin for the consent-callback 302 (issue #116) — lands in the test config as Cors:AllowedOrigins[0].</summary>
@@ -79,10 +81,12 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
             if (UseEnableBankingProvider)
             {
                 Replace<IEnableBankingTransport>(services, _ => EnableBankingTransport);
-                Replace<IBankAccountRepository>(services, _ => BankAccounts);
+                if (!UseRealBankAccountRepository)
+                    Replace<IBankAccountRepository>(services, _ => BankAccounts);
                 if (!UseRealBankTransactionRepository)
                     Replace<IBankTransactionRepository>(services, _ => BankTransactions);
-                Replace<ICategoriesRepository>(services, _ => Categories);
+                if (!UseRealCategoriesRepository)
+                    Replace<ICategoriesRepository>(services, _ => Categories);
             }
         });
     }

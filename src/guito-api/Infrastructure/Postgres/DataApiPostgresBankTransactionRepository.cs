@@ -16,12 +16,35 @@ namespace GuitoApi.Infrastructure.Postgres;
 public class DataApiPostgresBankTransactionRepository(IPostgresDataApiClient client, IUnitOfWork unitOfWork) : IBankTransactionRepository
 {
     private const string InsertSql = """
+        WITH identity_choice AS (
+            SELECT :identity_reliable AND NOT EXISTS (
+                SELECT 1 FROM bank_transactions evidence
+                WHERE evidence.account_uid = :account_uid AND evidence.entry_reference = :entry_reference
+                  AND (evidence.identity_reliable IS NOT TRUE OR evidence.amount <> CAST(:amount AS numeric)
+                       OR evidence.currency <> :currency OR evidence.direction <> :direction)
+            ) AS reliable
+        )
         INSERT INTO bank_transactions
-            (account_uid, booking_date, amount, currency, direction, remittance_information, status, sync_key)
-        VALUES
-            (:account_uid, :booking_date::date, :amount, :currency, :direction, :remittance_information, :status, :sync_key)
-        ON CONFLICT (sync_key) DO NOTHING
-        RETURNING id
+            (account_uid, booking_date, amount, currency, direction, remittance_information, status, sync_key,
+             entry_reference, identity_reliable, transaction_date, value_date)
+        SELECT :account_uid, :booking_date::date, CAST(:amount AS numeric), :currency, :direction,
+               :remittance_information, :status, CASE WHEN reliable THEN :sync_key ELSE :fallback_sync_key END,
+               :entry_reference, reliable, :transaction_date::date, :value_date::date
+        FROM identity_choice WHERE true
+        ON CONFLICT (sync_key) DO UPDATE SET
+            booking_date = EXCLUDED.booking_date,
+            transaction_date = EXCLUDED.transaction_date,
+            value_date = EXCLUDED.value_date,
+            remittance_information = EXCLUDED.remittance_information
+        WHERE bank_transactions.expense_id IS NULL
+          AND bank_transactions.review_status IN ('needsReview', 'ignored')
+          AND bank_transactions.identity_reliable AND EXCLUDED.identity_reliable
+          AND bank_transactions.account_uid = EXCLUDED.account_uid
+          AND bank_transactions.entry_reference = EXCLUDED.entry_reference
+          AND bank_transactions.amount = EXCLUDED.amount
+          AND bank_transactions.currency = EXCLUDED.currency
+          AND bank_transactions.direction = EXCLUDED.direction
+        RETURNING id, sync_key, (xmax = 0) AS inserted
         """;
 
     private const string ProjectionSql = $"""
@@ -55,17 +78,20 @@ public class DataApiPostgresBankTransactionRepository(IPostgresDataApiClient cli
         UPDATE bank_transactions
         SET suggested_category_id = :category_id
         WHERE sync_key = :sync_key
+          AND expense_id IS NULL AND review_status IN ('needsReview', 'ignored')
         """;
 
-    public async Task<bool> InsertOrSkipAsync(BankTransactionInsert transaction, CancellationToken cancellationToken = default)
+    public async Task<BankTransactionImportResult> ImportAsync(BankTransactionInsert transaction, CancellationToken cancellationToken = default)
     {
-        var result = await client.ExecuteAsync(
-            InsertSql,
-            ToParameters(transaction),
-            cancellationToken: cancellationToken);
-        // RETURNING id yields exactly one row for a fresh insert and none when the
-        // sync_key conflicted — the explicit "new vs skipped" signal.
-        return result.Rows.Count == 1;
+        var parameters = ToParameters(transaction);
+        var result = await client.ExecuteAsync(InsertSql, parameters, cancellationToken: cancellationToken);
+        // A concurrent conflicting reference can win after identity_choice's snapshot.
+        // Only a definite zero-row result is retried, never a transport failure.
+        if (result.Rows.Count == 0 && transaction.IdentityReliable)
+            result = await client.ExecuteAsync(InsertSql, parameters, cancellationToken: cancellationToken);
+        return result.Rows.Count == 0
+            ? new(false, transaction.SyncKey)
+            : new(result.Rows[0][2].BooleanValue == true, result.Rows[0][1].StringValue!);
     }
 
     public async Task<IReadOnlyList<BankTransactionDetail>> ListAsync(string reviewStatus = "all", CancellationToken cancellationToken = default)
@@ -213,7 +239,7 @@ public class DataApiPostgresBankTransactionRepository(IPostgresDataApiClient cli
     [
         new("account_uid", PostgresValue.FromString(transaction.AccountUid)),
         new("booking_date", PostgresValue.FromString(transaction.BookingDate.ToString("yyyy-MM-dd"))),
-        new("amount", PostgresValue.FromDouble((double)transaction.Amount)),
+        new("amount", PostgresValue.FromString(transaction.Amount.ToString("G29", CultureInfo.InvariantCulture))),
         new("currency", PostgresValue.FromString(transaction.Currency)),
         new("direction", PostgresValue.FromString(transaction.Direction)),
         new("remittance_information", transaction.RemittanceInformation is null
@@ -221,7 +247,15 @@ public class DataApiPostgresBankTransactionRepository(IPostgresDataApiClient cli
             : PostgresValue.FromString(transaction.RemittanceInformation)),
         new("status", PostgresValue.FromString(transaction.Status)),
         new("sync_key", PostgresValue.FromString(transaction.SyncKey)),
+        new("fallback_sync_key", PostgresValue.FromString(transaction.FallbackSyncKey ?? transaction.SyncKey)),
+        new("entry_reference", transaction.EntryReference is null ? PostgresValue.Null() : PostgresValue.FromString(transaction.EntryReference)),
+        new("identity_reliable", PostgresValue.FromBoolean(transaction.IdentityReliable)),
+        new("transaction_date", SourceDate(transaction.TransactionDate)),
+        new("value_date", SourceDate(transaction.ValueDate)),
     ];
+
+    private static PostgresValue SourceDate(DateOnly? date) => date is null
+        ? PostgresValue.Null() : PostgresValue.FromString(date.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
 
     private async Task<PostgresResult> ExecuteReviewAsync(string sql, IReadOnlyList<PostgresParameter> parameters, CancellationToken cancellationToken)
     {

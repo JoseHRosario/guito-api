@@ -25,34 +25,36 @@ namespace GuitoApi.Tests
 
         public int? FailChatWithStatus { get; set; }
         public int? FailDecisionWithStatus { get; set; }
+        public Func<CancellationToken, Task>? BeforeDecisionAsync { get; set; }
 
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
-            var content = request.Content?.ReadAsStringAsync(cancellationToken).GetAwaiter().GetResult() ?? string.Empty;
+            var content = request.Content is null ? string.Empty : await request.Content.ReadAsStringAsync(cancellationToken);
 
             if (request.RequestUri?.ToString().Contains("/api/v1/chat/completions") == true)
             {
                 ChatRequestBodies.Add(content);
                 ChatAuthorizationHeaders.Add(request.Headers.Authorization?.ToString() ?? string.Empty);
                 if (FailChatWithStatus is { } status)
-                    return Task.FromResult(Json(status, new { error = new { message = "upstream chat failure" } }));
+                    return Json(status, new { error = new { message = "upstream chat failure" } });
                 var wrapped = $"{{ \"choices\": [ {{ \"message\": {{ \"content\": {System.Text.Json.JsonSerializer.Serialize(ChatResponseContent)} }} }} ] }}";
-                return Task.FromResult(Json(200, wrapped));
+                return Json(200, wrapped);
             }
 
             if (request.RequestUri?.ToString().Contains("/api/alpha/decisions") == true)
             {
+                if (BeforeDecisionAsync is not null) await BeforeDecisionAsync(cancellationToken);
                 DecisionRequestBodies.Add(content);
                 DecisionAuthorizationHeaders.Add(request.Headers.Authorization?.ToString() ?? string.Empty);
                 if (FailDecisionWithStatus is { } status)
-                    return Task.FromResult(Json(status, new { error = new { message = "upstream decision failure" } }));
+                    return Json(status, new { error = new { message = "upstream decision failure" } });
                 // The Jev expense gate is a noul question keyed "is_expense"; the category
                 // decision is a choice keyed "category".
                 if (content.Contains("\"is_expense\""))
                 {
                     var gatePayload = new { answers = new { is_expense = new { type = "noul", noul = NoulProbability } } };
-                    return Task.FromResult(Json(200, System.Text.Json.JsonSerializer.Serialize(gatePayload)));
+                    return Json(200, System.Text.Json.JsonSerializer.Serialize(gatePayload));
                 }
                 var payload = new
                 {
@@ -61,7 +63,7 @@ namespace GuitoApi.Tests
                         category = new { type = "choice", choice = DecisionChoice, confidence = 0.9 },
                     },
                 };
-                return Task.FromResult(Json(200, System.Text.Json.JsonSerializer.Serialize(payload)));
+                return Json(200, System.Text.Json.JsonSerializer.Serialize(payload));
             }
 
             throw new InvalidOperationException($"Unexpected OpenRouter URL: {request.RequestUri}");

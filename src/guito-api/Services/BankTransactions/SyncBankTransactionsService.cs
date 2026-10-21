@@ -12,8 +12,8 @@ namespace GuitoApi.Services.BankTransactions
     /// POST /BankTransaction/sync (issue #90, ADR-0004/0013): for every linked account,
     /// fetches provider transactions over the fixed 7-day window with continuation-key
     /// pagination, keeps only settled expense-direction rows (status=BOOK, DBIT), and
-    /// stores them via IBankTransactionRepository — INSERT ... ON CONFLICT (sync_key)
-    /// DO NOTHING makes re-syncs over the same window idempotent. Response is exactly
+    /// stores them via IBankTransactionRepository with guarded reference refreshes and
+    /// conservative occurrence slots for ambiguous observations. Response is exactly
     /// {fetched, new}. Speaks only provider ports (issue #103) — no Enable Banking types.
     /// Issue #112 (ADR-0014): asks Jev (existing ResolveCategoryAsync decision path)
     /// for a category suggestion per NEW row, against the categories seeded by the
@@ -69,32 +69,46 @@ namespace GuitoApi.Services.BankTransactions
             List<(string SyncKey, string? RemittanceInformation)> newTransactions, CancellationToken cancellationToken)
         {
             string? continuationKey = null;
+            var movements = new List<BankTransactionSource>();
             do
             {
-                // The port surfaces failures already classified as ProblemException (409/429/502).
-                var page = await _transactionsProvider.ListTransactionsAsync(account.Uid, dateFrom, dateTo, continuationKey, cancellationToken);
-                await StoreBookedDebitsAsync(account, page, result, newTransactions, cancellationToken);
+                var page = await _transactionsProvider.ListTransactionsAsync(account.FetchUid ?? account.Uid, dateFrom, dateTo, continuationKey, cancellationToken);
+                movements.AddRange(page.Transactions.Where(t => t.Status == "BOOK" && t.CreditDebitIndicator == "DBIT"));
                 continuationKey = page.ContinuationKey;
             } while (continuationKey is not null);
+            await StoreBookedDebitsAsync(account, movements, result, newTransactions, cancellationToken);
         }
 
         private async Task StoreBookedDebitsAsync(
-            BankAccountSummary account, BankTransactionSourcePage page, BankSyncResult result,
+            BankAccountSummary account, IReadOnlyList<BankTransactionSource> movements, BankSyncResult result,
             List<(string SyncKey, string? RemittanceInformation)> newTransactions, CancellationToken cancellationToken)
         {
-            foreach (var transaction in page.Transactions)
+            var referenceCounts = movements.Where(t => !string.IsNullOrWhiteSpace(t.EntryReference))
+                .GroupBy(t => t.EntryReference!).ToDictionary(group => group.Key, group => group.Count());
+            var occurrences = new Dictionary<string, int>();
+            foreach (var transaction in movements)
             {
-                if (transaction.Status != "BOOK" || transaction.CreditDebitIndicator != "DBIT")
-                    continue;
                 result.Fetched++;
-                var insert = ToInsert(account, transaction);
-                if (await _transactions.InsertOrSkipAsync(insert, cancellationToken))
+                var insert = Identify(account, transaction, referenceCounts, occurrences);
+                var imported = await _transactions.ImportAsync(insert, cancellationToken);
+                if (imported.IsNew)
                 {
                     result.New++;
                     // Only NEW rows get a suggestion — re-syncs never re-suggest (ADR-0014).
-                    newTransactions.Add((insert.SyncKey, insert.RemittanceInformation));
+                    newTransactions.Add((imported.SyncKey, insert.RemittanceInformation));
                 }
             }
+        }
+
+        private static BankTransactionInsert Identify(BankAccountSummary account, BankTransactionSource transaction,
+            IReadOnlyDictionary<string, int> referenceCounts, Dictionary<string, int> occurrences)
+        {
+            var fingerprint = Fingerprint(account, transaction);
+            var occurrence = occurrences.GetValueOrDefault(fingerprint) + 1;
+            occurrences[fingerprint] = occurrence;
+            var reliable = !string.IsNullOrWhiteSpace(account.IdentificationHash) && !string.IsNullOrWhiteSpace(transaction.EntryReference)
+                && referenceCounts[transaction.EntryReference] == 1;
+            return ToInsert(account, transaction, reliable, $"ambiguous:{fingerprint}:{occurrence}");
         }
 
         /// <summary>
@@ -143,31 +157,33 @@ namespace GuitoApi.Services.BankTransactions
             }
         }
 
-        private static BankTransactionInsert ToInsert(BankAccountSummary account, BankTransactionSource transaction) => new()
+        private static BankTransactionInsert ToInsert(BankAccountSummary account, BankTransactionSource transaction, bool reliable, string fallbackKey) => new()
         {
             AccountUid = account.Uid,
             BookingDate = transaction.BookingDate,
-            // ADR-0010: stored positive at the provider boundary — and the sync_key hashes
-            // exactly this stored value, so the dedup anchor never diverges from the row.
+            // Only settled debits reach storage; normalize the provider sign (ADR-0010).
             Amount = Math.Abs(transaction.Amount),
             Currency = transaction.Currency,
             Direction = transaction.CreditDebitIndicator,
             RemittanceInformation = transaction.RemittanceInformation ?? transaction.Note,
             Status = transaction.Status,
-            SyncKey = ComputeSyncKey(account, transaction),
+            SyncKey = reliable ? Hash(["reference", account.Uid, transaction.EntryReference]) : fallbackKey,
+            FallbackSyncKey = fallbackKey,
+            IdentityReliable = reliable,
+            EntryReference = string.IsNullOrWhiteSpace(transaction.EntryReference) ? null : transaction.EntryReference,
+            TransactionDate = transaction.TransactionDate,
+            ValueDate = transaction.ValueDate,
         };
 
-        /// <summary>
-        /// The dedup anchor (ADR-0013): SHA-256 over the provider's recommended composite —
-        /// account uid + booking date + amount (the stored, positive value) + credit/debit
-        /// indicator + entry reference + counterparty. Re-syncs of the same row hash
-        /// identically.
-        /// </summary>
-        private static string ComputeSyncKey(BankAccountSummary account, BankTransactionSource transaction)
-        {
-            var composite = string.Create(CultureInfo.InvariantCulture,
-                $"{account.Uid}|{transaction.BookingDate:yyyy-MM-dd}|{Math.Abs(transaction.Amount)}|{transaction.CreditDebitIndicator}|{transaction.EntryReference}|{transaction.CounterpartyName}");
-            return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(composite)));
-        }
+        // An ambiguous fingerprint is an observation slot, NOT proof of movement identity.
+        // Occurrence ordinals preserve identical purchases across all pages of this fetch.
+        private static string Fingerprint(BankAccountSummary account, BankTransactionSource transaction) => Hash([
+            "observation", account.Uid, transaction.EntryReference, transaction.BookingDate.ToString("yyyy-MM-dd"),
+            transaction.TransactionDate?.ToString("yyyy-MM-dd"), transaction.ValueDate?.ToString("yyyy-MM-dd"),
+            Math.Abs(transaction.Amount).ToString("G29", CultureInfo.InvariantCulture), transaction.Currency,
+            transaction.CreditDebitIndicator, transaction.RemittanceInformation, transaction.Note, transaction.CounterpartyName]);
+
+        private static string Hash(string?[] components) =>
+            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(components))));
     }
 }

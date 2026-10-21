@@ -79,6 +79,7 @@ public class DataApiPostgresBankAccountRepositoryTests
                 PostgresValue.FromString("CGD"),
                 PostgresValue.FromString("VALID"),
                 PostgresValue.FromString("2026-12-01T12:00:00Z"),
+                PostgresValue.Null(), PostgresValue.Null(),
             ]],
             0));
         var repository = new DataApiPostgresBankAccountRepository(client);

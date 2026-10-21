@@ -410,7 +410,7 @@ public class BankTransactionReviewBoundaryTests
         {
             ApplyOverrides();
             var values = parameters?.ToDictionary(parameter => parameter.Name, parameter => parameter.Value) ?? [];
-            if (sql.StartsWith("INSERT INTO bank_transactions", StringComparison.Ordinal))
+            if (sql.StartsWith("WITH identity_choice", StringComparison.Ordinal))
                 return Insert(values);
             var rows = sql.Contains("UPDATE bank_transactions") ? ChangeReviewStatus(sql, values) : _rows;
             rows = FilterRows(rows, sql, values);
@@ -434,14 +434,14 @@ public class BankTransactionReviewBoundaryTests
             if (!_syncKeys.Add(values["sync_key"].StringValue!)) return new PostgresResult([], [], 0);
             Seed(_rows.Count + 1, values.TryGetValue("review_status", out var review) ? review.StringValue! : "needsReview");
             PopulateInsertedRow(_rows[^1], values);
-            return new PostgresResult([], [[PostgresValue.FromLong(_rows.Count)]], 1);
+            return new PostgresResult([], [[PostgresValue.FromLong(_rows.Count), values["sync_key"], PostgresValue.FromBoolean(true)]], 1);
         }
 
         private static void PopulateInsertedRow(PostgresValue[] row, IReadOnlyDictionary<string, PostgresValue> values)
         {
             row[AccountUidColumn] = values["account_uid"];
             row[BookingDateColumn] = values["booking_date"];
-            row[AmountColumn] = PostgresValue.FromString(values["amount"].DoubleValue!.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            row[AmountColumn] = values["amount"];
             row[CurrencyColumn] = values["currency"];
             row[RemittanceColumn] = values["remittance_information"];
             row[SuggestedCategoryIdColumn] = PostgresValue.Null();
